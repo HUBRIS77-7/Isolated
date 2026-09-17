@@ -159,6 +159,10 @@ canvas{display:block}
 <div id="flash"></div>
 <div class="crt"></div>
 
+<!-- the world: shared tile vocabulary, then one file per map (authored in editor.html) -->
+<script src="maps/tiles.js"></script>
+<script src="maps/tutorial.js"></script>
+
 <script>
 /* =========================================================
    CONFIG
@@ -432,9 +436,42 @@ function startNamingKeep(col,sel,lists){
 /* =========================================================
    TUTORIAL CONSOLE
    ========================================================= */
-const COLS=15,ROWS=11;
-const game={px:7,py:5,fx:7,fy:5,mt:1,bx:0,by:0,bt:1,active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0};
-game.visited.set('7,5',0);
+/* ---------- the world ----------
+   Maps live in maps/*.js and are drawn in editor.html.
+   ?map=<id> plays a specific one; ?draft=1 plays the editor's current draft. */
+if(typeof ISO==='undefined'){
+  // maps/ did not load — degrade to a plain open rectangle so the intro still runs
+  window.ISO={
+    def:ch=>({id:ch==='#'?'wall':'floor',walk:ch!=='#'&&ch!==' ',fill:ch===' '?null:'rgba(28,240,28,.045)',
+      line:'rgba(28,240,28,.14)',bump:'Edge of mapped space. Nothing registers beyond.'}),
+    MAPS:{},
+    inside:(m,x,y)=>x>=0&&y>=0&&x<m.w&&y<m.h,
+    tileAt:(m,x,y)=>ISO.inside(m,x,y)?m.rows[y][x]:' ',
+    at:(m,x,y)=>ISO.def(ISO.tileAt(m,x,y)),
+    walkable:(m,x,y)=>ISO.at(m,x,y).walk,
+    reachable:m=>{const s=new Set();for(let y=0;y<m.h;y++)for(let x=0;x<m.w;x++)if(ISO.walkable(m,x,y))s.add(x+','+y);return s},
+    makeMap:o=>({id:'fallback',name:'Unmapped Ground',w:o.w,h:o.h,spawn:{x:o.w>>1,y:o.h>>1},beacons:[],
+      rows:Array.from({length:o.h},()=>'.'.repeat(o.w))}),
+    parse:t=>JSON.parse(t),
+    drawTile:(c,ch,px,py,s)=>{if(ch===' ')return;c.fillStyle='rgba(28,240,28,.045)';c.fillRect(px,py,s,s)},
+  };
+}
+function loadMap(){
+  const q=new URLSearchParams(location.search);
+  if(q.get('draft')){try{const d=localStorage.getItem('iso.draft');if(d)return ISO.parse(d)}catch(e){}}
+  const want=q.get('map');
+  if(want&&ISO.MAPS[want])return ISO.MAPS[want];
+  return ISO.MAPS.tutorial||ISO.makeMap({w:15,h:11});
+}
+const MAP=loadMap();
+const COLS=MAP.w,ROWS=MAP.h;
+const tileDef=(x,y)=>ISO.at(MAP,x,y);
+const walkableAt=(x,y)=>ISO.walkable(MAP,x,y);
+
+const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,bx:0,by:0,bt:1,
+  active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0,toldAbout:new Set()};
+game.visited.set(MAP.spawn.x+','+MAP.spawn.y,0);
+const view={x:0,y:0,ready:false};   // camera, in tiles
 const feed=$('#feed'),fx=feed.getContext('2d'),logEl=$('#log');
 
 let typing=Promise.resolve();
@@ -466,13 +503,15 @@ function startConsole(){
 const DIRV={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
 function tryMove(dir){
   if(!game.active||game.mt<1)return;
-  const [dx,dy]=DIRV[dir],nx=game.px+dx,ny=game.py+dy;
-  if(nx<0||ny<0||nx>=COLS||ny>=ROWS){
+  const [dx,dy]=DIRV[dir],nx=game.px+dx,ny=game.py+dy,t=tileDef(nx,ny);
+  if(!walkableAt(nx,ny)){
     game.bx=dx;game.by=dy;game.bt=0;
-    const n=performance.now();if(n-game.edgeLog>4000){game.edgeLog=n;say('Edge of mapped space. Nothing registers beyond.','dim')}
+    const n=performance.now();
+    if(t.bump&&n-game.edgeLog>4000){game.edgeLog=n;say(t.bump,t.alert?'alert':'dim')}
   }else{
     game.fx=game.px;game.fy=game.py;game.px=nx;game.py=ny;game.mt=0;
     game.visited.set(nx+','+ny,performance.now());
+    if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
   }
   tutorial(dir);
 }
@@ -498,24 +537,62 @@ function tutorial(dir){
   }
 }
 function litKey(dir){const k=document.querySelector(`.key[data-dir="${dir}"]`);k&&k.classList.add('lit')}
-function pickBeacon(){for(let n=0;n<200;n++){const x=Math.random()*COLS|0,y=Math.random()*ROWS|0;if(Math.abs(x-game.px)+Math.abs(y-game.py)>=6)return[x,y]}return[0,0]}
+function pickBeacon(){
+  const reach=ISO.reachable(MAP,{x:game.px,y:game.py});
+  const placed=MAP.beacons.filter(b=>reach.has(b.x+','+b.y));
+  if(placed.length){const b=placed[Math.random()*placed.length|0];return[b.x,b.y]}
+  const far=[...reach].map(k=>k.split(',').map(Number)).filter(([x,y])=>Math.abs(x-game.px)+Math.abs(y-game.py)>=6);
+  if(far.length){return far[Math.random()*far.length|0]}
+  return[game.px,game.py];
+}
 
+const MINTILE=20;                 // logical px before the feed starts scrolling
 function drawFeed(now,dt){
   const [W,H,D]=fitCanvas(feed),t=now/1000;
-  const pad=14*D,tile=Math.floor(Math.min((W-pad*2)/COLS,(H-pad*2)/ROWS));
-  const ox=Math.round((W-tile*COLS)/2),oy=Math.round((H-tile*ROWS)/2);
-  fx.clearRect(0,0,W,H);
-  for(const [k,v] of game.visited){
-    const [x,y]=k.split(',').map(Number),age=(now-v)/1000,a=.04+.12*Math.max(0,1-age/8);
-    fx.fillStyle=`rgba(28,240,28,${a})`;fx.fillRect(ox+x*tile+1,oy+y*tile+1,tile-2,tile-2);
+
+  /* advance the unit first — the camera follows where it is actually drawn */
+  game.mt=Math.min(1,game.mt+dt/.11);game.bt=Math.min(1,game.bt+dt/.18);
+  const e=ease(game.mt),bump=Math.sin(game.bt*Math.PI)*.16;
+  const rx=lerp(game.fx,game.px,e)+game.bx*bump,ry=lerp(game.fy,game.py,e)+game.by*bump;
+
+  /* fit the whole map if it fits; otherwise scroll a window of it */
+  const pad=8*D,availW=W-pad*2,availH=H-pad*2;
+  const min=Math.max(6,Math.floor(MINTILE*D));
+  let tile=Math.floor(Math.min(availW/COLS,availH/ROWS)),vc=COLS,vr=ROWS;
+  if(tile<min){
+    tile=min;
+    vc=Math.max(3,Math.min(COLS,Math.floor(availW/tile)));
+    vr=Math.max(3,Math.min(ROWS,Math.floor(availH/tile)));
   }
-  fx.lineWidth=1;fx.strokeStyle='rgba(28,240,28,.14)';fx.beginPath();
-  for(let x=0;x<=COLS;x++){fx.moveTo(ox+x*tile+.5,oy);fx.lineTo(ox+x*tile+.5,oy+ROWS*tile)}
-  for(let y=0;y<=ROWS;y++){fx.moveTo(ox,oy+y*tile+.5);fx.lineTo(ox+COLS*tile,oy+y*tile+.5)}
-  fx.stroke();
-  fx.fillStyle='rgba(28,240,28,.45)';
-  for(let x=0;x<=COLS;x++)for(let y=0;y<=ROWS;y++)fx.fillRect(ox+x*tile-D,oy+y*tile-D,2*D,2*D);
-  fx.strokeStyle='rgba(28,240,28,.5)';fx.strokeRect(ox+.5,oy+.5,COLS*tile,ROWS*tile);
+  const tx=Math.min(Math.max(0,rx+.5-vc/2),Math.max(0,COLS-vc));
+  const ty=Math.min(Math.max(0,ry+.5-vr/2),Math.max(0,ROWS-vr));
+  if(!view.ready){view.x=tx;view.y=ty;view.ready=true}
+  else{const k=1-Math.pow(.0015,dt);view.x=lerp(view.x,tx,k);view.y=lerp(view.y,ty,k)}
+
+  const ox=Math.round((W-vc*tile)/2-view.x*tile),oy=Math.round((H-vr*tile)/2-view.y*tile);
+  const x0=Math.max(0,Math.floor(view.x)-1),y0=Math.max(0,Math.floor(view.y)-1);
+  const x1=Math.min(COLS,Math.ceil(view.x+vc)+1),y1=Math.min(ROWS,Math.ceil(view.y+vr)+1);
+
+  fx.clearRect(0,0,W,H);
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const px=ox+x*tile,py=oy+y*tile;
+    ISO.drawTile(fx,ISO.tileAt(MAP,x,y),px,py,tile,D);
+    const v=game.visited.get(x+','+y);
+    if(v!==undefined){
+      const age=(now-v)/1000;
+      fx.fillStyle=`rgba(28,240,28,${.04+.12*Math.max(0,1-age/8)})`;
+      fx.fillRect(px+1,py+1,tile-2,tile-2);
+    }
+  }
+  /* survey dots only where the record actually reaches — the negative space
+     around them is what gives a map its shape */
+  if(tile>=12){
+    const mapped=(x,y)=>ISO.tileAt(MAP,x,y)!==' ';
+    fx.fillStyle='rgba(28,240,28,.35)';
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)
+      if(mapped(x-1,y-1)||mapped(x,y-1)||mapped(x-1,y)||mapped(x,y))
+        fx.fillRect(ox+x*tile-D,oy+y*tile-D,2*D,2*D);
+  }
 
   if(game.beacon){
     const cx=ox+(game.beacon[0]+.5)*tile,cy=oy+(game.beacon[1]+.5)*tile,p=(t%1.4)/1.4;
@@ -524,9 +601,7 @@ function drawFeed(now,dt){
     const s=tile*.22;fx.fillStyle='#ff3b2f';fx.shadowColor='#ff3b2f';fx.shadowBlur=16*D;
     fx.beginPath();fx.moveTo(cx,cy-s);fx.lineTo(cx+s,cy);fx.lineTo(cx,cy+s);fx.lineTo(cx-s,cy);fx.closePath();fx.fill();fx.shadowBlur=0;
   }
-  game.mt=Math.min(1,game.mt+dt/.11);game.bt=Math.min(1,game.bt+dt/.18);
-  const e=ease(game.mt),bump=Math.sin(game.bt*Math.PI)*.16;
-  const rx=lerp(game.fx,game.px,e)+game.bx*bump,ry=lerp(game.fy,game.py,e)+game.by*bump;
+
   const cx=ox+(rx+.5)*tile,cy=oy+(ry+.5)*tile,s=tile*.62*(1-.1*Math.sin(game.mt*Math.PI));
   fx.fillStyle='rgba(28,240,28,.08)';fx.fillRect(cx-s/2+tile*.07,cy-s/2+tile*.09,s,s);
   fx.fillStyle='#021402';fx.shadowColor='rgba(28,240,28,.8)';fx.shadowBlur=14*D;
