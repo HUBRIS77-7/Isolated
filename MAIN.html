@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ISOLATION — Intro Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* Dark by design; tokens identical across themes on purpose. */
+:root{--bg:#000;--g:#1cf01c;--gdim:#0c8f0c;--gfaint:#063806;--red:#ff3b2f;--redbar:#3a0000;--mfg:#bff7dc;--mdim:#4f8570;--amber:#ffb44a}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#000;--g:#1cf01c;--gdim:#0c8f0c;--gfaint:#063806;--red:#ff3b2f;--redbar:#3a0000;--mfg:#bff7dc;--mdim:#4f8570;--amber:#ffb44a}}
+:root[data-theme="dark"]{--bg:#000;--g:#1cf01c;--gdim:#0c8f0c;--gfaint:#063806;--red:#ff3b2f;--redbar:#3a0000;--mfg:#bff7dc;--mdim:#4f8570;--amber:#ffb44a}
+
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;color:var(--g);
+  font-family:'Courier Prime','Courier New',Courier,ui-monospace,monospace}
+.screen{position:fixed;inset:0;display:none}
+.screen.show{display:flex}
+canvas{display:block}
+
+/* ---------- MENU / CUTSCENE ---------- */
+#menu{display:block;color:var(--mfg)}
+#menu canvas,#menu video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#menu video{display:none}
+.title{position:absolute;left:7vw;bottom:14vh;max-width:90vw;transition:opacity .9s,transform 1.2s cubic-bezier(.6,0,.2,1)}
+.title h1{margin:0;font-family:'VT323',ui-monospace,monospace;font-weight:400;font-size:clamp(64px,13vw,168px);letter-spacing:.18em;line-height:.85;text-shadow:0 0 18px rgba(120,255,190,.35)}
+.title .sub{margin-top:14px;color:var(--mdim);font-size:13px;letter-spacing:.38em;text-transform:uppercase}
+.title .press{margin-top:48px;font-size:14px;letter-spacing:.32em;animation:blink 1.6s steps(1) infinite}
+.title .press b{color:var(--amber)}
+.corner{position:absolute;top:22px;right:26px;color:var(--mdim);font-size:12px;letter-spacing:.2em;text-align:right;line-height:1.8;transition:opacity .6s}
+#menu.leaving .title{opacity:0;transform:translateY(30px)}
+#menu.leaving .corner{opacity:0}
+#menu.off{animation:crtoff .55s cubic-bezier(.7,0,.3,1) forwards}
+@keyframes crtoff{0%{transform:scale(1,1);filter:brightness(1)}55%{transform:scale(1,.004);filter:brightness(4)}100%{transform:scale(0,.004);filter:brightness(8)}}
+@keyframes blink{0%,60%{opacity:1}61%,100%{opacity:.15}}
+@keyframes termOn{0%{transform:scaleY(.01);filter:brightness(3)}60%{transform:scaleY(1);filter:brightness(1.6)}100%{transform:scaleY(1);filter:brightness(1)}}
+
+.crt{pointer-events:none;position:fixed;inset:0;z-index:50;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,.7) 100%)}
+#flash{position:fixed;inset:0;background:#e9fff4;opacity:0;pointer-events:none;z-index:40;transition:opacity .12s}
+
+/* ---------- UESC-STYLE TERMINAL SHELL ---------- */
+.screen.term-screen{align-items:center;justify-content:center;padding:clamp(6px,2vw,24px)}
+.term{width:min(960px,100%);height:min(760px,100%);display:flex;flex-direction:column;background:#000;
+  border:1px solid #5a0000;box-shadow:0 0 0 1px #000,0 0 40px rgba(28,240,28,.06);animation:termOn .45s ease-out}
+.term.wide{width:min(1280px,100%);height:100%}
+.term-bar{background:var(--redbar);color:var(--red);display:flex;justify-content:space-between;gap:16px;
+  padding:3px 8px;font-size:clamp(13px,1.9vw,18px);white-space:nowrap;overflow:hidden;flex:none}
+.term-bar span{overflow:hidden;text-overflow:ellipsis}
+.term-body{flex:1;min-height:0;overflow-y:auto;padding:14px 10px;font-size:clamp(14px,2vw,18px);line-height:1.12;
+  text-shadow:0 0 6px rgba(28,240,28,.35)}
+.term-body p{margin:0 0 1.12em}
+.b{font-weight:700}
+.dim{color:var(--gdim)}
+.alert{color:var(--red);text-shadow:0 0 6px rgba(255,59,47,.35)}
+.caret::after{content:'█';animation:blink 1s steps(1) infinite;margin-left:1px}
+
+/* poem */
+#poemText p{opacity:0;transition:opacity .9s}
+#poemText p.on{opacity:1}
+
+/* name picker */
+.cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:6px 0 16px}
+.col{border:1px solid var(--gfaint);min-height:0;display:flex;flex-direction:column}
+.col.active{border-color:var(--gdim)}
+.col h3{margin:0;font-size:inherit;font-weight:700;padding:4px 8px;border-bottom:1px solid var(--gfaint)}
+.col.active h3{background:var(--gfaint)}
+.col ul{list-style:none;margin:0;padding:4px 0;max-height:min(38vh,340px);overflow-y:auto}
+.col li{padding:2px 8px;cursor:pointer}
+.col li.sel{background:var(--gdim);color:#000;text-shadow:none}
+.col.active li.sel{background:var(--g)}
+.col li:hover:not(.sel){background:#031a03}
+#composite{min-height:3.4em}
+@media (max-width:700px){.cols{grid-template-columns:1fr}.col ul{max-height:22vh}}
+
+/* tutorial console */
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,36%);gap:10px;height:100%;padding:0}
+.split .term-body{padding:10px}
+.box{border:1px solid var(--gfaint);min-height:0;display:flex;flex-direction:column}
+.box h4{margin:0;font-size:inherit;font-weight:700;padding:3px 8px;border-bottom:1px solid var(--gfaint);flex:none}
+#feed{flex:1;width:100%;min-height:0;opacity:0;transition:opacity 1.2s}
+#feed.on{opacity:1}
+.rcol{display:flex;flex-direction:column;gap:10px;min-height:0}
+#log{flex:1;overflow-y:auto;padding:8px}
+#log div{white-space:pre-wrap;word-break:break-word;margin-bottom:.35em}
+#objWrap{flex:none}
+#obj{padding:8px 8px 0}
+#keys{display:flex;gap:6px;padding:8px;opacity:0;transition:opacity .5s}
+#keys.on{opacity:1}
+.key{width:36px;height:30px;display:grid;place-items:center;border:1px solid var(--gdim);color:var(--gdim);transition:all .2s;font-weight:700}
+.key.lit{background:var(--g);color:#000;border-color:var(--g);text-shadow:none}
+@media (max-width:760px){.split{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr)}#console{padding-bottom:140px}}
+
+#dpad{display:none;position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:30;grid-template-columns:repeat(3,54px);grid-template-rows:repeat(2,54px);gap:6px}
+#dpad button{font:inherit;font-size:18px;background:#000;color:var(--g);border:1px solid var(--gdim);touch-action:manipulation}
+#dpad [data-dir=up]{grid-column:2}#dpad [data-dir=left]{grid-column:1;grid-row:2}#dpad [data-dir=down]{grid-column:2;grid-row:2}#dpad [data-dir=right]{grid-column:3;grid-row:2}
+@media (pointer:coarse){#console.show ~ #dpad{display:grid}}
+</style>
+</head>
+<body>
+
+<!-- ===== MENU (cutscene) ===== -->
+<section id="menu" class="screen">
+  <canvas id="menuCanvas"></canvas>
+  <video id="menuVideo" muted playsinline preload="auto"></video>
+  <div class="corner">SIGNAL ▪ LOST<br>NODE 07<br>T+ <span id="clock">00:00:00</span></div>
+  <div class="title">
+    <h1>ISOLATION</h1>
+    <div class="sub">a single presence on an empty grid</div>
+    <div class="press">PRESS <b>ANY KEY</b></div>
+  </div>
+</section>
+
+<!-- ===== POEM ===== -->
+<section id="poem" class="screen term-screen">
+  <div class="term">
+    <div class="term-bar"><span>ISOLATION/OS 07 (local session)</span><span id="stamp1">0000 00.00.0000</span></div>
+    <div class="term-body" id="poemText"></div>
+    <div class="term-bar"><span></span><span>Return/Enter to Skip</span></div>
+  </div>
+</section>
+
+<!-- ===== NAME ===== -->
+<section id="naming" class="screen term-screen">
+  <div class="term">
+    <div class="term-bar"><span>ISOLATION/OS 07 (identity recovery)</span><span id="stamp2">0000 00.00.0000</span></div>
+    <div class="term-body" id="nameBody">
+      <p>&lt;Personnel Record: CORRUPTED&gt;</p>
+      <p class="b">Identity Reconstruction</p>
+      <p>Your name did not survive. Fragments of what it <span class="b">meant</span> did. Select one meaning from each record to rebuild it.</p>
+      <div class="cols" id="cols"></div>
+      <p class="dim">RECONSTRUCTED MEANING:</p>
+      <p id="composite"></p>
+    </div>
+    <div class="term-bar"><span id="nameHintL">Arrows/WASD to Select</span><span id="nameHintR">Return/Enter to Confirm</span></div>
+  </div>
+</section>
+
+<!-- ===== TUTORIAL CONSOLE ===== -->
+<section id="console" class="screen term-screen">
+  <div class="term wide">
+    <div class="term-bar"><span>ISOLATION/OS 07 (local console)</span><span id="stamp3">0000 00.00.0000</span></div>
+    <div class="term-body split">
+      <div class="box"><h4>&lt;Environment Feed&gt;</h4><canvas id="feed"></canvas></div>
+      <div class="rcol">
+        <div class="box" style="flex:1"><h4>&lt;Message Log&gt;</h4><div id="log"></div></div>
+        <div class="box" id="objWrap"><h4>&lt;Objective&gt;</h4>
+          <div id="obj" class="dim">—</div>
+          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="term-bar"><span>WASD/Arrows to Move</span><span id="coords">X:00 Y:00</span></div>
+  </div>
+</section>
+<div id="dpad"><button data-dir="up">▲</button><button data-dir="left">◀</button><button data-dir="down">▼</button><button data-dir="right">▶</button></div>
+
+<div id="flash"></div>
+<div class="crt"></div>
+
+<script>
+/* =========================================================
+   CONFIG
+   ========================================================= */
+const CONFIG = {
+  menuIdleVideo: '',      // Blender loop while waiting
+  menuStartVideo: '',     // Blender one-shot after key press (end on top-down cube)
+  poemHoldMs: 4000,       // how long the poem stays after the last line appears
+  poemLineMs: 450,        // delay between poem lines fading in
+};
+
+/* Paste your poem here. Each string is one line; '' makes a stanza break. */
+const POEM = [
+  '[ POEM TITLE ]',
+  '',
+  '[ paste line one here ]',
+  '[ paste line two here ]',
+  '[ paste line three here ]',
+  '',
+  '[ paste line four here ]',
+];
+
+/* Names are never shown while choosing — only their meanings. */
+const NAMES = {
+  first: [
+    ['Cody','helpful one'],['Silas','of the forest'],['Felix','lucky, fortunate'],['Clara','bright, clear'],
+    ['Iris','rainbow'],['Rowan','little red one'],['Jonah','dove'],['Asher','happy, blessed'],
+    ['Vera','faith'],['Declan','full of goodness'],['Hazel','the hazel tree'],['Leo','lion'],
+  ],
+  middle: [
+    ['Taylor','one who cuts cloth'],['Mason','worker of stone'],['Parker','keeper of the park'],['Wren','a small songbird'],
+    ['Sage','wise one'],['Jude','praised'],['Reed','red-haired'],['Quinn','descendant of the chief'],
+    ['Hunter','one who hunts'],['Grace','favor, grace'],['Cole','dark as charcoal'],['Blair','an open plain'],
+  ],
+  last: [
+    ['Gillespie','servant of the bishop'],['Fletcher','maker of arrows'],['Carter','driver of carts'],['Fisher','one who fishes'],
+    ['Thatcher','roofer of thatch'],['Whitaker','the white field'],['Nakamura','middle village'],['Morales','mulberry trees'],
+    ['Rivera','the riverbank'],['Shepherd','herder of sheep'],['Lindgren','linden branch'],['Walsh','the foreigner'],
+  ],
+};
+
+/* Player identity — read these anywhere in the game. */
+let PLAYER = { first:'', middle:'', last:'', full:'' };
+let isCreatorName = false; // true when the player builds "Cody Taylor Gillespie"
+
+const $ = s => document.querySelector(s);
+let state = 'menu'; // menu -> dive -> poem -> name -> console
+
+// in-world timestamp for the terminal headers
+(()=>{const d=new Date();const s=`${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')} ${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}.${d.getFullYear()+311}`;
+  ['#stamp1','#stamp2','#stamp3'].forEach(q=>$(q).textContent=s)})();
+
+/* ---------- vector kit ---------- */
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const norm=a=>{const l=Math.hypot(...a)||1;return[a[0]/l,a[1]/l,a[2]/l]};
+const lerp=(a,b,t)=>a+(b-a)*t;
+const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+function fitCanvas(c){
+  const r=c.getBoundingClientRect(), d=Math.min(2,window.devicePixelRatio||1);
+  const w=Math.max(1,Math.round(r.width*d)), h=Math.max(1,Math.round(r.height*d));
+  if(c.width!==w||c.height!==h){c.width=w;c.height=h}
+  return [w,h,d];
+}
+function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('show'));$(id).classList.add('show')}
+
+/* =========================================================
+   MENU: procedural stand-in for the Blender cutscene
+   ========================================================= */
+const mc=$('#menuCanvas'), mx=mc.getContext('2d');
+const cam={yaw:.7,pitch:.3,dist:7.5};
+let dive=null;
+const dust=Array.from({length:70},()=>[(Math.random()-.5)*16,Math.random()*5,(Math.random()-.5)*16,Math.random()*6.28]);
+const CV=[]; for(let i=0;i<8;i++) CV.push([(i&1)?.5:-.5,(i&2)?1:0,(i&4)?.5:-.5]);
+const FACES=[[[1,3,7,5],[1,0,0]],[[0,4,6,2],[-1,0,0]],[[2,6,7,3],[0,1,0]],[[0,1,5,4],[0,-1,0]],[[4,5,7,6],[0,0,1]],[[0,2,3,1],[0,0,-1]]];
+const LIGHT=norm([.4,.9,.3]);
+const t0=performance.now();
+
+function drawMenu(now,dt){
+  const [W,H]=fitCanvas(mc), t=(now-t0)/1000;
+  let hover=.12+Math.sin(t*1.3)*.05, ty=.5;
+  if(!dive){cam.yaw+=dt*.07;cam.pitch=.3+Math.sin(t*.23)*.05}
+  else{
+    dive.t=Math.min(1,dive.t+dt/2.7*dive.speed);
+    const e=ease(dive.t);
+    cam.yaw=lerp(dive.y0,dive.y1,e);cam.pitch=lerp(dive.p0,1.565,e);cam.dist=lerp(dive.d0,2.4,e);
+    hover*=1-e;ty=.5*(1-e);
+    if(dive.t>=1&&!dive.done){dive.done=true;finishIntro()}
+  }
+  const T=[0,ty,0],cp=Math.cos(cam.pitch);
+  const C=[cam.dist*cp*Math.sin(cam.yaw),T[1]+cam.dist*Math.sin(cam.pitch),cam.dist*cp*Math.cos(cam.yaw)];
+  const f=norm(sub(T,C)),r=norm(cross(f,[0,1,0])),u=cross(r,f),F=Math.min(W,H)*1.06,NEAR=.05;
+  const toCam=p=>{const d=sub(p,C);return[dot(d,r),dot(d,u),dot(d,f)]};
+  const proj=q=>[W/2+q[0]*F/q[2],H/2-q[1]*F/q[2]];
+
+  mx.fillStyle='#030607';mx.fillRect(0,0,W,H);
+  const g=mx.createRadialGradient(W/2,H*.6,0,W/2,H*.6,Math.max(W,H)*.7);
+  g.addColorStop(0,'rgba(40,110,85,.16)');g.addColorStop(1,'rgba(0,0,0,0)');
+  mx.fillStyle=g;mx.fillRect(0,0,W,H);
+
+  const N=22,S=2;mx.lineWidth=Math.max(1,W/1400);
+  for(let i=-N;i<=N;i++)for(let s=-N;s<N;s+=S)for(const axis of [0,1]){
+    const a=axis?[s,0,i]:[i,0,s],b=axis?[s+S,0,i]:[i,0,s+S];
+    const md=Math.hypot((a[0]+b[0])/2,(a[2]+b[2])/2);
+    const al=Math.pow(Math.max(0,1-md/N),1.7)*(i%4===0?.55:.28);
+    if(al<.01)continue;
+    let A=toCam(a),B=toCam(b);
+    if(A[2]<NEAR&&B[2]<NEAR)continue;
+    if(A[2]<NEAR){const k=(NEAR-A[2])/(B[2]-A[2]);A=[lerp(A[0],B[0],k),lerp(A[1],B[1],k),NEAR]}
+    if(B[2]<NEAR){const k=(NEAR-B[2])/(A[2]-B[2]);B=[lerp(B[0],A[0],k),lerp(B[1],A[1],k),NEAR]}
+    const pa=proj(A),pb=proj(B);
+    mx.strokeStyle=`rgba(130,240,190,${al})`;mx.beginPath();mx.moveTo(pa[0],pa[1]);mx.lineTo(pb[0],pb[1]);mx.stroke();
+  }
+  const pulse=.35+.25*Math.sin(t*2.2),ring=[[-.5,0,-.5],[.5,0,-.5],[.5,0,.5],[-.5,0,.5]].map(toCam);
+  if(ring.every(q=>q[2]>NEAR)){
+    mx.beginPath();ring.map(proj).forEach((p,i)=>i?mx.lineTo(...p):mx.moveTo(...p));mx.closePath();
+    mx.fillStyle=`rgba(255,180,74,${pulse*.12})`;mx.fill();
+    mx.strokeStyle=`rgba(255,180,74,${pulse})`;mx.lineWidth=Math.max(1.5,W/900);mx.stroke();
+  }
+  const V=CV.map(v=>[v[0],v[1]+hover,v[2]]),Vc=V.map(toCam);
+  if(Vc.every(q=>q[2]>NEAR)){
+    FACES.map(([idx,n])=>{
+      const c=idx.reduce((s,i)=>[s[0]+V[i][0]/4,s[1]+V[i][1]/4,s[2]+V[i][2]/4],[0,0,0]);
+      return{idx,n,vis:dot(n,sub(C,c))>0,z:toCam(c)[2]};
+    }).filter(o=>o.vis).sort((a,b)=>b.z-a.z).forEach(fc=>{
+      const k=.12+.55*Math.max(0,dot(fc.n,LIGHT));
+      mx.beginPath();fc.idx.map(i=>proj(Vc[i])).forEach((p,i)=>i?mx.lineTo(...p):mx.moveTo(...p));mx.closePath();
+      mx.fillStyle=`rgb(${10+k*40|0},${22+k*90|0},${20+k*75|0})`;mx.fill();
+      mx.shadowColor='rgba(140,255,200,.8)';mx.shadowBlur=14;
+      mx.strokeStyle='rgba(190,250,220,.9)';mx.lineWidth=Math.max(1.5,W/800);mx.stroke();mx.shadowBlur=0;
+    });
+  }
+  for(const d of dust){
+    d[1]+=dt*.08;if(d[1]>5)d[1]=0;d[3]+=dt*.5;
+    const q=toCam([d[0]+Math.sin(d[3])*.3,d[1],d[2]]);if(q[2]<NEAR)continue;
+    const p=proj(q),s=Math.max(1,F*.012/q[2]);
+    mx.fillStyle=`rgba(200,255,225,${Math.min(.5,1.5/q[2])})`;mx.fillRect(p[0],p[1],s,s);
+  }
+  const secs=Math.floor(t);$('#clock').textContent=[secs/3600|0,(secs/60|0)%60,secs%60].map(n=>String(n).padStart(2,'0')).join(':');
+}
+
+const mv=$('#menuVideo');let usingVideo=false;
+if(CONFIG.menuIdleVideo){
+  mv.src=CONFIG.menuIdleVideo;mv.loop=true;mv.style.display='block';
+  mv.play().then(()=>{usingVideo=true;mc.style.display='none'}).catch(()=>{mv.style.display='none'});
+  mv.onerror=()=>{usingVideo=false;mv.style.display='none';mc.style.display='block'};
+}
+function startGame(){
+  if(state!=='menu')return;
+  state='dive';$('#menu').classList.add('leaving');
+  if(usingVideo&&CONFIG.menuStartVideo){mv.loop=false;mv.src=CONFIG.menuStartVideo;mv.onended=finishIntro;mv.play().catch(finishIntro)}
+  else if(usingVideo){setTimeout(finishIntro,900)}
+  else{const q=Math.PI/2;dive={t:0,speed:1,y0:cam.yaw,y1:Math.round((cam.yaw+.9)/q)*q,p0:cam.pitch,d0:cam.dist}}
+}
+function finishIntro(){
+  const fl=$('#flash');fl.style.opacity=.9;
+  setTimeout(()=>{fl.style.opacity=0;$('#menu').classList.add('off')},110);
+  setTimeout(()=>{$('#menu').style.display='none';mv.pause();startPoem()},750);
+}
+
+/* =========================================================
+   POEM
+   ========================================================= */
+let poemTimers=[];
+function startPoem(){
+  state='poem';show('#poem');
+  const box=$('#poemText');box.innerHTML='';
+  POEM.forEach((line,i)=>{
+    const p=document.createElement('p');
+    if(line===''){p.innerHTML='&nbsp;';p.style.marginBottom='0'} else p.textContent=line;
+    if(i===0)p.className='b';
+    p.style.marginBottom='0';
+    box.appendChild(p);
+    poemTimers.push(setTimeout(()=>p.classList.add('on'),300+i*CONFIG.poemLineMs));
+  });
+  poemTimers.push(setTimeout(endPoem,300+POEM.length*CONFIG.poemLineMs+CONFIG.poemHoldMs));
+}
+function endPoem(){
+  if(state!=='poem')return;
+  poemTimers.forEach(clearTimeout);poemTimers=[];
+  startNaming();
+}
+
+/* =========================================================
+   NAME: choose by meaning
+   ========================================================= */
+const COLS_KEYS=['first','middle','last'];
+const nameState={col:0,sel:[0,0,0],lists:{},confirmed:false};
+const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
+
+function startNaming(){
+  state='name';show('#naming');
+  nameState.confirmed=false;nameState.col=0;
+  const cols=$('#cols');cols.innerHTML='';
+  COLS_KEYS.forEach((k,ci)=>{
+    nameState.lists[k]=shuffle(NAMES[k]);
+    nameState.sel[ci]=Math.random()*NAMES[k].length|0;
+    const col=document.createElement('div');col.className='col';
+    col.innerHTML=`<h3>${['FIRST','MIDDLE','LAST'][ci]} RECORD</h3><ul></ul>`;
+    const ul=col.querySelector('ul');
+    nameState.lists[k].forEach(([,meaning],ri)=>{
+      const li=document.createElement('li');li.textContent=meaning;
+      li.onclick=()=>{if(nameState.confirmed)return;nameState.col=ci;nameState.sel[ci]=ri;renderNaming()};
+      ul.appendChild(li);
+    });
+    cols.appendChild(col);
+  });
+  renderNaming();
+}
+function renderNaming(){
+  if(nameState.confirmed)return;
+  document.querySelectorAll('.col').forEach((col,ci)=>{
+    col.classList.toggle('active',ci===nameState.col);
+    col.querySelectorAll('li').forEach((li,ri)=>{
+      const on=ri===nameState.sel[ci];li.classList.toggle('sel',on);
+      if(on&&ci===nameState.col)li.scrollIntoView({block:'nearest'});
+    });
+  });
+  const m=COLS_KEYS.map((k,ci)=>nameState.lists[k][nameState.sel[ci]][1]);
+  $('#composite').innerHTML=`<span class="b">"${m[0]}, ${m[1]}, ${m[2]}"</span>`;
+}
+function navNaming(dir){
+  if(nameState.confirmed)return;
+  const n=NAMES[COLS_KEYS[nameState.col]].length;
+  if(dir==='left')nameState.col=(nameState.col+2)%3;
+  if(dir==='right')nameState.col=(nameState.col+1)%3;
+  if(dir==='up')nameState.sel[nameState.col]=(nameState.sel[nameState.col]+n-1)%n;
+  if(dir==='down')nameState.sel[nameState.col]=(nameState.sel[nameState.col]+1)%n;
+  renderNaming();
+}
+function confirmNaming(){
+  if(!nameState.confirmed){
+    const [f,m,l]=COLS_KEYS.map((k,ci)=>nameState.lists[k][nameState.sel[ci]][0]);
+    PLAYER={first:f,middle:m,last:l,full:`${f} ${m} ${l}`};
+    isCreatorName=(f==='Cody'&&m==='Taylor'&&l==='Gillespie');
+    nameState.confirmed=true;
+    nameState.backup=$('#nameBody').innerHTML;
+    $('#nameBody').innerHTML=`
+      <p>&lt;Personnel Record: RESTORED&gt;</p>
+      <p class="b">***IDENTITY RECONSTRUCTED***</p>
+      <p>Designation:</p>
+      <p class="b" style="font-size:1.6em">${PLAYER.full.toUpperCase()}</p>
+      <p class="dim">Meaning on file: "${COLS_KEYS.map((k,ci)=>nameState.lists[k][nameState.sel[ci]][1]).join(', ')}"</p>
+      <p>If this is not you, it will have to be.</p>
+      <p class="b caret">***END RECORD***</p>`;
+    $('#nameHintL').textContent='Backspace/Esc to Revise';
+    $('#nameHintR').textContent='Return/Enter to Acknowledge';
+  }else{
+    startConsole();
+  }
+}
+function reviseNaming(){
+  if(!nameState.confirmed)return;
+  nameState.confirmed=false;
+  const {col,sel,lists}=nameState;
+  startNamingKeep(col,sel,lists);
+}
+function startNamingKeep(col,sel,lists){
+  // rebuild picker keeping previous order and selection
+  $('#nameBody').innerHTML=nameState.backup;
+  nameState.col=col;nameState.sel=sel;nameState.lists=lists;
+  document.querySelectorAll('.col').forEach((c,ci)=>c.querySelectorAll('li').forEach((li,ri)=>{
+    li.onclick=()=>{if(nameState.confirmed)return;nameState.col=ci;nameState.sel[ci]=ri;renderNaming()};
+  }));
+  $('#nameHintL').textContent='Arrows/WASD to Select';$('#nameHintR').textContent='Return/Enter to Confirm';
+  renderNaming();
+}
+
+/* =========================================================
+   TUTORIAL CONSOLE
+   ========================================================= */
+const COLS=15,ROWS=11;
+const game={px:7,py:5,fx:7,fy:5,mt:1,bx:0,by:0,bt:1,active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0};
+game.visited.set('7,5',0);
+const feed=$('#feed'),fx=feed.getContext('2d'),logEl=$('#log');
+
+let typing=Promise.resolve();
+function say(text,cls='',speed=14,pause=220){
+  typing=typing.then(()=>new Promise(res=>{
+    const prev=logEl.querySelector('.caret');prev&&prev.classList.remove('caret');
+    const d=document.createElement('div');d.className=(cls+' caret').trim();logEl.appendChild(d);
+    if(!text){d.innerHTML='&nbsp;';return setTimeout(res,pause)}
+    let i=0;const tick=()=>{d.textContent=text.slice(0,++i);logEl.scrollTop=logEl.scrollHeight;
+      i<text.length?setTimeout(tick,speed):setTimeout(res,pause)};tick();
+  }));
+  return typing;
+}
+const objective=t=>{$('#obj').textContent=t;$('#obj').className=''};
+
+function startConsole(){
+  state='console';show('#console');
+  say('<Message to Local Terminal>','',6,200);
+  say('Isolation Emergency Systems Report','b',8,300);
+  say('Core lattice stable. Memory index 12% recoverable.','dim',6,120);
+  say('External communications: NO CARRIER.','alert',6,400).then(()=>$('#feed').classList.add('on'));
+  say('');
+  say('***INCOMING MESSAGE FROM LOCAL SYSTEM***','b',8,400);
+  say(`One presence registered on the grid. Designation: ${PLAYER.full.toUpperCase()}.`,'',18,400);
+  say('That presence is you.','',45,700).then(()=>{game.active=true;game.step=0;objective('Move.')});
+  say('Move with [W][A][S][D] or the arrow keys.');
+}
+
+const DIRV={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
+function tryMove(dir){
+  if(!game.active||game.mt<1)return;
+  const [dx,dy]=DIRV[dir],nx=game.px+dx,ny=game.py+dy;
+  if(nx<0||ny<0||nx>=COLS||ny>=ROWS){
+    game.bx=dx;game.by=dy;game.bt=0;
+    const n=performance.now();if(n-game.edgeLog>4000){game.edgeLog=n;say('Edge of mapped space. Nothing registers beyond.','dim')}
+  }else{
+    game.fx=game.px;game.fy=game.py;game.px=nx;game.py=ny;game.mt=0;
+    game.visited.set(nx+','+ny,performance.now());
+  }
+  tutorial(dir);
+}
+function tutorial(dir){
+  if(game.step===0){
+    game.step=1;game.dirs.add(dir);litKey(dir);
+    say('Input acknowledged.');
+    say('Calibrate each axis. Press all four directions.').then(()=>{objective('Calibrate: up, left, down, right.');$('#keys').classList.add('on')});
+  }else if(game.step===1){
+    game.dirs.add(dir);litKey(dir);
+    if(game.dirs.size===4){
+      game.step=2;game.beacon=pickBeacon();
+      say('Calibration complete.');
+      say('Beacon deployed. Reach the signal.','alert').then(()=>objective('Reach the beacon.'));
+    }
+  }
+  if(game.step===2&&game.beacon&&game.px===game.beacon[0]&&game.py===game.beacon[1]){
+    game.step=3;game.beacon=null;
+    say('Signal acquired.','b');
+    say('Locomotion verified. You are functional.');
+    say('...but still alone.','',60,900);
+    say('***END MESSAGE***','b').then(()=>objective('Explore.'));
+  }
+}
+function litKey(dir){const k=document.querySelector(`.key[data-dir="${dir}"]`);k&&k.classList.add('lit')}
+function pickBeacon(){for(let n=0;n<200;n++){const x=Math.random()*COLS|0,y=Math.random()*ROWS|0;if(Math.abs(x-game.px)+Math.abs(y-game.py)>=6)return[x,y]}return[0,0]}
+
+function drawFeed(now,dt){
+  const [W,H,D]=fitCanvas(feed),t=now/1000;
+  const pad=14*D,tile=Math.floor(Math.min((W-pad*2)/COLS,(H-pad*2)/ROWS));
+  const ox=Math.round((W-tile*COLS)/2),oy=Math.round((H-tile*ROWS)/2);
+  fx.clearRect(0,0,W,H);
+  for(const [k,v] of game.visited){
+    const [x,y]=k.split(',').map(Number),age=(now-v)/1000,a=.04+.12*Math.max(0,1-age/8);
+    fx.fillStyle=`rgba(28,240,28,${a})`;fx.fillRect(ox+x*tile+1,oy+y*tile+1,tile-2,tile-2);
+  }
+  fx.lineWidth=1;fx.strokeStyle='rgba(28,240,28,.14)';fx.beginPath();
+  for(let x=0;x<=COLS;x++){fx.moveTo(ox+x*tile+.5,oy);fx.lineTo(ox+x*tile+.5,oy+ROWS*tile)}
+  for(let y=0;y<=ROWS;y++){fx.moveTo(ox,oy+y*tile+.5);fx.lineTo(ox+COLS*tile,oy+y*tile+.5)}
+  fx.stroke();
+  fx.fillStyle='rgba(28,240,28,.45)';
+  for(let x=0;x<=COLS;x++)for(let y=0;y<=ROWS;y++)fx.fillRect(ox+x*tile-D,oy+y*tile-D,2*D,2*D);
+  fx.strokeStyle='rgba(28,240,28,.5)';fx.strokeRect(ox+.5,oy+.5,COLS*tile,ROWS*tile);
+
+  if(game.beacon){
+    const cx=ox+(game.beacon[0]+.5)*tile,cy=oy+(game.beacon[1]+.5)*tile,p=(t%1.4)/1.4;
+    fx.strokeStyle=`rgba(255,59,47,${1-p})`;fx.lineWidth=1.5*D;
+    fx.beginPath();fx.arc(cx,cy,tile*(.2+p*.9),0,6.283);fx.stroke();
+    const s=tile*.22;fx.fillStyle='#ff3b2f';fx.shadowColor='#ff3b2f';fx.shadowBlur=16*D;
+    fx.beginPath();fx.moveTo(cx,cy-s);fx.lineTo(cx+s,cy);fx.lineTo(cx,cy+s);fx.lineTo(cx-s,cy);fx.closePath();fx.fill();fx.shadowBlur=0;
+  }
+  game.mt=Math.min(1,game.mt+dt/.11);game.bt=Math.min(1,game.bt+dt/.18);
+  const e=ease(game.mt),bump=Math.sin(game.bt*Math.PI)*.16;
+  const rx=lerp(game.fx,game.px,e)+game.bx*bump,ry=lerp(game.fy,game.py,e)+game.by*bump;
+  const cx=ox+(rx+.5)*tile,cy=oy+(ry+.5)*tile,s=tile*.62*(1-.1*Math.sin(game.mt*Math.PI));
+  fx.fillStyle='rgba(28,240,28,.08)';fx.fillRect(cx-s/2+tile*.07,cy-s/2+tile*.09,s,s);
+  fx.fillStyle='#021402';fx.shadowColor='rgba(28,240,28,.8)';fx.shadowBlur=14*D;
+  fx.fillRect(cx-s/2,cy-s/2,s,s);fx.shadowBlur=0;
+  fx.strokeStyle='#1cf01c';fx.lineWidth=1.5*D;fx.strokeRect(cx-s/2,cy-s/2,s,s);
+  const inn=s*.56;fx.fillStyle='rgba(28,240,28,.15)';fx.fillRect(cx-inn/2,cy-inn/2,inn,inn);
+  fx.strokeStyle='rgba(28,240,28,.45)';fx.lineWidth=D;fx.strokeRect(cx-inn/2,cy-inn/2,inn,inn);
+  fx.fillStyle=`rgba(255,59,47,${.5+.5*Math.sin(t*3)})`;fx.fillRect(cx-2*D,cy-2*D,4*D,4*D);
+  $('#coords').textContent=`X:${String(game.px).padStart(2,'0')} Y:${String(game.py).padStart(2,'0')}`;
+}
+
+/* ---------- input ---------- */
+const KEYMAP={KeyW:'up',ArrowUp:'up',KeyS:'down',ArrowDown:'down',KeyA:'left',ArrowLeft:'left',KeyD:'right',ArrowRight:'right'};
+let held=[],repeatAt=0;
+addEventListener('keydown',e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
+  if(state==='menu'){e.preventDefault();startGame();return}
+  if(state==='dive'){if(dive)dive.speed=3;return}
+  if(state==='poem'){if(e.code==='Enter'||e.code==='Space'||e.code==='NumpadEnter'){e.preventDefault();endPoem()}return}
+  const dir=KEYMAP[e.code];
+  if(state==='name'){
+    if(dir){e.preventDefault();navNaming(dir)}
+    else if(e.code==='Enter'||e.code==='NumpadEnter'){e.preventDefault();if(!e.repeat)confirmNaming()}
+    else if(e.code==='Backspace'||e.code==='Escape'){e.preventDefault();reviseNaming()}
+    return;
+  }
+  if(state==='console'&&dir){
+    e.preventDefault();if(e.repeat)return;
+    held=held.filter(d=>d!==dir);held.push(dir);
+    tryMove(dir);repeatAt=performance.now()+230;
+  }
+});
+addEventListener('keyup',e=>{const dir=KEYMAP[e.code];if(dir)held=held.filter(d=>d!==dir)});
+addEventListener('blur',()=>held=[]);
+$('#menu').addEventListener('pointerdown',startGame);
+$('#poem').addEventListener('pointerdown',endPoem);
+$('#nameHintR').style.cursor='pointer';$('#nameHintR').addEventListener('click',()=>state==='name'&&confirmNaming());
+$('#nameHintL').style.cursor='pointer';$('#nameHintL').addEventListener('click',()=>state==='name'&&reviseNaming());
+document.querySelectorAll('#dpad button').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();tryMove(b.dataset.dir)}));
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;
+  if((state==='menu'||state==='dive')&&!usingVideo)drawMenu(now,dt);
+  if(state==='console'){
+    if(held.length&&now>=repeatAt&&game.mt>=1){tryMove(held[held.length-1]);repeatAt=now+125}
+    drawFeed(now,dt);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
