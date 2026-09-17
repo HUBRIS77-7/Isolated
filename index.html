@@ -104,10 +104,10 @@ canvas{display:block}
 <section id="menu" class="screen">
   <canvas id="menuCanvas"></canvas>
   <video id="menuVideo" muted playsinline preload="auto"></video>
-  <div class="corner">SIGNAL ▪ LOST<br>NODE 07<br>T+ <span id="clock">00:00:00</span></div>
+  <div class="corner">RECOVERY UNIT 07<br>NODE 77<br>T+ <span id="clock">00:00:00</span></div>
   <div class="title">
     <h1>ISOLATION</h1>
-    <div class="sub">a single presence on an empty grid</div>
+    <div class="sub">A Collection</div>
     <div class="press">PRESS <b>ANY KEY</b></div>
   </div>
 </section>
@@ -115,7 +115,7 @@ canvas{display:block}
 <!-- ===== POEM ===== -->
 <section id="poem" class="screen term-screen">
   <div class="term">
-    <div class="term-bar"><span>ISOLATION/OS 07 (local session)</span><span id="stamp1">0000 00.00.0000</span></div>
+    <div class="term-bar"><span>RECOVERY UNIT 07 (CONNECTION INTERUPTED)</span><span id="stamp1">0000 00.00.0000</span></div>
     <div class="term-body" id="poemText"></div>
     <div class="term-bar"><span></span><span>Return/Enter to Skip</span></div>
   </div>
@@ -124,11 +124,11 @@ canvas{display:block}
 <!-- ===== NAME ===== -->
 <section id="naming" class="screen term-screen">
   <div class="term">
-    <div class="term-bar"><span>ISOLATION/OS 07 (identity recovery)</span><span id="stamp2">0000 00.00.0000</span></div>
+    <div class="term-bar"><span>RECOVERY UNIT 07 (NAME REGISTER)</span><span id="stamp2">0000 00.00.0000</span></div>
     <div class="term-body" id="nameBody">
-      <p>&lt;Personnel Record: CORRUPTED&gt;</p>
-      <p class="b">Identity Reconstruction</p>
-      <p>Your name did not survive. Fragments of what it <span class="b">meant</span> did. Select one meaning from each record to rebuild it.</p>
+      <p>&lt;ASSIGNED NAME: CORRUPTED&gt;</p>
+      <p class="b">Name Reassignment</p>
+      <p>Your previously assigned Symbolic Name has been corrupted. Please select another symbolic name.</p>
       <div class="cols" id="cols"></div>
       <p class="dim">RECONSTRUCTED MEANING:</p>
       <p id="composite"></p>
@@ -140,7 +140,7 @@ canvas{display:block}
 <!-- ===== TUTORIAL CONSOLE ===== -->
 <section id="console" class="screen term-screen">
   <div class="term wide">
-    <div class="term-bar"><span>ISOLATION/OS 07 (local console)</span><span id="stamp3">0000 00.00.0000</span></div>
+    <div class="term-bar"><span>RECOVERY UNIT 07 (VIEWPORT)</span><span id="stamp3">0000 00.00.0000</span></div>
     <div class="term-body split">
       <div class="box"><h4>&lt;Environment Feed&gt;</h4><canvas id="feed"></canvas></div>
       <div class="rcol">
@@ -172,13 +172,14 @@ const CONFIG = {
 
 /* Paste your poem here. Each string is one line; '' makes a stanza break. */
 const POEM = [
-  '[ POEM TITLE ]',
+  'NAME',
   '',
-  '[ paste line one here ]',
-  '[ paste line two here ]',
-  '[ paste line three here ]',
-  '',
-  '[ paste line four here ]',
+  'A Helpful son of the Bishop’s Servant who is a tailor.',
+  'Yet.',
+  'Not a son of a bishop’s servant',
+  'Nor a tailor.',
+  'And barely helpful.',
+  'So who am I?',
 ];
 
 /* Names are never shown while choosing — only their meanings. */
@@ -451,14 +452,14 @@ const objective=t=>{$('#obj').textContent=t;$('#obj').className=''};
 
 function startConsole(){
   state='console';show('#console');
-  say('<Message to Local Terminal>','',6,200);
-  say('Isolation Emergency Systems Report','b',8,300);
-  say('Core lattice stable. Memory index 12% recoverable.','dim',6,120);
-  say('External communications: NO CARRIER.','alert',6,400).then(()=>$('#feed').classList.add('on'));
+  say('<MESSAGE FOR RECOVERY UNIT 07>','',6,200);
+  say('STATUS','b',8,300);
+  say('LONG-TERM TRAVEL DAMAGE: MINIMAL. SUCCESSFUL ARRIVAL','dim',6,120);
+  say('WARNING: NO LONG-RANGE SIGNAL CARRIER.','alert',6,400).then(()=>$('#feed').classList.add('on'));
   say('');
-  say('***INCOMING MESSAGE FROM LOCAL SYSTEM***','b',8,400);
-  say(`One presence registered on the grid. Designation: ${PLAYER.full.toUpperCase()}.`,'',18,400);
-  say('That presence is you.','',45,700).then(()=>{game.active=true;game.step=0;objective('Move.')});
+  say('***ACTIVATING PRERECORDED MESSAGE***','b',8,400);
+  say(`Name Registered Identified: ${PLAYER.full.toUpperCase()}. UNIT COMPUTATIONAL STATUS NOTICED. MISSION STILL WITHIN ACCEPTABLE PARAMETERS OF SUSTAINMENT`,'',18,400);
+  say('CONTINUE','',45,700).then(()=>{game.active=true;game.step=0;objective('Move.')});
   say('Move with [W][A][S][D] or the arrow keys.');
 }
 
@@ -478,21 +479,21 @@ function tryMove(dir){
 function tutorial(dir){
   if(game.step===0){
     game.step=1;game.dirs.add(dir);litKey(dir);
-    say('Input acknowledged.');
+    say('SUCCESSFUL SIGNAL COMMUNICATED TO MOTORS.');
     say('Calibrate each axis. Press all four directions.').then(()=>{objective('Calibrate: up, left, down, right.');$('#keys').classList.add('on')});
   }else if(game.step===1){
     game.dirs.add(dir);litKey(dir);
     if(game.dirs.size===4){
       game.step=2;game.beacon=pickBeacon();
-      say('Calibration complete.');
-      say('Beacon deployed. Reach the signal.','alert').then(()=>objective('Reach the beacon.'));
+      say('CALIBRATION SUCCESFUL.');
+      say('NOTICE: LANDING BEACON AND UNIT DESCREPENCY DETECTED. DEPLOYING SIGNAL.','alert').then(()=>objective('Reach the beacon.'));
     }
   }
   if(game.step===2&&game.beacon&&game.px===game.beacon[0]&&game.py===game.beacon[1]){
     game.step=3;game.beacon=null;
-    say('Signal acquired.','b');
-    say('Locomotion verified. You are functional.');
-    say('...but still alone.','',60,900);
+    say('LANDING BEACON REAQURRIED.','b');
+    say('LOCOMOTIONAL STATUS VERIFIED.');
+    say('CONTINUE ON.','',60,900);
     say('***END MESSAGE***','b').then(()=>objective('Explore.'));
   }
 }
