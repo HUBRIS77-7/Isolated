@@ -92,9 +92,22 @@ canvas{display:block}
 .key.lit{background:var(--g);color:#000;border-color:var(--g);text-shadow:none}
 @media (max-width:760px){.split{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr)}#console{padding-bottom:140px}}
 
+/* the tiny window a terminal opens into */
+#tiny{position:fixed;inset:0;z-index:35;display:none;place-items:center;background:rgba(0,0,0,.55);padding:16px}
+#tiny.on{display:grid}
+.tiny-win{width:min(460px,100%);max-height:70vh;display:flex;flex-direction:column;background:#000;
+  border:1px solid var(--gdim);box-shadow:0 0 30px rgba(28,240,28,.14);animation:termOn .25s ease-out}
+.tiny-win .term-bar{font-size:13px;background:#031a03;color:var(--g);border-bottom:1px solid var(--gfaint)}
+.tiny-body{padding:10px 11px;overflow-y:auto;font-size:14px;line-height:1.35;text-shadow:0 0 6px rgba(28,240,28,.35)}
+.tiny-body p{margin:0 0 .8em}
+.tiny-body p:last-child{margin-bottom:0}
+.tiny-foot{flex:none;border-top:1px solid var(--gfaint);padding:5px 11px;font-size:12px;color:var(--gdim);
+  display:flex;justify-content:space-between;gap:10px}
+
 #dpad{display:none;position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:30;grid-template-columns:repeat(3,54px);grid-template-rows:repeat(2,54px);gap:6px}
 #dpad button{font:inherit;font-size:18px;background:#000;color:var(--g);border:1px solid var(--gdim);touch-action:manipulation}
 #dpad [data-dir=up]{grid-column:2}#dpad [data-dir=left]{grid-column:1;grid-row:2}#dpad [data-dir=down]{grid-column:2;grid-row:2}#dpad [data-dir=right]{grid-column:3;grid-row:2}
+#dpad [data-act=use]{grid-column:3;grid-row:1;border-color:var(--amber);color:var(--amber)}
 @media (pointer:coarse){#console.show ~ #dpad{display:grid}}
 </style>
 </head>
@@ -147,14 +160,23 @@ canvas{display:block}
         <div class="box" style="flex:1"><h4>&lt;Message Log&gt;</h4><div id="log"></div></div>
         <div class="box" id="objWrap"><h4>&lt;Objective&gt;</h4>
           <div id="obj" class="dim">—</div>
-          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div></div>
+          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div></div>
         </div>
       </div>
     </div>
-    <div class="term-bar"><span>WASD/Arrows to Move</span><span id="coords">X:00 Y:00</span></div>
+    <div class="term-bar"><span>WASD/Arrows to Move · [E] to Interact</span><span id="coords">X:00 Y:00</span></div>
   </div>
 </section>
-<div id="dpad"><button data-dir="up">▲</button><button data-dir="left">◀</button><button data-dir="down">▼</button><button data-dir="right">▶</button></div>
+<div id="dpad"><button data-dir="up">▲</button><button data-act="use">E</button><button data-dir="left">◀</button><button data-dir="down">▼</button><button data-dir="right">▶</button></div>
+
+<!-- what a terminal opens into: one small window of text -->
+<div id="tiny">
+  <div class="tiny-win">
+    <div class="term-bar"><span id="tinyTitle">CONSOLE</span><span>[E] / ESC</span></div>
+    <div class="tiny-body" id="tinyBody"></div>
+    <div class="tiny-foot"><span id="tinyNote"></span><span>NODE 77</span></div>
+  </div>
+</div>
 
 <div id="flash"></div>
 <div class="crt"></div>
@@ -454,6 +476,8 @@ if(typeof ISO==='undefined'){
       rows:Array.from({length:o.h},()=>'.'.repeat(o.w))}),
     parse:t=>JSON.parse(t),
     drawTile:(c,ch,px,py,s)=>{if(ch===' ')return;c.fillStyle='rgba(28,240,28,.045)';c.fillRect(px,py,s,s)},
+    DIRS:{up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]},
+    propsAt:()=>null, signalIndex:()=>({}), tramPath:(m,x,y)=>[{x,y}], key:(x,y)=>x+','+y,
   };
 }
 function loadMap(){
@@ -465,12 +489,53 @@ function loadMap(){
 }
 const MAP=loadMap();
 const COLS=MAP.w,ROWS=MAP.h;
+const K=(x,y)=>x+','+y;
 const tileDef=(x,y)=>ISO.at(MAP,x,y);
-const walkableAt=(x,y)=>ISO.walkable(MAP,x,y);
+const propsOf=(x,y)=>ISO.propsAt(MAP,x,y)||{};
 
-const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,bx:0,by:0,bt:1,
-  active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0,toldAbout:new Set()};
-game.visited.set(MAP.spawn.x+','+MAP.spawn.y,0);
+/* ---------- powered blocks ----------
+   The rows say what is where. Everything that can change while the unit is
+   walking about lives here instead, so a reset is one call to buildWorld(). */
+const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map()};
+const TRAM_STEP=.34;                       // seconds the platform takes per tile
+function buildWorld(){
+  world.open.clear(); world.trams.length=0; world.lit.clear();
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+    const t=tileDef(x,y), p=propsOf(x,y);
+    if(t.signal==='toggle'&&p.open) world.open.add(K(x,y));
+    if(t.signal==='move') world.trams.push({home:K(x,y), path:ISO.tramPath(MAP,x,y),
+                                            i:0, dest:0, ax:x, ay:y, t:1});
+  }
+  indexTrams();
+}
+function indexTrams(){
+  world.tramAt.clear();
+  for(const tr of world.trams){const c=tr.path[tr.i];world.tramAt.set(K(c.x,c.y),tr)}
+}
+const tramOn=(x,y)=>world.tramAt.get(K(x,y))||null;
+
+/* What the unit can stand on: the tile, plus whatever the power has changed. */
+function walkableAt(x,y){
+  if(tramOn(x,y))return true;                        // the platform is the floor
+  const t=tileDef(x,y);
+  if(t.signal==='toggle')return world.open.has(K(x,y));
+  if(t.signal==='move')return false;                 // bare rail; platform is elsewhere
+  return t.walk;
+}
+/* What stops a platform: structure, a closed bulkhead, another platform. */
+function tramBlocked(c){
+  if(!ISO.inside(MAP,c.x,c.y)||tramOn(c.x,c.y))return true;
+  const ch=ISO.tileAt(MAP,c.x,c.y), t=ISO.def(ch);
+  if(ch===' '||t.walk)return false;                  // open span or plain ground
+  if(t.signal==='toggle')return !world.open.has(K(c.x,c.y));
+  return t.signal!=='move';
+}
+
+const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,mdur:.11,bx:0,by:0,bt:1,
+  active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0,toldAbout:new Set(),
+  face:'down',dead:false,sink:0,useLog:0,lastObj:''};
+game.visited.set(K(MAP.spawn.x,MAP.spawn.y),0);
+buildWorld();
 const view={x:0,y:0,ready:false};   // camera, in tiles
 const feed=$('#feed'),fx=feed.getContext('2d'),logEl=$('#log');
 
@@ -501,19 +566,126 @@ function startConsole(){
 }
 
 const DIRV={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
+function stepTo(nx,ny,dur){
+  game.fx=game.px;game.fy=game.py;game.px=nx;game.py=ny;game.mt=0;game.mdur=dur;
+  game.visited.set(K(nx,ny),performance.now());
+}
 function tryMove(dir){
-  if(!game.active||game.mt<1)return;
+  if(!game.active||game.dead||term.on||game.mt<1)return;
+  game.face=dir;
   const [dx,dy]=DIRV[dir],nx=game.px+dx,ny=game.py+dy,t=tileDef(nx,ny);
   if(!walkableAt(nx,ny)){
     game.bx=dx;game.by=dy;game.bt=0;
-    const n=performance.now();
-    if(t.bump&&n-game.edgeLog>4000){game.edgeLog=n;say(t.bump,t.alert?'alert':'dim')}
+    const n=performance.now(), line=(t.signal==='move')?t.away:t.bump;
+    if(line&&n-game.edgeLog>4000){game.edgeLog=n;say(line,t.alert?'alert':'dim')}
   }else{
-    game.fx=game.px;game.fy=game.py;game.px=nx;game.py=ny;game.mt=0;
-    game.visited.set(nx+','+ny,performance.now());
+    stepTo(nx,ny,.11);
     if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
+    if(t.deadly&&!tramOn(nx,ny))return die(t.deadly);
   }
   tutorial(dir);
+}
+
+/* ---------- [E]: buttons and terminals ----------
+   The tile being faced answers first; otherwise anything else within reach. */
+function inReach(){
+  const f=DIRV[game.face]||[0,1], out=[[game.px+f[0],game.py+f[1]],[game.px,game.py]];
+  for(const d in DIRV) out.push([game.px+DIRV[d][0],game.py+DIRV[d][1]]);
+  return out;
+}
+function interact(){
+  if(term.on)return closeTerminal();
+  if(!game.active||game.dead)return;
+  litKey('use');
+  for(const [x,y] of inReach()){
+    const t=tileDef(x,y);
+    if(t.press==='button')return pressButton(x,y);
+    if(t.press==='terminal')return openTerminal(x,y);
+  }
+  const n=performance.now();
+  if(n-game.useLog>2500){game.useLog=n;say('Nothing within reach answers.','dim')}
+}
+function pressButton(x,y){
+  world.lit.set(K(x,y),performance.now());
+  const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  if(!p.target)return say('Control'+tag+' pressed. No line runs from it.','dim');
+  const t=tileDef(p.target.x,p.target.y);
+  if(t.signal==='toggle')return driveBulkhead(p.target.x,p.target.y,tag);
+  if(t.signal==='move')return callTram(p.target.x,p.target.y,tag);
+  say('Control'+tag+' pressed. Nothing on the far end answers.','dim');
+}
+function driveBulkhead(x,y,tag){
+  const k=K(x,y);
+  if(!world.open.has(k)){world.open.add(k);return say('Bulkhead'+tag+' driven open.')}
+  if(game.px===x&&game.py===y)return say('Bulkhead'+tag+' obstructed. It holds open.','dim');
+  world.open.delete(k);say('Bulkhead'+tag+' driven shut.','dim');
+}
+function callTram(x,y,tag){
+  const tr=world.trams.find(t=>t.home===K(x,y));
+  if(!tr)return say('Signal sent. Nothing on that rail answers.','dim');
+  tr.dest=tr.dest===0?tr.path.length-1:0;
+  say('Platform'+tag+' called. Under way.','dim');
+}
+
+/* One tile at a time, carrying whoever is standing on it. */
+function updateTrams(dt){
+  for(const tr of world.trams){
+    if(tr.t<1){tr.t=Math.min(1,tr.t+dt/TRAM_STEP);continue}
+    if(tr.i===tr.dest)continue;
+    const step=tr.dest>tr.i?1:-1, here=tr.path[tr.i], next=tr.path[tr.i+step];
+    if(tramBlocked(next)){
+      tr.dest=tr.i;
+      const n=performance.now();
+      if(n-game.edgeLog>4000){game.edgeLog=n;say('Platform stalled. Rail is obstructed.','dim')}
+      continue;
+    }
+    const riding=game.px===here.x&&game.py===here.y;
+    tr.ax=here.x;tr.ay=here.y;tr.i+=step;tr.t=0;
+    indexTrams();
+    if(riding)stepTo(next.x,next.y,TRAM_STEP);
+  }
+}
+/* The ground moved rather than the unit — check what it is standing on now. */
+function checkFooting(){
+  if(!game.active||game.dead)return;
+  const t=tileDef(game.px,game.py);
+  if(t.deadly&&!tramOn(game.px,game.py))die(t.deadly);
+}
+
+/* ---------- terminals ---------- */
+const term={on:false, read:new Set()};
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function openTerminal(x,y){
+  const p=propsOf(x,y), title=p.title||'UNLABELLED CONSOLE';
+  term.on=true;
+  $('#tinyTitle').textContent=title.toUpperCase();
+  $('#tinyBody').innerHTML=String(p.text||'No readable record.')
+    .split(/\n+/).map(l=>'<p>'+esc(l)+'</p>').join('');
+  $('#tinyNote').textContent=p.desktop?'DESKTOP PRESENT — INTERFACE NOT YET BUILT':'READ ONLY';
+  $('#tiny').classList.add('on');
+  if(!term.read.has(K(x,y))){term.read.add(K(x,y));say('Console reads: '+title+'.','dim')}
+}
+function closeTerminal(){term.on=false;$('#tiny').classList.remove('on')}
+
+/* ---------- ending the run ---------- */
+function die(reason){
+  if(game.dead)return;
+  game.dead=true;game.active=false;game.sink=0;closeTerminal();
+  say(reason,'alert');
+  say('CHASSIS UNRECOVERABLE. SIGNAL LOST.','alert');
+  game.lastObj=$('#obj').textContent;
+  objective('SIGNAL LOST. [R] to re-initialise.');
+  $('#obj').className='alert';
+}
+function respawn(){
+  if(!game.dead)return;
+  game.dead=false;game.sink=0;game.mt=1;game.mdur=.11;game.bt=1;game.face='down';
+  game.px=game.fx=MAP.spawn.x;game.py=game.fy=MAP.spawn.y;
+  buildWorld();
+  game.visited.set(K(game.px,game.py),performance.now());
+  game.active=true;
+  say('Re-initialised at the landing record.','dim');
+  objective(game.lastObj||'Explore.');
 }
 function tutorial(dir){
   if(game.step===0){
@@ -532,14 +704,21 @@ function tutorial(dir){
     game.step=3;game.beacon=null;
     say('LANDING BEACON REAQURRIED.','b');
     say('LOCOMOTIONAL STATUS VERIFIED.');
+    say('Controls, consoles and platform calls answer [E] from an adjacent tile.');
     say('CONTINUE ON.','',60,900);
     say('***END MESSAGE***','b').then(()=>objective('Explore.'));
   }
 }
 function litKey(dir){const k=document.querySelector(`.key[data-dir="${dir}"]`);k&&k.classList.add('lit')}
+/* An elevator block is a beacon that an author placed as a tile. */
+function beaconSpots(){
+  const out=MAP.beacons.map(b=>({x:b.x,y:b.y}));
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++) if(tileDef(x,y).beacon) out.push({x,y});
+  return out;
+}
 function pickBeacon(){
   const reach=ISO.reachable(MAP,{x:game.px,y:game.py});
-  const placed=MAP.beacons.filter(b=>reach.has(b.x+','+b.y));
+  const placed=beaconSpots().filter(b=>reach.has(K(b.x,b.y)));
   if(placed.length){const b=placed[Math.random()*placed.length|0];return[b.x,b.y]}
   const far=[...reach].map(k=>k.split(',').map(Number)).filter(([x,y])=>Math.abs(x-game.px)+Math.abs(y-game.py)>=6);
   if(far.length){return far[Math.random()*far.length|0]}
@@ -551,7 +730,8 @@ function drawFeed(now,dt){
   const [W,H,D]=fitCanvas(feed),t=now/1000;
 
   /* advance the unit first — the camera follows where it is actually drawn */
-  game.mt=Math.min(1,game.mt+dt/.11);game.bt=Math.min(1,game.bt+dt/.18);
+  game.mt=Math.min(1,game.mt+dt/game.mdur);game.bt=Math.min(1,game.bt+dt/.18);
+  if(game.dead)game.sink=Math.min(1,game.sink+dt/.55);
   const e=ease(game.mt),bump=Math.sin(game.bt*Math.PI)*.16;
   const rx=lerp(game.fx,game.px,e)+game.bx*bump,ry=lerp(game.fy,game.py,e)+game.by*bump;
 
@@ -576,7 +756,9 @@ function drawFeed(now,dt){
   fx.clearRect(0,0,W,H);
   for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
     const px=ox+x*tile,py=oy+y*tile;
-    ISO.drawTile(fx,ISO.tileAt(MAP,x,y),px,py,tile,D);
+    /* a platform is drawn where it actually is, not where its rows entry sits */
+    if(tileDef(x,y).signal!=='move')
+      ISO.drawTile(fx,ISO.tileAt(MAP,x,y),px,py,tile,D,{open:world.open.has(K(x,y))});
     const v=game.visited.get(x+','+y);
     if(v!==undefined){
       const age=(now-v)/1000;
@@ -594,6 +776,16 @@ function drawFeed(now,dt){
         fx.fillRect(ox+x*tile-D,oy+y*tile-D,2*D,2*D);
   }
 
+  drawRails(ox,oy,tile,D);
+  drawTrams(ox,oy,tile,D);
+  world.lit.forEach((when,k)=>{                       // a control answering a press
+    const age=(now-when)/450;
+    if(age>1)return void world.lit.delete(k);
+    const [x,y]=k.split(',').map(Number);
+    fx.strokeStyle=`rgba(255,180,74,${1-age})`;fx.lineWidth=2*D;
+    fx.strokeRect(ox+x*tile+.5,oy+y*tile+.5,tile-1,tile-1);
+  });
+
   if(game.beacon){
     const cx=ox+(game.beacon[0]+.5)*tile,cy=oy+(game.beacon[1]+.5)*tile,p=(t%1.4)/1.4;
     fx.strokeStyle=`rgba(255,59,47,${1-p})`;fx.lineWidth=1.5*D;
@@ -602,7 +794,8 @@ function drawFeed(now,dt){
     fx.beginPath();fx.moveTo(cx,cy-s);fx.lineTo(cx+s,cy);fx.lineTo(cx,cy+s);fx.lineTo(cx-s,cy);fx.closePath();fx.fill();fx.shadowBlur=0;
   }
 
-  const cx=ox+(rx+.5)*tile,cy=oy+(ry+.5)*tile,s=tile*.62*(1-.1*Math.sin(game.mt*Math.PI));
+  const cx=ox+(rx+.5)*tile,cy=oy+(ry+.5)*tile,
+        s=tile*.62*(1-.1*Math.sin(game.mt*Math.PI))*(1-game.sink*.9);
   fx.fillStyle='rgba(28,240,28,.08)';fx.fillRect(cx-s/2+tile*.07,cy-s/2+tile*.09,s,s);
   fx.fillStyle='#021402';fx.shadowColor='rgba(28,240,28,.8)';fx.shadowBlur=14*D;
   fx.fillRect(cx-s/2,cy-s/2,s,s);fx.shadowBlur=0;
@@ -610,7 +803,49 @@ function drawFeed(now,dt){
   const inn=s*.56;fx.fillStyle='rgba(28,240,28,.15)';fx.fillRect(cx-inn/2,cy-inn/2,inn,inn);
   fx.strokeStyle='rgba(28,240,28,.45)';fx.lineWidth=D;fx.strokeRect(cx-inn/2,cy-inn/2,inn,inn);
   fx.fillStyle=`rgba(255,59,47,${.5+.5*Math.sin(t*3)})`;fx.fillRect(cx-2*D,cy-2*D,4*D,4*D);
+
+  if(game.dead){
+    const u=Math.min(W,H);
+    fx.fillStyle=`rgba(24,0,0,${.6*game.sink})`;fx.fillRect(0,0,W,H);
+    fx.textAlign='center';fx.textBaseline='middle';
+    fx.fillStyle=`rgba(255,59,47,${game.sink})`;
+    fx.font='700 '+Math.round(u*.08)+'px "Courier Prime", monospace';
+    fx.fillText('SIGNAL LOST',W/2,H/2-u*.03);
+    fx.fillStyle=`rgba(255,59,47,${.6*game.sink})`;
+    fx.font=Math.round(u*.035)+'px "Courier Prime", monospace';
+    fx.fillText('[R] TO RE-INITIALISE',W/2,H/2+u*.055);
+  }
   $('#coords').textContent=`X:${String(game.px).padStart(2,'0')} Y:${String(game.py).padStart(2,'0')}`;
+}
+
+/* The rail a platform runs on: visible even where the platform is not. */
+function drawRails(ox,oy,tile,D){
+  if(!world.trams.length)return;
+  fx.strokeStyle='rgba(191,247,220,.22)';fx.lineWidth=Math.max(1,D);
+  fx.setLineDash([tile*.2,tile*.2]);
+  for(const tr of world.trams){
+    const a=tr.path[0],b=tr.path[tr.path.length-1];
+    fx.beginPath();
+    fx.moveTo(ox+(a.x+.5)*tile,oy+(a.y+.5)*tile);
+    fx.lineTo(ox+(b.x+.5)*tile,oy+(b.y+.5)*tile);
+    fx.stroke();
+  }
+  fx.setLineDash([]);
+}
+function drawTrams(ox,oy,tile,D){
+  const t=ISO.def('T');
+  for(const tr of world.trams){
+    const c=tr.path[tr.i],e=ease(tr.t);
+    const px=ox+lerp(tr.ax,c.x,e)*tile,py=oy+lerp(tr.ay,c.y,e)*tile;
+    fx.fillStyle=t.fill;fx.fillRect(px,py,tile,tile);
+    fx.strokeStyle=t.line;fx.lineWidth=Math.max(1.5,1.5*D);
+    fx.strokeRect(px+.5,py+.5,tile-1,tile-1);
+    if(tile>10){
+      fx.fillStyle=t.line;fx.font=Math.round(tile*.62)+'px "Courier Prime", monospace';
+      fx.textAlign='center';fx.textBaseline='middle';
+      fx.fillText(t.glyph,px+tile/2,py+tile/2+tile*.04);
+    }
+  }
 }
 
 /* ---------- input ---------- */
@@ -628,10 +863,15 @@ addEventListener('keydown',e=>{
     else if(e.code==='Backspace'||e.code==='Escape'){e.preventDefault();reviseNaming()}
     return;
   }
-  if(state==='console'&&dir){
-    e.preventDefault();if(e.repeat)return;
-    held=held.filter(d=>d!==dir);held.push(dir);
-    tryMove(dir);repeatAt=performance.now()+230;
+  if(state==='console'){
+    if(e.code==='KeyE'){e.preventDefault();if(!e.repeat)interact();return}
+    if(e.code==='Escape'&&term.on){e.preventDefault();closeTerminal();return}
+    if(e.code==='KeyR'&&game.dead){e.preventDefault();if(!e.repeat)respawn();return}
+    if(dir){
+      e.preventDefault();if(e.repeat)return;
+      held=held.filter(d=>d!==dir);held.push(dir);
+      tryMove(dir);repeatAt=performance.now()+230;
+    }
   }
 });
 addEventListener('keyup',e=>{const dir=KEYMAP[e.code];if(dir)held=held.filter(d=>d!==dir)});
@@ -640,13 +880,19 @@ $('#menu').addEventListener('pointerdown',startGame);
 $('#poem').addEventListener('pointerdown',endPoem);
 $('#nameHintR').style.cursor='pointer';$('#nameHintR').addEventListener('click',()=>state==='name'&&confirmNaming());
 $('#nameHintL').style.cursor='pointer';$('#nameHintL').addEventListener('click',()=>state==='name'&&reviseNaming());
-document.querySelectorAll('#dpad button').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();tryMove(b.dataset.dir)}));
+document.querySelectorAll('#dpad button').forEach(b=>b.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  if(b.dataset.act==='use')return game.dead?respawn():interact();
+  tryMove(b.dataset.dir);
+}));
+$('#tiny').addEventListener('pointerdown',e=>{if(e.target===$('#tiny'))closeTerminal()});
 
 let last=performance.now();
 function loop(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;
   if((state==='menu'||state==='dive')&&!usingVideo)drawMenu(now,dt);
   if(state==='console'){
+    updateTrams(dt);checkFooting();
     if(held.length&&now>=repeatAt&&game.mt>=1){tryMove(held[held.length-1]);repeatAt=now+125}
     drawFeed(now,dt);
   }
