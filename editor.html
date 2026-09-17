@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ISOLATION — Cartography</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#000;--g:#1cf01c;--gdim:#0c8f0c;--gfaint:#063806;--red:#ff3b2f;--redbar:#3a0000;--mdim:#4f8570;--amber:#ffb44a}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--g);overflow:hidden;
+  font-family:'Courier Prime','Courier New',Courier,ui-monospace,monospace;font-size:14px}
+.term{position:fixed;inset:0;display:flex;flex-direction:column;border:1px solid #5a0000}
+.term-bar{background:var(--redbar);color:var(--red);display:flex;justify-content:space-between;gap:12px;
+  padding:3px 10px;font-size:15px;white-space:nowrap;overflow:hidden;flex:none}
+.term-bar span{overflow:hidden;text-overflow:ellipsis}
+.body{flex:1;min-height:0;display:grid;grid-template-columns:262px minmax(0,1fr);gap:8px;padding:8px}
+.pane{border:1px solid var(--gfaint);min-height:0;display:flex;flex-direction:column}
+#side{overflow-y:auto;gap:0}
+.sec{border-bottom:1px solid var(--gfaint);padding:8px 9px}
+.sec:last-child{border-bottom:0}
+.sec h4{margin:0 0 7px;font-size:13px;font-weight:700;letter-spacing:.14em;color:var(--gdim)}
+canvas{display:block;flex:1;min-height:0;width:100%;cursor:crosshair;touch-action:none}
+button,select,input{font:inherit;background:#000;color:var(--g);border:1px solid var(--gdim);padding:3px 6px}
+button{cursor:pointer}
+button:hover{background:#031a03}
+button.on{background:var(--g);color:#000;border-color:var(--g)}
+input[type=number]{width:58px}
+input[type=text]{width:100%}
+.row{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:5px}
+.row:last-child{margin-bottom:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.pal{display:flex;flex-direction:column;gap:3px}
+.pal button{display:flex;align-items:center;gap:7px;text-align:left;padding:2px 5px;border-color:var(--gfaint)}
+.pal button.on{border-color:var(--g)}
+.sw{width:17px;height:17px;flex:none;border:1px solid var(--gdim);display:grid;place-items:center;font-size:12px;line-height:1}
+.k{color:var(--gdim);margin-left:auto;font-size:12px}
+.dim{color:var(--gdim)}
+.alert{color:var(--red)}
+.ok{color:var(--amber)}
+#issues{margin:6px 0 0;padding-left:16px}
+#issues li{margin-bottom:3px;line-height:1.25}
+.nudge{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;text-align:center}
+.nudge button{padding:2px 0}
+.crt{pointer-events:none;position:fixed;inset:0;z-index:50;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,.6) 100%)}
+#toast{position:fixed;left:50%;bottom:44px;transform:translateX(-50%);z-index:60;background:#000;border:1px solid var(--g);
+  padding:5px 14px;opacity:0;transition:opacity .25s;pointer-events:none}
+#toast.on{opacity:1}
+@media (max-width:820px){.body{grid-template-columns:1fr;grid-template-rows:minmax(0,260px) minmax(0,1fr)}}
+</style>
+</head>
+<body>
+<div class="term">
+  <div class="term-bar"><span>RECOVERY UNIT 07 (CARTOGRAPHY / SURFACE RECORD)</span><span id="stamp">0000 00.00.0000</span></div>
+  <div class="body">
+    <div class="pane" id="side">
+
+      <div class="sec">
+        <h4>RECORD</h4>
+        <div class="row"><input type="text" id="mName" placeholder="Sector name"></div>
+        <div class="row"><span class="dim">id</span><input type="text" id="mId" style="flex:1;width:auto" placeholder="tutorial"></div>
+        <div class="row grid2" style="display:grid">
+          <button id="bNew">New</button>
+          <button id="bOpen">Open file…</button>
+        </div>
+        <div class="row"><select id="bundled" style="flex:1"></select><button id="bLoad">Load</button></div>
+      </div>
+
+      <div class="sec">
+        <h4>TOOL</h4>
+        <div class="row grid2" style="display:grid">
+          <button data-tool="brush" class="on">Brush <span class="k">B</span></button>
+          <button data-tool="rect">Rect <span class="k">E</span></button>
+          <button data-tool="fill">Fill <span class="k">F</span></button>
+          <button data-tool="pick">Pick <span class="k">I</span></button>
+          <button data-tool="spawn">Spawn <span class="k">P</span></button>
+          <button data-tool="beacon">Beacon <span class="k">K</span></button>
+        </div>
+        <div class="row"><span class="dim">size</span><button id="bMinus">−</button><b id="bSize">1</b><button id="bPlus">+</button>
+          <span class="k">[ ]</span></div>
+      </div>
+
+      <div class="sec">
+        <h4>SURFACE</h4>
+        <div class="pal" id="pal"></div>
+        <div class="row dim" style="margin-top:6px;line-height:1.3">Right-drag erases to unmapped.</div>
+      </div>
+
+      <div class="sec">
+        <h4>EXTENT</h4>
+        <div class="row"><span class="dim">W</span><input type="number" id="mW" min="1" max="400">
+          <span class="dim">H</span><input type="number" id="mH" min="1" max="400"><button id="bApply">Set</button></div>
+        <div class="row dim">Grow / shrink an edge:</div>
+        <div class="nudge">
+          <span></span><div><button data-edge="n" data-d="1">+</button><button data-edge="n" data-d="-1">−</button><div class="dim">N</div></div><span></span>
+          <div><button data-edge="w" data-d="1">+</button><button data-edge="w" data-d="-1">−</button><div class="dim">W</div></div>
+          <div style="align-self:center"><button id="bTrim">Trim</button></div>
+          <div><button data-edge="e" data-d="1">+</button><button data-edge="e" data-d="-1">−</button><div class="dim">E</div></div>
+          <span></span><div><button data-edge="s" data-d="1">+</button><button data-edge="s" data-d="-1">−</button><div class="dim">S</div></div><span></span>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h4>SURVEY</h4>
+        <div id="stats" class="dim"></div>
+        <ul id="issues"></ul>
+      </div>
+
+      <div class="sec">
+        <h4>OUTPUT</h4>
+        <div class="row grid2" style="display:grid">
+          <button id="bSave">Download .js</button>
+          <button id="bCopy">Copy JSON</button>
+          <button id="bPlay">Playtest ▸</button>
+          <button id="bFit">Fit view</button>
+        </div>
+        <div class="row dim" style="line-height:1.35;margin-top:5px">Save into <b>maps/</b>, then add one script tag in index.html.</div>
+      </div>
+
+    </div>
+    <div class="pane"><canvas id="c"></canvas></div>
+  </div>
+  <div class="term-bar">
+    <span id="hint">Undo Ctrl+Z · Redo Ctrl+Shift+Z · Pan: middle-drag or space-drag · Zoom: wheel</span>
+    <span id="pos">X:-- Y:-- ·</span>
+  </div>
+</div>
+<div id="toast"></div>
+<div class="crt"></div>
+<input type="file" id="file" accept=".js,.json,.txt" style="display:none">
+
+<script src="maps/tiles.js"></script>
+<script src="maps/tutorial.js"></script>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const DRAFT_KEY = 'iso.editor.draft', PLAY_KEY = 'iso.draft';
+
+(()=>{const d=new Date();$('#stamp').textContent=
+  `${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')} `+
+  `${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}.${d.getFullYear()+311}`})();
+
+/* ---------- state ---------- */
+let map   = null;
+let view  = {x:0, y:0, z:22};          // world offset (tiles) + px per tile
+let tool  = 'brush', paint = '#', bsize = 1;
+let undo  = [], redo = [];
+let hover = null, drag = null, rectAnchor = null, panning = null, spaceDown = false;
+let sealed = new Set();
+
+const clone = m => JSON.parse(JSON.stringify(m));
+function pushUndo(){ undo.push(clone(map)); if(undo.length>120) undo.shift(); redo.length = 0; }
+
+function setMap(m, resetView){
+  map = ISO.normalize(m);
+  $('#mName').value = map.name; $('#mId').value = map.id;
+  $('#mW').value = map.w; $('#mH').value = map.h;
+  if(resetView !== false) fit();
+  changed(false);
+}
+
+function changed(save){
+  ISO.normalize(map);
+  const a = ISO.audit(map);
+  const seen = ISO.reachable(map, map.spawn);
+  sealed = new Set();
+  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++)
+    if(ISO.walkable(map,x,y) && !seen.has(x+','+y)) sealed.add(x+','+y);
+  $('#stats').innerHTML =
+    `${map.w} × ${map.h} · ${map.w*map.h} tiles<br>`+
+    `${a.walkable} walkable · ${map.beacons.length} beacon(s)<br>`+
+    `spawn ${map.spawn.x},${map.spawn.y}`;
+  $('#issues').innerHTML = a.issues.length
+    ? a.issues.map(t=>`<li class="alert">${t}</li>`).join('')
+    : '<li class="ok">Survey clean.</li>';
+  $('#mW').value = map.w; $('#mH').value = map.h;
+  if(save !== false) autosave();
+}
+
+let saveTimer = 0;
+function autosave(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(()=>{ try{ localStorage.setItem(DRAFT_KEY, ISO.toJSON(map)) }catch(e){} }, 250);
+}
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toast.t); toast.t=setTimeout(()=>t.classList.remove('on'),1800); }
+
+/* ---------- palette ---------- */
+ISO.ORDER.forEach((ch,i)=>{
+  const t = ISO.def(ch);
+  const b = document.createElement('button');
+  b.dataset.ch = ch;
+  b.innerHTML = `<span class="sw" style="background:${t.fill||'transparent'};border-color:${t.line||'var(--gfaint)'}">${t.glyph||''}</span>`+
+                `<span>${t.name}</span><span class="k">${(i+1)%10}</span>`;
+  b.title = t.walk ? 'Walkable' : 'Blocks the unit';
+  b.onclick = ()=>{ paint = ch; syncPal(); };
+  $('#pal').appendChild(b);
+});
+const syncPal = ()=>document.querySelectorAll('#pal button').forEach(b=>b.classList.toggle('on', b.dataset.ch===paint));
+const syncTool = ()=>document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('on', b.dataset.tool===tool));
+document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{tool=b.dataset.tool;syncTool()});
+syncPal();
+
+/* ---------- canvas ---------- */
+const c = $('#c'), cx = c.getContext('2d');
+let W=0, H=0, D=1;
+function fitCanvas(){
+  const r = c.getBoundingClientRect();
+  D = Math.min(2, window.devicePixelRatio||1);
+  const w = Math.max(1,Math.round(r.width*D)), h = Math.max(1,Math.round(r.height*D));
+  if(c.width!==w||c.height!==h){ c.width=w; c.height=h }
+  W=w; H=h;
+}
+function fit(){
+  fitCanvas();
+  if(W < 10 || H < 10){ requestAnimationFrame(fit); return }   // layout not settled yet
+  const pad = 26;
+  view.z = Math.max(4, Math.min(64, Math.floor(Math.min((W/D-pad)/map.w, (H/D-pad)/map.h))));
+  view.x = map.w/2 - (W/D)/view.z/2;
+  view.y = map.h/2 - (H/D)/view.z/2;
+}
+const toScreen = (x,y) => [ (x-view.x)*view.z*D, (y-view.y)*view.z*D ];
+const toWorld  = (px,py) => [ Math.floor(px/(view.z*D)+view.x), Math.floor(py/(view.z*D)+view.y) ];
+
+function draw(){
+  fitCanvas();
+  const z = view.z*D;
+  cx.fillStyle = '#000'; cx.fillRect(0,0,W,H);
+
+  const x0 = Math.max(0, Math.floor(view.x)), y0 = Math.max(0, Math.floor(view.y));
+  const x1 = Math.min(map.w, Math.ceil(view.x + (W/z))), y1 = Math.min(map.h, Math.ceil(view.y + (H/z)));
+
+  // map bed — everything inside the record, even unmapped tiles
+  const [bx,by] = toScreen(0,0);
+  cx.fillStyle = 'rgba(28,240,28,.015)'; cx.fillRect(bx, by, map.w*z, map.h*z);
+
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const [sx,sy] = toScreen(x,y);
+    ISO.drawTile(cx, ISO.tileAt(map,x,y), sx, sy, z, D);
+    if(sealed.has(x+','+y)){ cx.fillStyle = 'rgba(255,59,47,.22)'; cx.fillRect(sx,sy,z,z) }
+  }
+
+  if(z > 7){                                   // grid
+    cx.lineWidth = 1; cx.strokeStyle = 'rgba(28,240,28,.1)'; cx.beginPath();
+    for(let x=x0;x<=x1;x++){ const [sx]=toScreen(x,0); cx.moveTo(sx+.5,by); cx.lineTo(sx+.5,by+map.h*z) }
+    for(let y=y0;y<=y1;y++){ const [,sy]=toScreen(0,y); cx.moveTo(bx,sy+.5); cx.lineTo(bx+map.w*z,sy+.5) }
+    cx.stroke();
+  }
+  cx.lineWidth = Math.max(1,D); cx.strokeStyle = 'rgba(28,240,28,.55)';
+  cx.strokeRect(bx+.5, by+.5, map.w*z, map.h*z);
+
+  if(z >= 14){                                 // rulers every 5
+    cx.fillStyle = 'rgba(28,240,28,.4)'; cx.font = (9*D)+'px "Courier Prime", monospace';
+    cx.textAlign='center'; cx.textBaseline='bottom';
+    for(let x=x0;x<x1;x++) if(x%5===0){ const [sx]=toScreen(x,0); cx.fillText(x, sx+z/2, by-2*D) }
+    cx.textAlign='right'; cx.textBaseline='middle';
+    for(let y=y0;y<y1;y++) if(y%5===0){ const [,sy]=toScreen(0,y); cx.fillText(y, bx-3*D, sy+z/2) }
+  }
+
+  // markers
+  map.beacons.forEach(b=>{
+    const [sx,sy] = toScreen(b.x,b.y), cX=sx+z/2, cY=sy+z/2, s=z*.3;
+    cx.fillStyle='#ff3b2f'; cx.shadowColor='#ff3b2f'; cx.shadowBlur=10*D;
+    cx.beginPath(); cx.moveTo(cX,cY-s); cx.lineTo(cX+s,cY); cx.lineTo(cX,cY+s); cx.lineTo(cX-s,cY);
+    cx.closePath(); cx.fill(); cx.shadowBlur=0;
+  });
+  const [px,py] = toScreen(map.spawn.x, map.spawn.y), s = z*.62, pX = px+z/2, pY = py+z/2;
+  cx.fillStyle='#021402'; cx.shadowColor='rgba(28,240,28,.8)'; cx.shadowBlur=12*D;
+  cx.fillRect(pX-s/2,pY-s/2,s,s); cx.shadowBlur=0;
+  cx.strokeStyle='#1cf01c'; cx.lineWidth=Math.max(1.5,1.5*D); cx.strokeRect(pX-s/2,pY-s/2,s,s);
+
+  // cursor / preview
+  if(hover){
+    const r = (tool==='rect' && rectAnchor) ? rectBounds(rectAnchor,hover) : brushBounds(hover);
+    const [sx,sy] = toScreen(r.x0, r.y0);
+    cx.strokeStyle = 'rgba(255,180,74,.9)'; cx.lineWidth = Math.max(1.5,1.5*D);
+    cx.strokeRect(sx+.5, sy+.5, (r.x1-r.x0+1)*z, (r.y1-r.y0+1)*z);
+  }
+  requestAnimationFrame(draw);
+}
+
+const brushBounds = p => { const r = bsize-1>>1, e = bsize-1-r;
+  return {x0:p.x-r, y0:p.y-r, x1:p.x+e, y1:p.y+e} };
+const rectBounds = (a,b) => ({x0:Math.min(a.x,b.x), y0:Math.min(a.y,b.y), x1:Math.max(a.x,b.x), y1:Math.max(a.y,b.y)});
+
+/* ---------- editing ---------- */
+function applyRect(r, ch){ let n=0;
+  for(let y=r.y0;y<=r.y1;y++)for(let x=r.x0;x<=r.x1;x++) if(ISO.setTile(map,x,y,ch)) n++;
+  return n }
+
+function floodFill(p, ch){
+  const target = ISO.tileAt(map,p.x,p.y);
+  if(target === ch || !ISO.inside(map,p.x,p.y)) return;
+  const q = [[p.x,p.y]];
+  while(q.length){
+    const [x,y] = q.pop();
+    if(!ISO.inside(map,x,y) || ISO.tileAt(map,x,y)!==target) continue;
+    ISO.setTile(map,x,y,ch);
+    q.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]);
+  }
+}
+
+function act(p, erase, isStart){
+  const ch = erase ? ' ' : paint;
+  if(tool==='pick'){ if(ISO.inside(map,p.x,p.y)){ paint = ISO.tileAt(map,p.x,p.y); syncPal() } return }
+  if(tool==='spawn'){ if(isStart){ pushUndo(); map.spawn = {x:p.x,y:p.y}; changed() } return }
+  if(tool==='beacon'){
+    if(!isStart) return;
+    pushUndo();
+    const i = map.beacons.findIndex(b=>b.x===p.x&&b.y===p.y);
+    if(i>=0) map.beacons.splice(i,1); else map.beacons.push({x:p.x,y:p.y});
+    changed(); return;
+  }
+  if(tool==='fill'){ if(isStart){ pushUndo(); floodFill(p,ch); changed() } return }
+  if(tool==='rect'){ if(isStart) rectAnchor = p; return }        // committed on pointerup
+  if(isStart) pushUndo();
+  if(applyRect(brushBounds(p), ch)) changed();
+}
+
+/* ---------- pointer ---------- */
+function ptr(e){
+  const r = c.getBoundingClientRect();
+  const [x,y] = toWorld((e.clientX-r.left)*D, (e.clientY-r.top)*D);
+  return {x,y};
+}
+c.addEventListener('contextmenu', e=>e.preventDefault());
+c.addEventListener('pointerdown', e=>{
+  c.setPointerCapture(e.pointerId);
+  if(e.button===1 || spaceDown){ panning = {sx:e.clientX, sy:e.clientY, vx:view.x, vy:view.y}; return }
+  drag = {erase: e.button===2};
+  act(ptr(e), drag.erase, true);
+});
+c.addEventListener('pointermove', e=>{
+  const p = ptr(e);
+  hover = p;
+  const t = ISO.def(ISO.tileAt(map,p.x,p.y));
+  $('#pos').textContent = `X:${p.x} Y:${p.y} · ${ISO.inside(map,p.x,p.y)? t.name : 'outside record'}`;
+  if(panning){
+    view.x = panning.vx - (e.clientX-panning.sx)/view.z;
+    view.y = panning.vy - (e.clientY-panning.sy)/view.z;
+    return;
+  }
+  if(drag) act(p, drag.erase, false);
+});
+addEventListener('pointerup', e=>{
+  if(rectAnchor && hover && drag){ pushUndo(); applyRect(rectBounds(rectAnchor,hover), drag.erase?' ':paint); changed() }
+  rectAnchor = null; drag = null; panning = null;
+});
+c.addEventListener('pointerleave', ()=>{ hover = null; $('#pos').textContent='X:-- Y:-- ·' });
+c.addEventListener('wheel', e=>{
+  e.preventDefault();
+  const r = c.getBoundingClientRect();
+  const mx = (e.clientX-r.left), my = (e.clientY-r.top);
+  const wx = mx/view.z + view.x, wy = my/view.z + view.y;
+  view.z = Math.max(4, Math.min(64, view.z * (e.deltaY<0 ? 1.15 : 1/1.15)));
+  view.x = wx - mx/view.z; view.y = wy - my/view.z;
+}, {passive:false});
+
+/* ---------- keys ---------- */
+addEventListener('keydown', e=>{
+  if(/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+  if(e.code==='Space'){ spaceDown = true; e.preventDefault(); return }
+  if(e.ctrlKey||e.metaKey){
+    const k = e.key.toLowerCase();
+    if(k==='z'){ e.preventDefault(); e.shiftKey?doRedo():doUndo() }
+    else if(k==='y'){ e.preventDefault(); doRedo() }
+    else if(k==='s'){ e.preventDefault(); download() }
+    return;
+  }
+  const n = '1234567890'.indexOf(e.key);
+  if(n>=0 && ISO.ORDER[n]){ paint = ISO.ORDER[n]; syncPal(); return }
+  const T = {b:'brush', e:'rect', f:'fill', i:'pick', p:'spawn', k:'beacon'}[e.key.toLowerCase()];
+  if(T){ tool = T; syncTool(); return }
+  if(e.key==='['){ bsize = Math.max(1,bsize-1); $('#bSize').textContent = bsize }
+  if(e.key===']'){ bsize = Math.min(9,bsize+1); $('#bSize').textContent = bsize }
+});
+addEventListener('keyup', e=>{ if(e.code==='Space') spaceDown = false });
+
+function doUndo(){ if(!undo.length) return; redo.push(clone(map)); map = ISO.normalize(undo.pop()); setMap(map,false); autosave(); toast('Undo') }
+function doRedo(){ if(!redo.length) return; undo.push(clone(map)); map = ISO.normalize(redo.pop()); setMap(map,false); autosave(); toast('Redo') }
+
+/* ---------- controls ---------- */
+$('#bMinus').onclick = ()=>{ bsize = Math.max(1,bsize-1); $('#bSize').textContent = bsize };
+$('#bPlus').onclick  = ()=>{ bsize = Math.min(9,bsize+1); $('#bSize').textContent = bsize };
+$('#mName').oninput  = ()=>{ map.name = $('#mName').value; autosave() };
+$('#mId').oninput    = ()=>{ map.id   = $('#mId').value.trim().replace(/[^a-z0-9_-]/gi,'-'); autosave() };
+$('#mId').onchange   = ()=>{ $('#mId').value = map.id };          // show what was actually kept
+
+$('#bApply').onclick = ()=>{ pushUndo(); ISO.resize(map, +$('#mW').value, +$('#mH').value, 0, 0); changed() };
+document.querySelectorAll('[data-edge]').forEach(b=>b.onclick = ()=>{
+  const d = +b.dataset.d, e = b.dataset.edge;
+  pushUndo();
+  if(e==='n') ISO.resize(map, map.w, map.h+d, 0, d);
+  if(e==='s') ISO.resize(map, map.w, map.h+d, 0, 0);
+  if(e==='w') ISO.resize(map, map.w+d, map.h, d, 0);
+  if(e==='e') ISO.resize(map, map.w+d, map.h, 0, 0);
+  changed();
+});
+$('#bTrim').onclick = ()=>{ pushUndo(); ISO.trim(map); changed(); fit(); toast('Trimmed to content') };
+$('#bFit').onclick  = fit;
+
+$('#bNew').onclick = ()=>{
+  const w = +$('#mW').value||32, h = +$('#mH').value||22;
+  if(!confirm(`Start a new ${w} × ${h} record? The current one is replaced.`)) return;
+  setMap(ISO.makeMap({w, h, id:'untitled', name:'Untitled Sector', fill:'.'}));
+};
+$('#bOpen').onclick = ()=>$('#file').click();
+$('#file').onchange = e=>{
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{ try{ setMap(ISO.parse(r.result)); toast('Loaded '+f.name) }
+                   catch(err){ alert('Could not read that map:\n'+err.message) } };
+  r.readAsText(f); e.target.value = '';
+};
+$('#bLoad').onclick = ()=>{ const m = ISO.MAPS[$('#bundled').value]; if(m){ setMap(clone(m)); toast('Loaded '+m.id) } };
+
+function download(){
+  const blob = new Blob([ISO.toModule(map)], {type:'text/javascript'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = (map.id||'untitled')+'.js';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Saved '+a.download+' — put it in maps/');
+}
+$('#bSave').onclick = download;
+$('#bCopy').onclick = async ()=>{
+  try{ await navigator.clipboard.writeText(ISO.toJSON(map)); toast('JSON copied') }
+  catch(e){ prompt('Copy the map data:', ISO.toJSON(map)) }
+};
+$('#bPlay').onclick = ()=>{
+  try{ localStorage.setItem(PLAY_KEY, ISO.toJSON(map)) }catch(e){ return alert('Playtest needs localStorage.') }
+  window.open('index.html?draft=1', '_blank');
+};
+
+/* ---------- boot ---------- */
+Object.keys(ISO.MAPS).forEach(id=>{
+  const o = document.createElement('option');
+  o.value = id; o.textContent = id + ' — ' + ISO.MAPS[id].name;
+  $('#bundled').appendChild(o);
+});
+let boot = null;
+try{ const d = localStorage.getItem(DRAFT_KEY); if(d) boot = ISO.parse(d) }catch(e){}
+setMap(boot || clone(ISO.MAPS.tutorial) || ISO.makeMap({w:32,h:22}));
+if(boot) toast('Restored your last draft');
+addEventListener('resize', ()=>fitCanvas());
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
