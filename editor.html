@@ -47,8 +47,9 @@ textarea{font:inherit;background:#000;color:var(--g);border:1px solid var(--gdim
   min-height:74px;resize:vertical;padding:3px 5px}
 .fld{margin-bottom:6px}
 .fld>span{display:block;color:var(--gdim);font-size:12px;margin-bottom:2px}
-.fld .pt{display:flex;gap:4px;align-items:center}
+.fld .pt{display:flex;gap:4px;align-items:center;margin-bottom:3px}
 .fld .pt b{flex:1;color:var(--amber)}
+.fld .pt button.drop{padding:3px 7px;line-height:1}
 button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
 #instHead{color:var(--amber)}
 .crt{pointer-events:none;position:fixed;inset:0;z-index:50;
@@ -268,6 +269,30 @@ function field(key, spec, value){
     pick.onclick = ()=>{ picking = picking === key ? null : key; drawInspector() };
     pt.append(at, pick);
     wrap.appendChild(pt);
+  }else if(spec.type === 'points'){
+    const pts = value || [];
+    pts.forEach((pt,i)=>{
+      const row = document.createElement('div');
+      row.className = 'pt';
+      const at = document.createElement('b');
+      at.textContent = `${pt.x},${pt.y}`;
+      const drop = document.createElement('button');
+      drop.className = 'drop'; drop.textContent = '×'; drop.title = 'Unlink';
+      drop.onclick = ()=>write(pts.filter((_,j)=>j!==i));
+      row.append(at, drop);
+      wrap.appendChild(row);
+    });
+    const row = document.createElement('div');
+    row.className = 'pt';
+    const at = document.createElement('b');
+    at.textContent = pts.length ? '' : '— not set —';
+    if(!pts.length) at.className = 'dim';
+    const pick = document.createElement('button');
+    pick.textContent = picking === key ? 'click blocks… (Esc)' : (pts.length ? 'Add ▸' : 'Pick ▸');
+    pick.classList.toggle('picking', picking === key);
+    pick.onclick = ()=>{ picking = picking === key ? null : key; drawInspector() };
+    row.append(at, pick);
+    wrap.appendChild(row);
   }else if(spec.type === 'dir'){
     const sl = document.createElement('select');
     for(const d in ISO.DIRS){
@@ -381,10 +406,10 @@ function drawWiring(z){
   cx.lineWidth = Math.max(1,D);
   for(const k in map.props){
     const [x,y] = k.split(',').map(Number);
-    const t = ISO.at(map,x,y), p = map.props[k];
+    const t = ISO.at(map,x,y);
     const [sx,sy] = toScreen(x,y), aX = sx+z/2, aY = sy+z/2;
-    if(t.press === 'button' && p.target){
-      const [tx,ty] = toScreen(p.target.x, p.target.y);
+    if(t.press === 'button') for(const c of ISO.signalTargets(map,x,y)){
+      const [tx,ty] = toScreen(c.x, c.y);
       cx.strokeStyle = 'rgba(255,180,74,.55)'; cx.setLineDash([4*D,3*D]);
       cx.beginPath(); cx.moveTo(aX,aY); cx.lineTo(tx+z/2,ty+z/2); cx.stroke(); cx.setLineDash([]);
       cx.strokeStyle = 'rgba(255,180,74,.85)';
@@ -431,9 +456,24 @@ function act(p, erase, isStart){
   const ch = erase ? ' ' : paint;
   if(picking){                                                   // finishing a "Pick ▸"
     if(!isStart) return;
-    if(!sel || !ISO.inside(map,p.x,p.y)){ picking = null; drawInspector(); return }
-    pushUndo(); ISO.setProp(map, sel.x, sel.y, picking, {x:p.x, y:p.y});
-    picking = null; changed(); toast('Linked to '+p.x+','+p.y); return;
+    const schema = sel && ISO.schemaOf(ISO.tileAt(map,sel.x,sel.y));
+    if(!schema || !schema[picking] || !ISO.inside(map,p.x,p.y)){
+      picking = null; drawInspector(); return;                   // clicked off the record
+    }
+    pushUndo();
+    if(schema[picking].type !== 'points'){
+      ISO.setProp(map, sel.x, sel.y, picking, {x:p.x, y:p.y});
+      picking = null; changed(); toast('Linked to '+p.x+','+p.y); return;
+    }
+    /* a list stays open, so a bank of blocks is wired in one pass — click a
+       block again to drop it, Esc when done */
+    const had = (ISO.propsAt(map,sel.x,sel.y) || {})[picking] || [];
+    const i = had.findIndex(q=>q.x===p.x && q.y===p.y);
+    ISO.setProp(map, sel.x, sel.y, picking,
+                i>=0 ? had.filter((_,j)=>j!==i) : had.concat({x:p.x, y:p.y}));
+    changed();
+    toast((i>=0 ? 'Unlinked from ' : 'Linked to ')+p.x+','+p.y+' · Esc when done');
+    return;
   }
   if(tool==='link'){ if(isStart) selectBlock(p.x,p.y); return }
   if(tool==='pick'){ if(ISO.inside(map,p.x,p.y)){ paint = ISO.tileAt(map,p.x,p.y); syncPal() } return }
