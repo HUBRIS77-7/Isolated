@@ -477,7 +477,8 @@ if(typeof ISO==='undefined'){
     parse:t=>JSON.parse(t),
     drawTile:(c,ch,px,py,s)=>{if(ch===' ')return;c.fillStyle='rgba(28,240,28,.045)';c.fillRect(px,py,s,s)},
     DIRS:{up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]},
-    propsAt:()=>null, signalIndex:()=>({}), tramPath:(m,x,y)=>[{x,y}], key:(x,y)=>x+','+y,
+    propsAt:()=>null, signalIndex:()=>({}), signalTargets:()=>[],
+    tramPath:(m,x,y)=>[{x,y}], key:(x,y)=>x+','+y,
   };
 }
 function loadMap(){
@@ -605,26 +606,35 @@ function interact(){
   const n=performance.now();
   if(n-game.useLog>2500){game.useLog=n;say('Nothing within reach answers.','dim')}
 }
+/* A control may run to any number of blocks; they all answer the one press.
+   The drivers report a line rather than writing it, so a bank of bulkheads
+   doing the same thing reads as one line in the log instead of four. */
 function pressButton(x,y){
   world.lit.set(K(x,y),performance.now());
   const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
-  if(!p.target)return say('Control'+tag+' pressed. No line runs from it.','dim');
-  const t=tileDef(p.target.x,p.target.y);
-  if(t.signal==='toggle')return driveBulkhead(p.target.x,p.target.y,tag);
-  if(t.signal==='move')return callTram(p.target.x,p.target.y,tag);
-  say('Control'+tag+' pressed. Nothing on the far end answers.','dim');
+  const targets=ISO.signalTargets(MAP,x,y);
+  if(!targets.length)return say('Control'+tag+' pressed. No line runs from it.','dim');
+  const lines=[];
+  for(const c of targets){
+    const t=tileDef(c.x,c.y);
+    const r=t.signal==='toggle'?driveBulkhead(c.x,c.y,tag)
+           :t.signal==='move'  ?callTram(c.x,c.y,tag):null;
+    if(r&&!lines.some(l=>l.text===r.text))lines.push(r);
+  }
+  if(!lines.length)return say('Control'+tag+' pressed. Nothing on the far end answers.','dim');
+  for(const l of lines)say(l.text,l.cls);
 }
 function driveBulkhead(x,y,tag){
   const k=K(x,y);
-  if(!world.open.has(k)){world.open.add(k);return say('Bulkhead'+tag+' driven open.')}
-  if(game.px===x&&game.py===y)return say('Bulkhead'+tag+' obstructed. It holds open.','dim');
-  world.open.delete(k);say('Bulkhead'+tag+' driven shut.','dim');
+  if(!world.open.has(k)){world.open.add(k);return {text:'Bulkhead'+tag+' driven open.'}}
+  if(game.px===x&&game.py===y)return {text:'Bulkhead'+tag+' obstructed. It holds open.',cls:'dim'};
+  world.open.delete(k);return {text:'Bulkhead'+tag+' driven shut.',cls:'dim'};
 }
 function callTram(x,y,tag){
   const tr=world.trams.find(t=>t.home===K(x,y));
-  if(!tr)return say('Signal sent. Nothing on that rail answers.','dim');
+  if(!tr)return {text:'Signal sent. Nothing on that rail answers.',cls:'dim'};
   tr.dest=tr.dest===0?tr.path.length-1:0;
-  say('Platform'+tag+' called. Under way.','dim');
+  return {text:'Platform'+tag+' called. Under way.',cls:'dim'};
 }
 
 /* One tile at a time, carrying whoever is standing on it. */

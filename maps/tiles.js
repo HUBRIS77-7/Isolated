@@ -31,8 +31,10 @@
    "x,y". The editor builds its inspector straight from the schema, so a
    new field costs one line here and nothing anywhere else.
 
-   type  — text | lines | bool | int | dir | point
-   def   — value a freshly painted copy starts with                 */
+   type  — text | lines | bool | int | dir | point | points
+   def   — value a freshly painted copy starts with
+   from  — an older field this one replaces, so maps written before the
+           change still load (a lone point reads as a list of one)    */
 const TILES = {
   ' ': {key:' ', id:'void',   name:'Unmapped',  walk:false, fill:null,
         bump:'Edge of mapped space. Nothing registers beyond.'},
@@ -66,8 +68,8 @@ const TILES = {
                dist:{type:'int', label:'Distance',      def:4, min:1, max:60}}},
   'b': {key:'b', id:'button', name:'Button',    walk:false, fill:'rgba(255,180,74,.16)', line:'rgba(255,180,74,.7)', glyph:'◎',
         bump:'Control surface. [E] to press.', press:'button',
-        props:{target:{type:'point', label:'Signals block at'},
-               label:{type:'text',   label:'Stencilled', def:''}}},
+        props:{targets:{type:'points', label:'Signals blocks at', def:[], from:'target'},
+               label:{type:'text',    label:'Stencilled', def:''}}},
   'c': {key:'c', id:'term',   name:'Terminal',  walk:false, fill:'rgba(28,240,28,.14)',  line:'rgba(28,240,28,.6)',  glyph:'▣',
         bump:'Powered console. [E] to read.', press:'terminal',
         props:{title:{type:'text',  label:'Header',  def:'UNLABELLED CONSOLE'},
@@ -140,6 +142,18 @@ function coerce(field, v){
                     return n }
     case 'dir':   return DIRS[v] ? v : (field.def || 'right');
     case 'point': return (v && typeof v === 'object') ? {x:v.x|0, y:v.y|0} : null;
+    case 'points': {
+      /* a lone point is read as a list of one, so older maps still load */
+      const list = v == null ? [] : (Array.isArray(v) ? v : [v]);
+      const seen = new Set(), out = [];
+      for(const q of list){
+        if(!q || typeof q !== 'object') continue;
+        const p = {x:q.x|0, y:q.y|0}, k = pk(p.x,p.y);
+        if(seen.has(k)) continue;                  // signalling one block twice is a no-op
+        seen.add(k); out.push(p);
+      }
+      return out;
+    }
     default:      return v == null ? '' : String(v);
   }
 }
@@ -153,7 +167,11 @@ function normalizeProps(map){
     if(!s) continue;                                   // this tile takes none
     const had = src[pk(x,y)] || {};
     const p = {};
-    for(const k in s) p[k] = coerce(s[k], k in had ? had[k] : clone(s[k].def));
+    for(const k in s){
+      const f = s[k];
+      const from = k in had ? k : (f.from && f.from in had ? f.from : null);
+      p[k] = coerce(f, from ? had[from] : clone(f.def));
+    }
     out[pk(x,y)] = p;
   }
   map.props = out;
@@ -169,14 +187,16 @@ function setProp(map,x,y,key,value){
   return true;
 }
 
+/* Every block one button drives. A control may run to any number of them. */
+const signalTargets = (map,x,y) => ((propsAt(map,x,y)||{}).targets) || [];
+
 /* Every block a button points at, as "x,y" -> [{x,y} of each button]. */
 function signalIndex(map){
   const out = {};
   for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
     if(def(tileAt(map,x,y)).press !== 'button') continue;
-    const t = (propsAt(map,x,y)||{}).target;
-    if(!t) continue;
-    (out[pk(t.x,t.y)] || (out[pk(t.x,t.y)] = [])).push({x,y});
+    for(const t of signalTargets(map,x,y))
+      (out[pk(t.x,t.y)] || (out[pk(t.x,t.y)] = [])).push({x,y});
   }
   return out;
 }
@@ -217,12 +237,12 @@ function resize(map, w, h, dx, dy){
     rows.push(r);
   }
   const props = {};
+  const shift = v => (v && typeof v === 'object' && 'x' in v)
+    ? {x:v.x+dx, y:v.y+dy} : v;                       // points travel with the map
   for(const k in map.props){
     const [px,py] = k.split(',').map(Number);
     const p = map.props[k];
-    for(const f in p) if(p[f] && typeof p[f] === 'object' && 'x' in p[f]){
-      p[f] = {x:p[f].x+dx, y:p[f].y+dy};              // points travel with the map
-    }
+    for(const f in p) p[f] = Array.isArray(p[f]) ? p[f].map(shift) : shift(p[f]);
     props[pk(px+dx, py+dy)] = p;
   }
   map.w = w; map.h = h; map.rows = rows; map.props = props;
@@ -284,12 +304,15 @@ function audit(map){
   for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
     const t = at(map,x,y), p = propsAt(map,x,y) || {}, where = ' at '+x+','+y;
     if(t.press === 'button'){
-      if(!p.target){ out.issues.push('Button'+where+' signals nothing.'); continue }
-      const tgt = at(map, p.target.x, p.target.y);
-      if(!inside(map, p.target.x, p.target.y))
-        out.issues.push('Button'+where+' signals a square outside the record.');
-      else if(!tgt.signal)
-        out.issues.push('Button'+where+' signals '+tgt.name+', which does not answer signals.');
+      const targets = signalTargets(map,x,y);
+      if(!targets.length) out.issues.push('Button'+where+' signals nothing.');
+      for(const c of targets){
+        if(!inside(map, c.x, c.y))
+          out.issues.push('Button'+where+' signals a square outside the record.');
+        else if(!at(map, c.x, c.y).signal)
+          out.issues.push('Button'+where+' signals '+at(map,c.x,c.y).name+
+                          ' at '+c.x+','+c.y+', which does not answer signals.');
+      }
     }
     if(t.press === 'terminal' && !String(p.text||'').trim())
       out.issues.push('Terminal'+where+' has no text to display.');
@@ -371,6 +394,6 @@ function drawTile(ctx, ch, px, py, size, scale, state){
 
 global.ISO = {TILES, ORDER, VOID, DIRS, def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, walkable, setTile, reachable, audit,
-               schemaOf, defaults, propsAt, setProp, signalIndex, tramPath, key:pk,
+               schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,
                toJSON, toModule, parse, drawTile};
 })(typeof globalThis!=='undefined'?globalThis:this);

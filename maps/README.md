@@ -36,7 +36,8 @@ ISO.register({
                                      // reachable tile ≥6 steps away. Elevator
                                      // tiles count as beacon spots too.
   "props": {                         // per-instance settings, keyed "x,y"
-    "48,13": {"target": {"x": 47, "y": 12}, "label": "LANDING"}
+    "48,13": {"targets": [{"x": 47, "y": 12},
+                          {"x": 47, "y": 13}], "label": "LANDING"}
   },
   "rows": ["  ,,,.....  ", ...]      // exactly h strings of exactly w chars
 });
@@ -59,7 +60,7 @@ ISO.register({
 | `x`  | Fencing   | no   | Blocks like a wall; you can see through it   |
 | `v`  | Pit       | yes  | Walk in and the run ends. `[R]` re-initialises |
 | `T`  | Tram      | yes  | Platform that a button calls along a rail    |
-| `b`  | Button    | no   | `[E]` from an adjacent tile signals its target |
+| `b`  | Button    | no   | `[E]` from an adjacent tile signals its targets |
 | `c`  | Terminal  | no   | `[E]` opens a small window of text           |
 | `^`  | Elevator  | yes  | A beacon you place as a tile                 |
 
@@ -76,7 +77,7 @@ costs one line in `tiles.js` and nothing anywhere else.
 
 | Block    | Setting        | Means                                          |
 |----------|----------------|------------------------------------------------|
-| Button   | `target`       | The block this button signals                  |
+| Button   | `targets`      | The blocks this button signals — any number    |
 | Button   | `label`        | Name shown in the message log                  |
 | Bulkhead | `open`         | Starts open rather than sealed                 |
 | Tram     | `dir`, `dist`  | Which way the platform runs, and how far       |
@@ -84,12 +85,24 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Terminal | `desktop`      | This console has a desktop behind it (not built yet) |
 
 In the editor, pick the **Link** tool (`L`) and click a block: its settings
-appear under **INSTANCE**. A `target` is set with **Pick ▸**, then a click on
-the block to wire it to. Painting a block that takes settings selects it
-straight away, and painting over one throws its settings out with it.
+appear under **INSTANCE**. Wire a button up with **Pick ▸**, then click the
+block it drives. The picker stays open, so keep clicking to wire a whole bank
+to the one control — click a block a second time to drop it, `Esc` when done.
+Each link is listed under the button with an `×` beside it. Painting a block
+that takes settings selects it straight away, and painting over one throws its
+settings out with it.
 
-The canvas draws the wiring while you work: amber from each button to what it
-drives, and a pale line along the rail each platform runs.
+The canvas draws the wiring while you work: amber from each button to every
+block it drives, and a pale line along the rail each platform runs.
+
+One press signals all of them at once — a bank of bulkheads opens together, and
+a button may drive bulkheads and call a platform in the same press. Each block
+answers for itself, so two bulkheads left in opposite states swap rather than
+line up. The message log collapses the identical lines, so a bank of four reads
+as one.
+
+A map written before a button could drive more than one block still loads: its
+single `target` is read as a list of one.
 
 Buttons and terminals do not block signals — they block the unit, so put them
 in a wall next to a tile it can stand on. A tram's rail may run over unmapped
