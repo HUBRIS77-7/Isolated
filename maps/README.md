@@ -70,7 +70,7 @@ ISO.register({
 | `C`  | Cargo container | no | Touching copies become one container — as big as you paint it |
 | `F`  | Forklift  | no   | Two tiles long; turns with its `dir`         |
 | `D`  | Desk      | no   | Three tiles long; turns with its `dir`       |
-| `G`  | Cargo gate | no  | Sealed. `[E]` drives it, and so does a button. Touching copies open together |
+| `G`  | Cargo gate | no  | Sealed. `[E]` drives it, and so does a button. Touching copies open together, and `locked` makes one nothing will open |
 | `V`  | Vent      | yes  | `[E]` crawls through to the square it is linked to |
 
 To add a tile type, add one entry to `TILES` in `tiles.js`. It shows up in the
@@ -95,6 +95,7 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Forklift | `dir`          | Which way it faces, so which tile its second half covers |
 | Desk     | `dir`          | Which way it runs                              |
 | Cargo gate | `open`       | Starts open rather than sealed                 |
+| Cargo gate | `locked`     | Nothing drives it — no control, no `[E]`       |
 | Vent     | `dest`         | The square it comes out at                     |
 | Vent     | `label`        | Name shown in the message log                  |
 
@@ -135,11 +136,12 @@ is as solid as the tile you painted, and walking into it reads the whole
 block's name.
 
 **It is as big as you paint it** (`merge`). Tiles of the same kind that touch
-draw as one body, with the seams between them left out: a cargo container is
-however many tiles you gave it, and the log says what size the unit found —
-*Cargo container. Hull seals read intact. 3 × 2 units.* A cargo gate works
-the same way, so a gate four tiles tall opens as one door, whether the unit
-drives it or a button does.
+draw as one body, with the seams between them left out and the block's glyph
+repeated across every tile of it — so a container reads as crating and a gate
+as slats at any size. A cargo container is however many tiles you gave it, and
+the log says what size the unit found — *Cargo container. Hull seals read
+intact. 3 × 2 units.* A cargo gate works the same way, so a gate four tiles
+tall opens as one door, whether the unit drives it or a button does.
 
 Survey flags a big block that reaches past the edge of the record, stands in a
 wall, or overlaps another one.
@@ -148,7 +150,16 @@ wall, or overlaps another one.
 
 A cargo gate answers a button the way a bulkhead does, and answers `[E]` from
 an adjacent tile on its own — so it needs no control, and Survey does not ask
-for one. A vent needs no control either: `[E]` from the cover, or from standing
+for one. A gate set **`locked`** answers nothing at all: not `[E]`, not a
+control wired to it, and the log says so rather than pretending. A body is
+locked if any tile of it is, because the body is one door — Survey says as much
+when a body's tiles are set differently. Survey also stops treating a locked
+gate as a way through, so ground behind one is reported sealed off (and tinted
+red) the way a wall would be, and it points out a control wired to a gate that
+can never answer it. `locked` with `open` is the other useful pair: an opening
+nothing will ever shut.
+
+A vent needs no control either: `[E]` from the cover, or from standing
 on it, and the unit comes out at the square the vent is linked to. Link the far
 end with **Pick ▸** under **INSTANCE**; point two vents at each other and the
 route runs both ways. The canvas draws a dotted line to wherever each vent
