@@ -35,6 +35,10 @@
              they like out of ordinary tiles
    lock    — alternate look and bump line for a copy set `locked`, which no
              control and no [E] will ever drive
+   spent   — alternate look and bump line for a one-shot block that has been
+             used up: a station whose stock is fitted, a beacon gone quiet
+   ping    — it transmits: the unit reads it through walls, and it goes quiet
+             once the unit is within its own `range`
    sized   — its log line reports how big the copy the unit found actually is
    props   — per-instance settings (see below)                      */
 
@@ -44,10 +48,28 @@
    "x,y". The editor builds its inspector straight from the schema, so a
    new field costs one line here and nothing anywhere else.
 
-   type  — text | lines | bool | int | dir | point | points
+   type  — text | lines | bool | int | dir | pick | point | points
    def   — value a freshly painted copy starts with
+   opts  — for `pick`, the values it offers: [{value, label}]
    from  — an older field this one replaces, so maps written before the
            change still load (a lone point reads as a list of one)    */
+
+/* ---------- abilities ----------
+   What the unit can be fitted with over the course of a game. A modification
+   station hands one of these over; the game reads `fitted` and `hint` when it
+   does, and the station's picker in the editor is built straight from this
+   list — so a new ability costs one entry here and nothing anywhere else. */
+const ABILITIES = {
+  jump: {id:'jump', name:'Vault servos',
+         fitted:'MOBILITY PACKAGE FITTED: VAULT SERVOS.',
+         hint:'Hold [SPACE] to wind up, aim with the movement keys, release to clear up to three squares.'},
+};
+const ABILITY_OPTS = Object.keys(ABILITIES).map(k=>({value:k, label:ABILITIES[k].name}));
+/* Squares a fully wound-up jump clears. The game and the survey both read it
+   from here, so the reach the unit has and the reach a map is checked against
+   are the same number. */
+const JUMP = 3;
+
 const TILES = {
   ' ': {key:' ', id:'void',   name:'Unmapped',  walk:false, fill:null,
         bump:'Edge of mapped space. Nothing registers beyond.'},
@@ -124,6 +146,26 @@ const TILES = {
         press:'vent', enter:'Duct cover reads loose. [E] to crawl through.',
         props:{dest:{type:'point', label:'Comes out at', def:null},
                label:{type:'text', label:'Stencilled', def:''}}},
+
+  /* ---------- the unit itself changes: stations fit it, beacons steer it ---------- */
+  'M': {key:'M', id:'station',name:'Modification Station', walk:false,
+        fill:'rgba(191,247,220,.24)', line:'rgba(191,247,220,.7)', glyph:'╬',
+        clear:true, press:'station',
+        bump:'Modification station. Fabrication arm reads live. [E] to dock.',
+        spent:{fill:'rgba(191,247,220,.05)', line:'rgba(191,247,220,.28)', glyph:'╫',
+               bump:'Modification station. Stock spent. Nothing left to fit.'},
+        props:{ability:{type:'pick', label:'Fits', def:'jump', opts:ABILITY_OPTS},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  '*': {key:'*', id:'ping',   name:'Signal beacon', walk:true,
+        fill:'rgba(255,59,47,.12)', line:'rgba(255,59,47,.5)', glyph:'◇',
+        ping:true, beacon:true,
+        enter:'Beacon plate. The transmitter sits flush with the deck.',
+        spent:{fill:'rgba(255,59,47,.04)', line:'rgba(255,59,47,.22)', glyph:'◌',
+               enter:'Beacon plate. Transmitter dark.'},
+        props:{range:{type:'int',  label:'Goes quiet within', def:2, min:0, max:20},
+               armed:{type:'bool', label:'Starts transmitting', def:true},
+               objective:{type:'text', label:'Objective while lit', def:''},
+               label:{type:'text',  label:'Stencilled', def:''}}},
 };
 const ORDER = Object.keys(TILES);
 const VOID = TILES[' '];
@@ -277,6 +319,9 @@ function coerce(field, v){
                     if(field.max != null) n = Math.min(field.max, n);
                     return n }
     case 'dir':   return DIRS[v] ? v : (field.def || 'right');
+    case 'pick':  { const opts = (field.opts || []).map(o=>o.value);
+                    if(opts.includes(v)) return v;
+                    return opts.includes(field.def) ? field.def : (opts[0] || '') }
     case 'point': return (v && typeof v === 'object') ? {x:v.x|0, y:v.y|0} : null;
     case 'points': {
       /* a lone point is read as a list of one, so older maps still load */
@@ -364,6 +409,12 @@ const walkable = (map,x,y) => at(map,x,y).walk && !coveredBy(map,x,y);
 /* What the unit actually runs into here — the block covering the cell if one
    does, otherwise the tile itself. Bump lines and looks both come from it. */
 const bodyAt = (map,x,y) => { const f = coveredBy(map,x,y); return f ? at(map,f.x,f.y) : at(map,x,y) };
+/* What a jump passes over without coming down on it: ground of any kind, the
+   empty space the record does not reach into, and anything low enough to see
+   across — mesh, a console flush to the wall, a desk. A wall, a sealed
+   bulkhead or a stack of crating is as high as it is solid, so it turns a
+   jump back the way it turns a step back. */
+const vaultable = (map,x,y) => { const t = bodyAt(map,x,y); return !!(t.walk || t.clear || t.fill == null) };
 
 function setTile(map,x,y,ch){
   if(!inside(map,x,y)) return false;
@@ -415,11 +466,19 @@ function trim(map){
 
 /* Flood fill of everything walkable reachable from a point (4-way).
    opts.powered — count blocks that open or move on a signal as passable,
-   which is what an author means by "can the unit get there at all". */
+   which is what an author means by "can the unit get there at all".
+   opts.jump    — the unit has vault servos fitted, so it also clears up to
+                  JUMP squares of pit, mesh or open span in a straight line
+                  and comes down on the far side. */
 function reachable(map, from, opts){
   const powered = !!(opts && opts.powered);
-  const pass = (x,y) => walkable(map,x,y) ||
-                        (powered && !!at(map,x,y).signal && !lockedShut(map,x,y));
+  const jump = !!(opts && opts.jump);
+  const pass  = (x,y) => walkable(map,x,y) ||
+                         (powered && !!at(map,x,y).signal && !lockedShut(map,x,y));
+  /* a jump comes down on ground, never on a pit: it sails over one */
+  const land  = (x,y) => pass(x,y) && !at(map,x,y).deadly;
+  const over  = (x,y) => vaultable(map,x,y) ||
+                         (powered && !!at(map,x,y).signal && !lockedShut(map,x,y));
   const seen = new Set();
   if(!from || !pass(from.x, from.y)) return seen;
   const q = [[from.x, from.y]];
@@ -430,6 +489,15 @@ function reachable(map, from, opts){
       const nx=x+dx, ny=y+dy, k=pk(nx,ny);
       if(seen.has(k) || !pass(nx,ny)) continue;
       seen.add(k); q.push([nx,ny]);
+    }
+    if(!jump) continue;
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      for(let d=1; d<=JUMP; d++){
+        const nx=x+dx*d, ny=y+dy*d, k=pk(nx,ny);
+        if(!inside(map,nx,ny)) break;
+        if(land(nx,ny) && !seen.has(k)){ seen.add(k); q.push([nx,ny]) }
+        if(!over(nx,ny)) break;              // something solid in the arc
+      }
     }
   }
   return seen;
@@ -442,12 +510,22 @@ function audit(map){
   if(!walkable(map, map.spawn.x, map.spawn.y))
     out.issues.push('Spawn sits on '+at(map,map.spawn.x,map.spawn.y).name+' — the unit cannot stand there.');
   const seen = reachable(map, map.spawn, {powered:true});
+  /* the same again for a unit that has been fitted with vault servos, so that
+     ground an author gated behind a jump reads as gated rather than sealed */
+  const jseen = reachable(map, map.spawn, {powered:true, jump:true});
+  const walkIn = set => [...set].filter(k=>{const [x,y]=k.split(',').map(Number);return walkable(map,x,y)}).length;
+  out.seen = seen; out.jumpSeen = jseen;
   out.reached = seen.size;
-  out.unreachable = out.walkable - [...seen].filter(k=>{const [x,y]=k.split(',').map(Number);return walkable(map,x,y)}).length;
-  if(out.unreachable > 0) out.issues.push(out.unreachable+' walkable tile(s) are sealed off from spawn.');
+  out.unreachable = out.walkable - walkIn(seen);
+  out.jumpOnly = walkIn(jseen) - walkIn(seen);
+  const sealedOff = out.unreachable - out.jumpOnly;
+  if(sealedOff > 0) out.issues.push(sealedOff+' walkable tile(s) are sealed off from spawn.');
+  if(out.jumpOnly > 0) out.issues.push(out.jumpOnly+' walkable tile(s) can only be reached by jumping. '+
+                                       'The unit needs vault servos fitted before it can get there.');
   map.beacons.forEach((b,i)=>{
     if(!walkable(map,b.x,b.y)) out.issues.push('Beacon '+(i+1)+' is inside '+at(map,b.x,b.y).name+'.');
-    else if(!seen.has(pk(b.x,b.y))) out.issues.push('Beacon '+(i+1)+' cannot be reached from spawn.');
+    else if(!jseen.has(pk(b.x,b.y))) out.issues.push('Beacon '+(i+1)+' cannot be reached from spawn.');
+    else if(!seen.has(pk(b.x,b.y))) out.issues.push('Beacon '+(i+1)+' can only be reached by jumping to it.');
   });
   if(!out.walkable) out.issues.push('No walkable ground anywhere on this map.');
 
@@ -468,6 +546,12 @@ function audit(map){
     }
     if(t.press === 'terminal' && !String(p.text||'').trim())
       out.issues.push('Terminal'+where+' has no text to display.');
+    if(t.press === 'station' && !ABILITIES[p.ability])
+      out.issues.push(t.name+where+' fits nothing the unit can carry.');
+    if(t.ping && p.armed &&
+       Math.max(Math.abs(map.spawn.x-x), Math.abs(map.spawn.y-y)) <= (p.range|0))
+      out.issues.push(t.name+where+' goes quiet the moment the run starts — '+
+                      'spawn is already inside its range.');
     if(t.press === 'vent'){
       const d = p.dest;
       if(!d) out.issues.push('Vent'+where+' has no far end set.');
@@ -596,8 +680,9 @@ function paintCell(ctx, look, px, py, size, scale, join, glyph){
    which is how a gate nothing will ever move reads differently from one that
    is merely sealed. Open wins: a gate locked open is an opening. */
 function lookOf(t, state){
-  if(state && state.open   && t.open) return Object.assign({}, t, t.open);
-  if(state && state.locked && t.lock) return Object.assign({}, t, t.lock);
+  if(state && state.open   && t.open)  return Object.assign({}, t, t.open);
+  if(state && state.locked && t.lock)  return Object.assign({}, t, t.lock);
+  if(state && state.spent  && t.spent) return Object.assign({}, t, t.spent);
   return t;
 }
 
@@ -631,8 +716,8 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
   paintCell(ctx, lookOf(t, state), px, py, size, scale, null, t.glyph);
 }
 
-global.ISO = {TILES, ORDER, VOID, DIRS, def, MAPS, register, makeMap, normalize, resize, trim,
-               inside, tileAt, at, bodyAt, walkable, setTile, reachable, audit,
+global.ISO = {TILES, ORDER, VOID, DIRS, ABILITIES, JUMP, def, MAPS, register, makeMap, normalize, resize, trim,
+               inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
                schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,
                footprint, partAt, coveredBy, cluster, lockedShut,
                toJSON, toModule, parse, drawTile, drawCell};
