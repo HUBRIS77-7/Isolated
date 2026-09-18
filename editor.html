@@ -213,6 +213,7 @@ ISO.ORDER.forEach((ch,i)=>{
   b.innerHTML = `<span class="sw" style="background:${t.fill||'transparent'};border-color:${t.line||'var(--gfaint)'}">${t.glyph||''}</span>`+
                 `<span>${t.name}</span><span class="k">${i<10 ? (i+1)%10 : ''}</span>`;
   b.title = (t.walk ? 'Walkable' : 'Blocks the unit')
+          + (!t.walk && t.clear ? ' · but sight passes over it' : '')
           + (t.foot ? ' · covers more than its own tile' : '')
           + (t.merge ? ' · touching copies become one block' : '')
           + (t.props ? ' · set up per instance (Link)' : '');
