@@ -1,5 +1,4 @@
-/* ISOLATION map — edit by hand, or open editor.html and load this file. */
-ISO.register({
+{
   "id": "Eng-Lvl2",
   "name": "ENGINEERING LEVEL 2",
   "w": 54,
@@ -8,7 +7,7 @@ ISO.register({
   "beacons": [{"x": 0, "y": 5}],
   "props": {
     "26,0": {"title":"Destinations","text":"Engineering Command","desktop":false},
-    "28,0": {"dest":"tutorial","arrive":"","label":"ENG-2 SHAFT"},
+    "28,0": {"dest":"Eng-Com","arrive":"","label":"ENG-2 SHAFT"},
     "28,1": {"targets":[{"x":28,"y":0}],"label":""},
     "30,1": {"targets":[{"x":30,"y":10},{"x":31,"y":10},{"x":32,"y":10}],"label":""},
     "31,1": {"title":"Tram Concerns","text":"COMPLAINT SENT TO COMMAND: These trams are going to be the death of us! They can barely fit one person, and we're supposed to be moving at a pace that requires us to put three on one. They are hanging off the side!\n","desktop":false},
@@ -42,6 +41,7 @@ ISO.register({
     "51,12": {"open":false},
     "51,13": {"open":false},
     "51,14": {"open":false},
+    "53,14": {"dest":"tutorial","arrive":"","label":"PRIMARY-ENG-ELEVATOR"},
     "51,15": {"open":false},
     "2,17": {"targets":[{"x":1,"y":10}],"label":""},
     "8,18": {"title":"Discovered Contraband","text":"Contraband Log:\n\n* 20 Assorted Containers of Unauthorized Substance\n* 7 Unregistered Androids\n* 2 Pounds of Mozzarella","desktop":false},
@@ -89,7 +89,7 @@ ISO.register({
     "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv####++########b#",
     "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv,,...........%..",
     "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv==...........%..",
-    "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv=,...........%..",
+    "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv=,...........%.^",
     "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv,,...........%..",
     "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv################",
     "..b###########################x.x#####             ###",
@@ -103,4 +103,4 @@ ISO.register({
     "............vv........#vvvvvvvvvvvvvv#                ",
     "GGGGGGGGGGGGGGGGGGGGGG#vvvvvvvvvvvvvv#                "
   ]
-});
+}
