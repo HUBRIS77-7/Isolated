@@ -475,9 +475,13 @@ if(typeof ISO==='undefined'){
     makeMap:o=>({id:'fallback',name:'Unmapped Ground',w:o.w,h:o.h,spawn:{x:o.w>>1,y:o.h>>1},beacons:[],
       rows:Array.from({length:o.h},()=>'.'.repeat(o.w))}),
     parse:t=>JSON.parse(t),
+    bodyAt:(m,x,y)=>ISO.at(m,x,y),
     drawTile:(c,ch,px,py,s)=>{if(ch===' ')return;c.fillStyle='rgba(28,240,28,.045)';c.fillRect(px,py,s,s)},
+    drawCell:(c,m,x,y,px,py,s)=>ISO.drawTile(c,ISO.tileAt(m,x,y),px,py,s),
     DIRS:{up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]},
     propsAt:()=>null, signalIndex:()=>({}), signalTargets:()=>[],
+    footprint:(m,x,y)=>[{x,y,i:0,j:0}], partAt:()=>null, coveredBy:()=>null,
+    cluster:(m,x,y)=>({cells:[{x,y}],x0:x,y0:y,x1:x,y1:y,w:1,h:1}),
     tramPath:(m,x,y)=>[{x,y}], key:(x,y)=>x+','+y,
   };
 }
@@ -492,7 +496,17 @@ const MAP=loadMap();
 const COLS=MAP.w,ROWS=MAP.h;
 const K=(x,y)=>x+','+y;
 const tileDef=(x,y)=>ISO.at(MAP,x,y);
+/* What the unit meets in a square: the block standing over it if one is —
+   half a forklift is as solid as the tile it was painted on — or the tile. */
+const bodyDef=(x,y)=>ISO.bodyAt(MAP,x,y);
 const propsOf=(x,y)=>ISO.propsAt(MAP,x,y)||{};
+/* A block built out of however many tiles the author used says how big the
+   copy in front of the unit turned out to be. */
+function bumpLine(x,y,t){
+  if(!t.bump||!t.sized)return t.bump;
+  const b=ISO.cluster(MAP,x,y);
+  return b.cells.length>1 ? t.bump+' '+b.w+' \u00d7 '+b.h+' units.' : t.bump;
+}
 
 /* ---------- powered blocks ----------
    The rows say what is where. Everything that can change while the unit is
@@ -518,6 +532,7 @@ const tramOn=(x,y)=>world.tramAt.get(K(x,y))||null;
 /* What the unit can stand on: the tile, plus whatever the power has changed. */
 function walkableAt(x,y){
   if(tramOn(x,y))return true;                        // the platform is the floor
+  if(ISO.coveredBy(MAP,x,y))return false;            // a big block stands here
   const t=tileDef(x,y);
   if(t.signal==='toggle')return world.open.has(K(x,y));
   if(t.signal==='move')return false;                 // bare rail; platform is elsewhere
@@ -526,6 +541,7 @@ function walkableAt(x,y){
 /* What stops a platform: structure, a closed bulkhead, another platform. */
 function tramBlocked(c){
   if(!ISO.inside(MAP,c.x,c.y)||tramOn(c.x,c.y))return true;
+  if(ISO.coveredBy(MAP,c.x,c.y))return true;
   const ch=ISO.tileAt(MAP,c.x,c.y), t=ISO.def(ch);
   if(ch===' '||t.walk)return false;                  // open span or plain ground
   if(t.signal==='toggle')return !world.open.has(K(c.x,c.y));
@@ -574,10 +590,10 @@ function stepTo(nx,ny,dur){
 function tryMove(dir){
   if(!game.active||game.dead||term.on||game.mt<1)return;
   game.face=dir;
-  const [dx,dy]=DIRV[dir],nx=game.px+dx,ny=game.py+dy,t=tileDef(nx,ny);
+  const [dx,dy]=DIRV[dir],nx=game.px+dx,ny=game.py+dy,t=bodyDef(nx,ny);
   if(!walkableAt(nx,ny)){
     game.bx=dx;game.by=dy;game.bt=0;
-    const n=performance.now(), line=(t.signal==='move')?t.away:t.bump;
+    const n=performance.now(), line=(t.signal==='move')?t.away:bumpLine(nx,ny,t);
     if(line&&n-game.edgeLog>4000){game.edgeLog=n;say(line,t.alert?'alert':'dim')}
   }else{
     stepTo(nx,ny,.11);
@@ -602,6 +618,8 @@ function interact(){
     const t=tileDef(x,y);
     if(t.press==='button')return pressButton(x,y);
     if(t.press==='terminal')return openTerminal(x,y);
+    if(t.press==='gate')return driveGate(x,y);
+    if(t.press==='vent')return useVent(x,y);
   }
   const n=performance.now();
   if(n-game.useLog>2500){game.useLog=n;say('Nothing within reach answers.','dim')}
@@ -617,18 +635,51 @@ function pressButton(x,y){
   const lines=[];
   for(const c of targets){
     const t=tileDef(c.x,c.y);
-    const r=t.signal==='toggle'?driveBulkhead(c.x,c.y,tag)
+    const r=t.signal==='toggle'?driveDoor(c.x,c.y,tag)
            :t.signal==='move'  ?callTram(c.x,c.y,tag):null;
     if(r&&!lines.some(l=>l.text===r.text))lines.push(r);
   }
   if(!lines.length)return say('Control'+tag+' pressed. Nothing on the far end answers.','dim');
   for(const l of lines)say(l.text,l.cls);
 }
-function driveBulkhead(x,y,tag){
-  const k=K(x,y);
-  if(!world.open.has(k)){world.open.add(k);return {text:'Bulkhead'+tag+' driven open.'}}
-  if(game.px===x&&game.py===y)return {text:'Bulkhead'+tag+' obstructed. It holds open.',cls:'dim'};
-  world.open.delete(k);return {text:'Bulkhead'+tag+' driven shut.',cls:'dim'};
+/* A bulkhead is one tile. A cargo gate is as wide as the author painted it,
+   so every tile of the one body answers together — and a gate the unit can
+   reach answers [E] as readily as it answers a control. */
+function driveDoor(x,y,tag){
+  const t=tileDef(x,y), cells=ISO.cluster(MAP,x,y).cells, name=t.name;
+  if(cells.some(c=>!world.open.has(K(c.x,c.y)))){
+    cells.forEach(c=>world.open.add(K(c.x,c.y)));
+    return {text:name+tag+' driven open.'};
+  }
+  if(cells.some(c=>game.px===c.x&&game.py===c.y))
+    return {text:name+tag+' obstructed. It holds open.',cls:'dim'};
+  cells.forEach(c=>world.open.delete(K(c.x,c.y)));
+  return {text:name+tag+' driven shut.',cls:'dim'};
+}
+function driveGate(x,y){
+  world.lit.set(K(x,y),performance.now());
+  const r=driveDoor(x,y,'');
+  if(r)say(r.text,r.cls);
+}
+
+/* ---------- vents ----------
+   A duct the unit can fold itself into. [E] from the cover, or from on top of
+   it, and it comes out at the square the author linked. */
+function useVent(x,y){
+  const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'', d=p.dest;
+  world.lit.set(K(x,y),performance.now());
+  if(!d)return say('Duct'+tag+' is collapsed a metre in. No route through.','dim');
+  if(!ISO.inside(MAP,d.x,d.y)||!walkableAt(d.x,d.y))
+    return say('Duct'+tag+' reads blocked at the far end.','dim');
+  if(game.px===d.x&&game.py===d.y)
+    return say('Duct'+tag+' comes out where the unit already stands.','dim');
+  game.px=game.fx=d.x;game.py=game.fy=d.y;game.mt=1;game.bt=1;
+  game.visited.set(K(d.x,d.y),performance.now());
+  world.lit.set(K(d.x,d.y),performance.now());
+  say('Crawled the duct'+tag+'. Surfaced at '+d.x+','+d.y+'.','dim');
+  const t=tileDef(d.x,d.y);
+  if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
+  checkFooting();
 }
 function callTram(x,y,tag){
   const tr=world.trams.find(t=>t.home===K(x,y));
@@ -768,7 +819,7 @@ function drawFeed(now,dt){
     const px=ox+x*tile,py=oy+y*tile;
     /* a platform is drawn where it actually is, not where its rows entry sits */
     if(tileDef(x,y).signal!=='move')
-      ISO.drawTile(fx,ISO.tileAt(MAP,x,y),px,py,tile,D,{open:world.open.has(K(x,y))});
+      ISO.drawCell(fx,MAP,x,y,px,py,tile,D,{open:world.open.has(K(x,y))});
     const v=game.visited.get(x+','+y);
     if(v!==undefined){
       const age=(now-v)/1000;

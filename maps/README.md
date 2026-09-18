@@ -63,6 +63,15 @@ ISO.register({
 | `b`  | Button    | no   | `[E]` from an adjacent tile signals its targets |
 | `c`  | Terminal  | no   | `[E]` opens a small window of text           |
 | `^`  | Elevator  | yes  | A beacon you place as a tile                 |
+| `L`  | Locker    | no   | Decoration                                   |
+| `B`  | Box       | no   | Decoration                                   |
+| `A`  | Filing cabinet | no | Decoration                                 |
+| `/`  | Broken wall | yes | Reads as wall, but the gap is walkable      |
+| `C`  | Cargo container | no | Touching copies become one container — as big as you paint it |
+| `F`  | Forklift  | no   | Two tiles long; turns with its `dir`         |
+| `D`  | Desk      | no   | Three tiles long; turns with its `dir`       |
+| `G`  | Cargo gate | no  | Sealed. `[E]` drives it, and so does a button. Touching copies open together |
+| `V`  | Vent      | yes  | `[E]` crawls through to the square it is linked to |
 
 To add a tile type, add one entry to `TILES` in `tiles.js`. It shows up in the
 editor palette on its own and the game obeys it straight away — walkability,
@@ -83,6 +92,11 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Tram     | `dir`, `dist`  | Which way the platform runs, and how far       |
 | Terminal | `title`, `text`| What the small window says                     |
 | Terminal | `desktop`      | This console has a desktop behind it (not built yet) |
+| Forklift | `dir`          | Which way it faces, so which tile its second half covers |
+| Desk     | `dir`          | Which way it runs                              |
+| Cargo gate | `open`       | Starts open rather than sealed                 |
+| Vent     | `dest`         | The square it comes out at                     |
+| Vent     | `label`        | Name shown in the message log                  |
 
 In the editor, pick the **Link** tool (`L`) and click a block: its settings
 appear under **INSTANCE**. Wire a button up with **Pick ▸**, then click the
@@ -91,6 +105,10 @@ to the one control — click a block a second time to drop it, `Esc` when done.
 Each link is listed under the button with an `×` beside it. Painting a block
 that takes settings selects it straight away, and painting over one throws its
 settings out with it.
+
+Anything with a `dir` — a forklift, a desk, a platform — also turns with
+**`R`** while it is selected, which is quicker than reaching for the dropdown
+while laying out a room.
 
 The canvas draws the wiring while you work: amber from each button to every
 block it drives, and a pale line along the rail each platform runs.
@@ -104,6 +122,38 @@ as one.
 A map written before a button could drive more than one block still loads: its
 single `target` is read as a list of one.
 
+## Blocks bigger than one tile
+
+A map is still one character per tile. A block that covers more than one works
+two ways, because the two read differently to whoever is drawing:
+
+**It states its own size** (`foot` in `tiles.js`). You paint one tile — the
+anchor — and the block works out the rest from its own `dir`: a forklift is
+always two tiles, a desk always three. Turning it moves the tiles it covers,
+so rotating a desk is a change of setting rather than a redraw. The far half
+is as solid as the tile you painted, and walking into it reads the whole
+block's name.
+
+**It is as big as you paint it** (`merge`). Tiles of the same kind that touch
+draw as one body, with the seams between them left out: a cargo container is
+however many tiles you gave it, and the log says what size the unit found —
+*Cargo container. Hull seals read intact. 3 × 2 units.* A cargo gate works
+the same way, so a gate four tiles tall opens as one door, whether the unit
+drives it or a button does.
+
+Survey flags a big block that reaches past the edge of the record, stands in a
+wall, or overlaps another one.
+
+## Two ways into the same block
+
+A cargo gate answers a button the way a bulkhead does, and answers `[E]` from
+an adjacent tile on its own — so it needs no control, and Survey does not ask
+for one. A vent needs no control either: `[E]` from the cover, or from standing
+on it, and the unit comes out at the square the vent is linked to. Link the far
+end with **Pick ▸** under **INSTANCE**; point two vents at each other and the
+route runs both ways. The canvas draws a dotted line to wherever each vent
+comes out.
+
 Buttons and terminals do not block signals — they block the unit, so put them
 in a wall next to a tile it can stand on. A tram's rail may run over unmapped
 space or a pit; the platform is the floor while it is there, and bare rail
@@ -112,4 +162,6 @@ when it is not.
 The editor's **Survey** panel flags the things that break a map: a spawn inside
 a wall, a beacon that cannot be reached, ground sealed off from the rest
 (tinted red on the canvas), a button that signals nothing, a terminal with no
-text, a bulkhead no button opens, a tram whose rail runs into a wall.
+text, a bulkhead no button opens, a tram whose rail runs into a wall, a vent
+with no far end or one that comes out inside a wall, and a forklift or desk
+with nowhere to stand.
