@@ -28,8 +28,11 @@
              fixture can be a fixed two tiles long or sized copy by copy. It
              runs along the block's `dir`, so rotating it turns the footprint.
    parts   — glyph per footprint cell (without it, `glyph` is stamped once)
-   merge   — touching copies of the same block draw as one body, so an author
-             builds something as big as they like out of ordinary tiles
+   merge   — touching copies of the same block draw as one body, whose glyph
+             repeats across every tile: an author builds something as big as
+             they like out of ordinary tiles
+   lock    — alternate look and bump line for a copy set `locked`, which no
+             control and no [E] will ever drive
    sized   — its log line reports how big the copy the unit found actually is
    props   — per-instance settings (see below)                      */
 
@@ -111,7 +114,10 @@ const TILES = {
         bump:'Cargo gate. Sealed. [E] to drive it, or find the control.',
         signal:'toggle', press:'gate', merge:true,
         open:{fill:'rgba(255,180,74,.05)', line:'rgba(255,180,74,.3)', glyph:'▏'},
-        props:{open:{type:'bool', label:'Starts open', def:false}}},
+        lock:{fill:'rgba(255,180,74,.3)',  line:'rgba(255,180,74,.85)', glyph:'▦',
+              bump:'Cargo gate. Locked out. Nothing on this side drives it.'},
+        props:{open:{type:'bool',   label:'Starts open', def:false},
+               locked:{type:'bool', label:'Locked — cannot be driven', def:false}}},
   'V': {key:'V', id:'vent',   name:'Vent',      walk:true,  fill:'rgba(191,247,220,.1)', line:'rgba(191,247,220,.45)', glyph:'☰',
         press:'vent', enter:'Duct cover reads loose. [E] to crawl through.',
         props:{dest:{type:'point', label:'Comes out at', def:null},
@@ -316,6 +322,14 @@ function setProp(map,x,y,key,value){
   return true;
 }
 
+/* A block that will never change state: locked, and not locked open. The unit
+   cannot drive it, a control cannot drive it, and ground behind it really is
+   sealed off — which is what the survey has to know to stay honest. */
+function lockedShut(map,x,y){
+  const p = propsAt(map,x,y) || {};
+  return !!p.locked && !p.open;
+}
+
 /* Every block one button drives. A control may run to any number of them. */
 const signalTargets = (map,x,y) => ((propsAt(map,x,y)||{}).targets) || [];
 
@@ -402,7 +416,8 @@ function trim(map){
    which is what an author means by "can the unit get there at all". */
 function reachable(map, from, opts){
   const powered = !!(opts && opts.powered);
-  const pass = (x,y) => walkable(map,x,y) || (powered && !!at(map,x,y).signal);
+  const pass = (x,y) => walkable(map,x,y) ||
+                        (powered && !!at(map,x,y).signal && !lockedShut(map,x,y));
   const seen = new Set();
   if(!from || !pass(from.x, from.y)) return seen;
   const q = [[from.x, from.y]];
@@ -461,8 +476,20 @@ function audit(map){
                         ' at '+d.x+','+d.y+'.');
     }
     /* a gate the unit can drive itself does not need a control */
-    if(t.signal === 'toggle' && !t.press && !wired[pk(x,y)])
+    if(t.signal === 'toggle' && !t.press && !wired[pk(x,y)] && !p.locked)
       out.issues.push(t.name+where+' has no button wired to it.');
+    if(t.signal && lockedShut(map,x,y) && wired[pk(x,y)])
+      out.issues.push(t.name+where+' is locked, so the control wired to it cannot open it.');
+    if(t.signal && t.merge){
+      /* one body, one answer: report from the tile the body starts at */
+      const body = cluster(map,x,y);
+      const head = body.cells.reduce((a,b)=>(b.y<a.y || (b.y===a.y && b.x<a.x)) ? b : a);
+      const setting = c => { const q = propsAt(map,c.x,c.y) || {};
+                             return (q.locked?'L':'-')+(q.open?'O':'-') };
+      if(head.x===x && head.y===y && new Set(body.cells.map(setting)).size > 1)
+        out.issues.push(t.name+where+' is one body, but its tiles are set differently. '+
+                        'It answers as a whole: locked anywhere means locked.');
+    }
     if(t.foot) for(const c of footprint(map,x,y)){
       if(!c.i && !c.j) continue;                       // the tile it is painted on
       if(!inside(map, c.x, c.y)){
@@ -482,7 +509,8 @@ function audit(map){
       tramPath(map,x,y).slice(1).forEach(c=>{
         if(!inside(map,c.x,c.y))
           out.issues.push('Tram'+where+' runs off the edge of the record.');
-        else if(!walkable(map,c.x,c.y) && tileAt(map,c.x,c.y)!==' ' && !at(map,c.x,c.y).signal)
+        else if(!walkable(map,c.x,c.y) && tileAt(map,c.x,c.y)!==' ' &&
+                (!at(map,c.x,c.y).signal || lockedShut(map,c.x,c.y)))
           out.issues.push('Tram'+where+' is blocked by '+at(map,c.x,c.y).name+' at '+c.x+','+c.y+'.');
       });
     }
@@ -562,7 +590,14 @@ function paintCell(ctx, look, px, py, size, scale, join, glyph){
     ctx.fillText(glyph, px+size/2, py+size/2+size*.04);
   }
 }
-const lookOf = (t, state) => (state && state.open && t.open) ? Object.assign({}, t, t.open) : t;
+/* An open block shows its open look; a block locked shut shows its locked one,
+   which is how a gate nothing will ever move reads differently from one that
+   is merely sealed. Open wins: a gate locked open is an opening. */
+function lookOf(t, state){
+  if(state && state.open   && t.open) return Object.assign({}, t, t.open);
+  if(state && state.locked && t.lock) return Object.assign({}, t, t.lock);
+  return t;
+}
 
 /* One tile on its own — kept for callers that have a character and nothing else. */
 function drawTile(ctx, ch, px, py, size, scale, state){
@@ -587,9 +622,9 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
   if(t.merge){
     const mine = (nx,ny) => tileAt(map,nx,ny) === ch;
     const join = {n:mine(x,y-1), s:mine(x,y+1), w:mine(x-1,y), e:mine(x+1,y)};
-    /* stamped once per body, on the corner it starts from */
-    const glyph = (!join.w && !join.n) ? t.glyph : null;
-    return paintCell(ctx, lookOf(t, state), px, py, size, scale, join, glyph);
+    /* the glyph repeats across the whole body, so a container reads as crating
+       and a gate as slats however many tiles the author gave it */
+    return paintCell(ctx, lookOf(t, state), px, py, size, scale, join, t.glyph);
   }
   paintCell(ctx, lookOf(t, state), px, py, size, scale, null, t.glyph);
 }
@@ -597,5 +632,6 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
 global.ISO = {TILES, ORDER, VOID, DIRS, def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, bodyAt, walkable, setTile, reachable, audit,
                schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,
-               footprint, partAt, coveredBy, cluster, toJSON, toModule, parse, drawTile, drawCell};
+               footprint, partAt, coveredBy, cluster, lockedShut,
+               toJSON, toModule, parse, drawTile, drawCell};
 })(typeof globalThis!=='undefined'?globalThis:this);

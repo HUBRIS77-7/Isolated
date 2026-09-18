@@ -503,6 +503,7 @@ const propsOf=(x,y)=>ISO.propsAt(MAP,x,y)||{};
 /* A block built out of however many tiles the author used says how big the
    copy in front of the unit turned out to be. */
 function bumpLine(x,y,t){
+  if(t.lock&&t.lock.bump&&propsOf(x,y).locked)return t.lock.bump;
   if(!t.bump||!t.sized)return t.bump;
   const b=ISO.cluster(MAP,x,y);
   return b.cells.length>1 ? t.bump+' '+b.w+' \u00d7 '+b.h+' units.' : t.bump;
@@ -647,6 +648,9 @@ function pressButton(x,y){
    reach answers [E] as readily as it answers a control. */
 function driveDoor(x,y,tag){
   const t=tileDef(x,y), cells=ISO.cluster(MAP,x,y).cells, name=t.name;
+  /* one body, one answer: a lock anywhere in it locks the whole door */
+  if(cells.some(c=>propsOf(c.x,c.y).locked))
+    return {text:name+tag+' is locked. It does not answer.',cls:'dim'};
   if(cells.some(c=>!world.open.has(K(c.x,c.y)))){
     cells.forEach(c=>world.open.add(K(c.x,c.y)));
     return {text:name+tag+' driven open.'};
@@ -819,7 +823,8 @@ function drawFeed(now,dt){
     const px=ox+x*tile,py=oy+y*tile;
     /* a platform is drawn where it actually is, not where its rows entry sits */
     if(tileDef(x,y).signal!=='move')
-      ISO.drawCell(fx,MAP,x,y,px,py,tile,D,{open:world.open.has(K(x,y))});
+      ISO.drawCell(fx,MAP,x,y,px,py,tile,D,
+                   {open:world.open.has(K(x,y)), locked:propsOf(x,y).locked});
     const v=game.visited.get(x+','+y);
     if(v!==undefined){
       const age=(now-v)/1000;
