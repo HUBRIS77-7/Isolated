@@ -62,13 +62,13 @@
 const ABILITIES = {
   jump: {id:'jump', name:'Vault servos',
          fitted:'MOBILITY PACKAGE FITTED: VAULT SERVOS.',
-         hint:'Hold [SPACE] to wind up, aim with the movement keys, release to clear up to three squares.'},
+         hint:'Hold [SPACE] to wind up, aim with the movement keys, release to clear up to four squares.'},
 };
 const ABILITY_OPTS = Object.keys(ABILITIES).map(k=>({value:k, label:ABILITIES[k].name}));
 /* Squares a fully wound-up jump clears. The game and the survey both read it
    from here, so the reach the unit has and the reach a map is checked against
    are the same number. */
-const JUMP = 3;
+const JUMP = 4;
 
 const TILES = {
   ' ': {key:' ', id:'void',   name:'Unmapped',  walk:false, fill:null,

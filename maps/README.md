@@ -157,18 +157,18 @@ There is one package so far:
 | `jump`  | Vault servos | Hold `[SPACE]` to wind up, release to leap |
 
 The jump is held, not tapped. The longer the wind-up, the further it carries —
-one square, two, or the three the servos are rated for — and the movement keys
-aim it while it is held rather than walking the unit off the ledge it is lining
-up on. The feed draws the arc while the key is down: every square the jump
-would cross, the one it would come down on, and how far along the charge has
-got, so nothing is committed blind.
+one square, two, three, or the four the servos are rated for — and the movement
+keys aim it while it is held rather than walking the unit off the ledge it is
+lining up on. The feed draws the arc while the key is down: every square the
+jump would cross, the one it would come down on, and how far along the charge
+has got, so nothing is committed blind.
 
 What it clears is ground of any kind, the empty space the record does not reach
 into, and anything low enough to see over — mesh, a console, a desk. A wall, a
 sealed bulkhead or a stack of crating is as high as it is solid, and turns a
 jump back the way it turns a step back. **A pit is cleared, never landed on:**
 the unit sails over one and comes down on the far side, so the widest gap a
-jump will cross is two squares. If the wind-up is longer than the ground will
+jump will cross is three squares. If the wind-up is longer than the ground will
 take, the unit lands on the last square that reads solid; if there is nothing
 to come down on at all, it holds its ground and says so.
 
