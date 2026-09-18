@@ -1,5 +1,4 @@
-/* ISOLATION map — edit by hand, or open editor.html and load this file. */
-ISO.register({
+{
   "id": "tutorial",
   "name": "Landing Site — Node 77",
   "w": 54,
@@ -10,24 +9,24 @@ ISO.register({
     "27,2": {"title":"Engineering Log: 1-1","text":"This is Engineer Alex Haw onboard the L.S.V Mare destined for the 61 Cygni system. We're approximately 25 years into the trip, and us in Engineering just got woken up from Cyro sleep for a round of maintenance checks.\n\nAll's normal, but want to note that I'm getting some errant radiation readers from the rear sensors. Probably a malfunction. I'll have some guys in Exo-Engineering go fix it.  ","desktop":false},
     "31,5": {"dest":{"x":27,"y":12},"label":"D-DECK DUCT"},
     "27,12": {"dest":{"x":31,"y":5},"label":"D-DECK DUCT"},
-    "4,13": {"target":{"x":3,"y":15},"label":"WEST CAP"},
+    "4,13": {"targets":[{"x":3,"y":15}],"label":"WEST CAP"},
     "28,13": {"targets":[{"x":33,"y":14}],"label":"CARGO GATE"},
     "17,14": {"dir":"down"},
-    "33,14": {"open":false},
+    "33,14": {"open":false,"locked":false},
     "38,14": {"open":false},
     "39,14": {"open":false},
     "0,15": {"title":"DESTINATIONS","text":"ENGINEERING LEVEL 2: [ACCESSIBLE]\n\nWATER TREATMENT PLANT: [INACCESSIBLE]\n\nENGINEERING COMMAND: [INSUFFICIENT CLEARENCE]","desktop":false},
     "3,15": {"open":false},
-    "33,15": {"open":false},
+    "33,15": {"open":false,"locked":false},
     "38,15": {"open":false},
     "39,15": {"open":false},
-    "1,16": {"dest":"Eng-Lvl2","arrive":"","label":"ENG-2 SHAFT"},
+    "1,16": {"dest":"ENGLVL2","arrive":"","label":"PRIMARY-ENG-ELEVATOR"},
     "30,16": {"dir":"left"},
-    "33,16": {"open":false},
+    "33,16": {"open":false,"locked":false},
     "38,16": {"open":false},
     "39,16": {"open":false},
-    "1,17": {"target":{"x":1,"y":16},"label":""},
-    "33,17": {"open":false},
+    "1,17": {"targets":[{"x":1,"y":16}],"label":""},
+    "33,17": {"open":false,"locked":false},
     "38,17": {"open":false},
     "39,17": {"open":false},
     "23,20": {"dir":"right"},
@@ -62,4 +61,4 @@ ISO.register({
     "                                                      ",
     "                                                      "
   ]
-});
+}
