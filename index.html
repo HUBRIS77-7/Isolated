@@ -108,6 +108,9 @@ canvas{display:block}
 #dpad button{font:inherit;font-size:18px;background:#000;color:var(--g);border:1px solid var(--gdim);touch-action:manipulation}
 #dpad [data-dir=up]{grid-column:2}#dpad [data-dir=left]{grid-column:1;grid-row:2}#dpad [data-dir=down]{grid-column:2;grid-row:2}#dpad [data-dir=right]{grid-column:3;grid-row:2}
 #dpad [data-act=use]{grid-column:3;grid-row:1;border-color:var(--amber);color:var(--amber)}
+/* the jump pad only exists once the unit has the servos to use it */
+#dpad [data-act=jump]{grid-column:1;grid-row:1;font-size:13px;display:none;border-color:var(--mfg);color:var(--mfg)}
+#dpad.canjump [data-act=jump]{display:block}
 @media (pointer:coarse){#console.show ~ #dpad{display:grid}}
 </style>
 </head>
@@ -160,14 +163,14 @@ canvas{display:block}
         <div class="box" style="flex:1"><h4>&lt;Message Log&gt;</h4><div id="log"></div></div>
         <div class="box" id="objWrap"><h4>&lt;Objective&gt;</h4>
           <div id="obj" class="dim">—</div>
-          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div></div>
+          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div></div>
         </div>
       </div>
     </div>
-    <div class="term-bar"><span>WASD/Arrows to Move · [E] to Interact</span><span id="coords">X:00 Y:00</span></div>
+    <div class="term-bar"><span id="footHint">WASD/Arrows to Move · [E] to Interact</span><span id="coords">X:00 Y:00</span></div>
   </div>
 </section>
-<div id="dpad"><button data-dir="up">▲</button><button data-act="use">E</button><button data-dir="left">◀</button><button data-dir="down">▼</button><button data-dir="right">▶</button></div>
+<div id="dpad"><button data-act="jump">JMP</button><button data-dir="up">▲</button><button data-act="use">E</button><button data-dir="left">◀</button><button data-dir="down">▼</button><button data-dir="right">▶</button></div>
 
 <!-- what a terminal opens into: one small window of text -->
 <div id="tiny">
@@ -483,6 +486,7 @@ if(typeof ISO==='undefined'){
     footprint:(m,x,y)=>[{x,y,i:0,j:0}], partAt:()=>null, coveredBy:()=>null,
     cluster:(m,x,y)=>({cells:[{x,y}],x0:x,y0:y,x1:x,y1:y,w:1,h:1}),
     tramPath:(m,x,y)=>[{x,y}], key:(x,y)=>x+','+y,
+    vaultable:(m,x,y)=>ISO.at(m,x,y).walk, ABILITIES:{}, JUMP:3,
   };
 }
 function loadMap(){
@@ -503,6 +507,7 @@ const propsOf=(x,y)=>ISO.propsAt(MAP,x,y)||{};
 /* A block built out of however many tiles the author used says how big the
    copy in front of the unit turned out to be. */
 function bumpLine(x,y,t){
+  if(t.spent&&t.spent.bump&&world.spent.has(K(x,y)))return t.spent.bump;
   if(t.lock&&t.lock.bump&&propsOf(x,y).locked)return t.lock.bump;
   if(!t.bump||!t.sized)return t.bump;
   const b=ISO.cluster(MAP,x,y);
@@ -512,16 +517,22 @@ function bumpLine(x,y,t){
 /* ---------- powered blocks ----------
    The rows say what is where. Everything that can change while the unit is
    walking about lives here instead, so a reset is one call to buildWorld(). */
-const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map()};
+const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
+              spent:new Set(), beacons:new Map()};
 const TRAM_STEP=.34;                       // seconds the platform takes per tile
 function buildWorld(){
   world.open.clear(); world.trams.length=0; world.lit.clear();
+  world.spent.clear(); world.beacons.clear();
   sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
     const t=tileDef(x,y), p=propsOf(x,y);
     if(t.signal==='toggle'&&p.open) world.open.add(K(x,y));
     if(t.signal==='move') world.trams.push({home:K(x,y), path:ISO.tramPath(MAP,x,y),
                                             i:0, dest:0, ax:x, ay:y, t:1});
+    /* every armed beacon transmits from the moment the run starts, and a
+       re-initialise arms them all again */
+    if(t.ping&&p.armed) world.beacons.set(K(x,y),{x, y, range:p.range|0,
+                                                  label:p.label||'', objective:p.objective||''});
   }
   indexTrams();
 }
@@ -540,6 +551,19 @@ function walkableAt(x,y){
   if(t.signal==='move')return false;                 // bare rail; platform is elsewhere
   return t.walk;
 }
+/* What a jump passes over without coming down on it, and what it may come
+   down on. A pit is cleared but never landed on: the unit sails over one. */
+function vaultAt(x,y){
+  if(!ISO.inside(MAP,x,y))return false;
+  if(tramOn(x,y))return true;
+  if(ISO.coveredBy(MAP,x,y))return ISO.vaultable(MAP,x,y);
+  const t=tileDef(x,y);
+  if(t.signal==='toggle')return world.open.has(K(x,y));
+  if(t.signal==='move')return true;                  // bare rail is an open span
+  return ISO.vaultable(MAP,x,y);
+}
+const landAt=(x,y)=>ISO.inside(MAP,x,y)&&walkableAt(x,y)&&!(tileDef(x,y).deadly&&!tramOn(x,y));
+
 /* What stops a platform: structure, a closed bulkhead, another platform. */
 function tramBlocked(c){
   if(!ISO.inside(MAP,c.x,c.y)||tramOn(c.x,c.y))return true;
@@ -629,9 +653,21 @@ function sightAlpha(x,y,now){
 
 const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,mdur:.11,bx:0,by:0,bt:1,
   active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0,toldAbout:new Set(),
-  face:'down',dead:false,sink:0,useLog:0,lastObj:''};
+  face:'down',dead:false,sink:0,useLog:0,baseObj:'',
+  abilities:new Set(),          // what a modification station has fitted so far
+  arc:0};                       // squares the move in flight is covering, if it is a jump
+/* Winding up: how long the key has been held, and how far that carries. */
+const jump={on:false, t:0};
+const JUMP_WIND=.62;                       // seconds of hold for the full three squares
+const jumpDist=()=>1+Math.min(ISO.JUMP-1, Math.floor(jump.t/JUMP_WIND*ISO.JUMP));
 game.visited.set(K(MAP.spawn.x,MAP.spawn.y),0);
 buildWorld();
+/* ?abilities=jump fits a package before the run starts, so a map built around
+   one can be played from the editor without walking to the station first. */
+(new URLSearchParams(location.search).get('abilities')||'').split(/[\s,]+/)
+  .forEach(id=>{if(ISO.ABILITIES[id])game.abilities.add(id)});
+syncAbilities();
+
 const view={x:0,y:0,ready:false};   // camera, in tiles
 const feed=$('#feed'),fx=feed.getContext('2d'),logEl=$('#log');
 
@@ -646,7 +682,48 @@ function say(text,cls='',speed=14,pause=220){
   }));
   return typing;
 }
-const objective=t=>{$('#obj').textContent=t;$('#obj').className=''};
+/* The objective line. Whatever script is running owns it; a beacon that is
+   transmitting an errand of its own borrows it while it is lit, and hands it
+   back when it goes quiet. */
+function objective(t,borrowed){
+  if(!borrowed)game.baseObj=t;
+  $('#obj').textContent=t;$('#obj').className='';
+}
+function beaconObjective(){
+  let best=null,bd=Infinity;
+  world.beacons.forEach(b=>{
+    if(!b.objective)return;
+    const d=Math.abs(b.x-game.px)+Math.abs(b.y-game.py);
+    if(d<bd){bd=d;best=b}
+  });
+  return best?best.objective:null;
+}
+function refreshObjective(){
+  if(game.dead||!game.baseObj)return;
+  /* while the calibration script is still talking, the line is its own */
+  const script=game.step>=0&&game.step<3;
+  objective((!script&&beaconObjective())||game.baseObj,true);
+}
+
+/* ---------- abilities ----------
+   The unit is fitted with these one at a time, at a modification station.
+   They outlive a re-initialise: the chassis is rebuilt, the package is not. */
+function grantAbility(id,tag){
+  const a=ISO.ABILITIES[id];
+  if(!a||game.abilities.has(id))return false;
+  game.abilities.add(id);
+  syncAbilities();
+  say('MODIFICATION STATION'+(tag||'')+' ENGAGED.','b');
+  say(a.fitted,'b');
+  say(a.hint);
+  return true;
+}
+function syncAbilities(){
+  const j=game.abilities.has('jump');
+  $('#keyJump').style.display=j?'':'none';
+  $('#dpad').classList.toggle('canjump',j);
+  $('#footHint').textContent='WASD/Arrows to Move · [E] to Interact'+(j?' · [SPACE] to Jump':'');
+}
 
 function startConsole(){
   state='console';show('#console');
@@ -663,9 +740,30 @@ function startConsole(){
 }
 
 const DIRV={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
-function stepTo(nx,ny,dur){
-  game.fx=game.px;game.fy=game.py;game.px=nx;game.py=ny;game.mt=0;game.mdur=dur;
+/* `arc` is how many squares the move is covering when it is a jump, and 0 for
+   an ordinary step — it is what the drawing reads to lift the unit off the
+   deck, so every other way of moving clears it on its way past. */
+function stepTo(nx,ny,dur,arc){
+  game.fx=game.px;game.fy=game.py;game.px=nx;game.py=ny;game.mt=0;game.mdur=dur;game.arc=arc|0;
   game.visited.set(K(nx,ny),performance.now());
+  arrived();
+}
+/* Anything that reads the square the unit has just come to rest on, however it
+   got there: a step, a jump, a duct, or a platform carrying it. */
+function arrived(){
+  checkBeacons();
+  refreshObjective();
+}
+/* A beacon transmits until the unit is close enough to read it directly, and
+   then there is nothing left to say. */
+function checkBeacons(){
+  if(!world.beacons.size)return;
+  for(const [k,b] of [...world.beacons]){
+    if(Math.max(Math.abs(game.px-b.x),Math.abs(game.py-b.y))>b.range)continue;
+    world.beacons.delete(k);world.spent.add(k);
+    world.lit.set(k,performance.now());
+    say('Beacon'+(b.label?' ['+b.label+']':'')+' reached. Transmitter goes quiet.','b');
+  }
 }
 function tryMove(dir){
   if(!game.active||game.dead||term.on||game.mt<1)return;
@@ -681,6 +779,53 @@ function tryMove(dir){
     if(t.deadly&&!tramOn(nx,ny))return die(t.deadly);
   }
   tutorial(dir);
+}
+
+/* ---------- [SPACE]: the jump ----------
+   Held, not tapped: the longer the wind-up, the further it carries, up to the
+   three squares the servos are rated for. The movement keys aim it while it is
+   winding up rather than walking the unit off the edge it is lining up on. */
+function startJump(){
+  if(!game.active||game.dead||term.on)return;
+  if(!game.abilities.has('jump')){
+    const n=performance.now();
+    if(n-game.useLog>2500){game.useLog=n;say('No mobility package fitted. The legs will not wind up.','dim')}
+    return;
+  }
+  if(game.mt<1)return;                       // still coming down from the last one
+  jump.on=true;jump.t=0;litKey('jump');
+}
+const cancelJump=()=>{jump.on=false;jump.t=0};
+/* The furthest square, up to the wind-up, the unit can actually come down on:
+   it sails over a pit or a run of mesh and lands on the far side, and it stops
+   at whatever is too solid to clear. 0 means it never leaves the ground. */
+function jumpLanding(dist){
+  const [dx,dy]=DIRV[game.face];
+  let best=0;
+  for(let d=1;d<=dist;d++){
+    const x=game.px+dx*d,y=game.py+dy*d;
+    if(!ISO.inside(MAP,x,y))break;
+    if(landAt(x,y))best=d;
+    if(!vaultAt(x,y))break;                  // something solid in the arc
+  }
+  return best;
+}
+function releaseJump(){
+  if(!jump.on)return;
+  const dist=jumpDist();
+  cancelJump();
+  if(!game.active||game.dead||term.on)return;
+  const [dx,dy]=DIRV[game.face],d=jumpLanding(dist),n=performance.now();
+  if(!d){
+    game.bx=dx;game.by=dy;game.bt=0;
+    if(n-game.edgeLog>2500){game.edgeLog=n;say('Wound up with nothing to come down on. The unit holds its ground.','dim')}
+    return;
+  }
+  if(d<dist&&n-game.edgeLog>2500){game.edgeLog=n;say('Short of the wind-up. Only '+d+' square(s) read solid.','dim')}
+  const nx=game.px+dx*d,ny=game.py+dy*d,t=bodyDef(nx,ny);
+  stepTo(nx,ny,.16+.05*d,d);
+  if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
+  if(t.deadly&&!tramOn(nx,ny))die(t.deadly);
 }
 
 /* ---------- [E]: buttons and terminals ----------
@@ -700,6 +845,7 @@ function interact(){
     if(t.press==='terminal')return openTerminal(x,y);
     if(t.press==='gate')return driveGate(x,y);
     if(t.press==='vent')return useVent(x,y);
+    if(t.press==='station')return useStation(x,y);
   }
   const n=performance.now();
   if(n-game.useLog>2500){game.useLog=n;say('Nothing within reach answers.','dim')}
@@ -762,8 +908,21 @@ function useVent(x,y){
   say('Crawled the duct'+tag+'. Surfaced at '+d.x+','+d.y+'.','dim');
   const t=tileDef(d.x,d.y);
   if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
-  checkFooting();
+  checkFooting();arrived();
 }
+/* ---------- modification stations ----------
+   One station, one package. Docking with it fits whatever it was stocked with
+   and leaves it spent — the unit carries the modification from then on, and
+   carries it through a re-initialise as well. */
+function useStation(x,y){
+  world.lit.set(K(x,y),performance.now());
+  const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'', a=ISO.ABILITIES[p.ability];
+  if(!a)return say('Station'+tag+' reads empty. Nothing on the rack registers.','dim');
+  if(world.spent.has(K(x,y)))return say('Station'+tag+' is spent. Nothing left to fit.','dim');
+  world.spent.add(K(x,y));
+  if(!grantAbility(a.id,tag))say(a.name+tag+' already fitted. The arm withdraws.','dim');
+}
+
 function callTram(x,y,tag){
   const tr=world.trams.find(t=>t.home===K(x,y));
   if(!tr)return {text:'Signal sent. Nothing on that rail answers.',cls:'dim'};
@@ -814,22 +973,24 @@ function closeTerminal(){term.on=false;$('#tiny').classList.remove('on')}
 /* ---------- ending the run ---------- */
 function die(reason){
   if(game.dead)return;
-  game.dead=true;game.active=false;game.sink=0;closeTerminal();
+  game.dead=true;game.active=false;game.sink=0;closeTerminal();cancelJump();
   say(reason,'alert');
   say('CHASSIS UNRECOVERABLE. SIGNAL LOST.','alert');
-  game.lastObj=$('#obj').textContent;
-  objective('SIGNAL LOST. [R] to re-initialise.');
+  objective('SIGNAL LOST. [R] to re-initialise.',true);
   $('#obj').className='alert';
 }
 function respawn(){
   if(!game.dead)return;
-  game.dead=false;game.sink=0;game.mt=1;game.mdur=.11;game.bt=1;game.face='down';
+  game.dead=false;game.sink=0;game.mt=1;game.mdur=.11;game.bt=1;game.face='down';game.arc=0;
   game.px=game.fx=MAP.spawn.x;game.py=game.fy=MAP.spawn.y;
+  cancelJump();
+  /* the ground, the doors and every beacon go back to how they started —
+     what the unit has been fitted with does not */
   buildWorld();
   game.visited.set(K(game.px,game.py),performance.now());
   game.active=true;
   say('Re-initialised at the landing record.','dim');
-  objective(game.lastObj||'Explore.');
+  objective(game.baseObj||'Explore.');refreshObjective();
 }
 function tutorial(dir){
   if(game.step===0){
@@ -875,6 +1036,7 @@ function drawFeed(now,dt){
 
   /* advance the unit first — the camera follows where it is actually drawn */
   game.mt=Math.min(1,game.mt+dt/game.mdur);game.bt=Math.min(1,game.bt+dt/.18);
+  if(jump.on)jump.t=Math.min(JUMP_WIND,jump.t+dt);
   if(game.dead)game.sink=Math.min(1,game.sink+dt/.55);
   const e=ease(game.mt),bump=Math.sin(game.bt*Math.PI)*.16;
   const rx=lerp(game.fx,game.px,e)+game.bx*bump,ry=lerp(game.fy,game.py,e)+game.by*bump;
@@ -907,7 +1069,8 @@ function drawFeed(now,dt){
     /* a platform is drawn where it actually is, not where its rows entry sits */
     if(tileDef(x,y).signal!=='move')
       ISO.drawCell(fx,MAP,x,y,px,py,tile,D,
-                   {open:world.open.has(K(x,y)), locked:propsOf(x,y).locked});
+                   {open:world.open.has(K(x,y)), locked:propsOf(x,y).locked,
+                    spent:world.spent.has(K(x,y))});
     const v=game.visited.get(x+','+y);
     if(v!==undefined){
       const age=(now-v)/1000;
@@ -943,19 +1106,21 @@ function drawFeed(now,dt){
     fx.strokeRect(ox+x*tile+.5,oy+y*tile+.5,tile-1,tile-1);
   });
 
-  /* the beacon transmits: the unit reads it through walls, which is what
-     makes it something to steer by while everything else has to be seen */
-  if(game.beacon){
-    const cx=ox+(game.beacon[0]+.5)*tile,cy=oy+(game.beacon[1]+.5)*tile,p=(t%1.4)/1.4;
-    fx.strokeStyle=`rgba(255,59,47,${1-p})`;fx.lineWidth=1.5*D;
-    fx.beginPath();fx.arc(cx,cy,tile*(.2+p*.9),0,6.283);fx.stroke();
-    const s=tile*.22;fx.fillStyle='#ff3b2f';fx.shadowColor='#ff3b2f';fx.shadowBlur=16*D;
-    fx.beginPath();fx.moveTo(cx,cy-s);fx.lineTo(cx+s,cy);fx.lineTo(cx,cy+s);fx.lineTo(cx-s,cy);fx.closePath();fx.fill();fx.shadowBlur=0;
-  }
+  /* a beacon transmits: the unit reads it through walls, which is what makes
+     it something to steer by while everything else has to be seen. The landing
+     signal and every beacon an author placed are drawn by the same hand. */
+  if(game.beacon)drawPing(game.beacon[0],game.beacon[1],ox,oy,tile,D,t);
+  world.beacons.forEach(b=>drawPing(b.x,b.y,ox,oy,tile,D,t));
 
+  if(jump.on)drawAim(ox,oy,tile,D);
+
+  /* a step dips; a jump rises and drops its shadow away underneath it, which
+     is the whole of how a leap reads from directly overhead */
+  const lift=(game.arc&&game.mt<1)?Math.sin(game.mt*Math.PI):0;
   const cx=ox+(rx+.5)*tile,cy=oy+(ry+.5)*tile,
-        s=tile*.62*(1-.1*Math.sin(game.mt*Math.PI))*(1-game.sink*.9);
-  fx.fillStyle='rgba(28,240,28,.08)';fx.fillRect(cx-s/2+tile*.07,cy-s/2+tile*.09,s,s);
+        s=tile*.62*(1-.1*Math.sin(game.mt*Math.PI)*(game.arc?0:1)+lift*(.16+.04*game.arc))*(1-game.sink*.9);
+  fx.fillStyle=`rgba(28,240,28,${.08-.03*lift})`;
+  fx.fillRect(cx-s/2+tile*(.07+lift*.26),cy-s/2+tile*(.09+lift*.26),s*(1-lift*.25),s*(1-lift*.25));
   fx.fillStyle='#021402';fx.shadowColor='rgba(28,240,28,.8)';fx.shadowBlur=14*D;
   fx.fillRect(cx-s/2,cy-s/2,s,s);fx.shadowBlur=0;
   fx.strokeStyle='#1cf01c';fx.lineWidth=1.5*D;fx.strokeRect(cx-s/2,cy-s/2,s,s);
@@ -975,6 +1140,41 @@ function drawFeed(now,dt){
     fx.fillText('[R] TO RE-INITIALISE',W/2,H/2+u*.055);
   }
   $('#coords').textContent=`X:${String(game.px).padStart(2,'0')} Y:${String(game.py).padStart(2,'0')}`;
+}
+
+/* One beacon, transmitting. Drawn wherever it is, seen or not. */
+function drawPing(bx,by,ox,oy,tile,D,t){
+  const cx=ox+(bx+.5)*tile,cy=oy+(by+.5)*tile,p=(t%1.4)/1.4;
+  fx.strokeStyle=`rgba(255,59,47,${1-p})`;fx.lineWidth=1.5*D;
+  fx.beginPath();fx.arc(cx,cy,tile*(.2+p*.9),0,6.283);fx.stroke();
+  const s=tile*.22;fx.fillStyle='#ff3b2f';fx.shadowColor='#ff3b2f';fx.shadowBlur=16*D;
+  fx.beginPath();fx.moveTo(cx,cy-s);fx.lineTo(cx+s,cy);fx.lineTo(cx,cy+s);fx.lineTo(cx-s,cy);fx.closePath();fx.fill();fx.shadowBlur=0;
+}
+
+/* The wind-up, while it is being held: every square the jump would cross, the
+   one it would come down on, and how far along the charge has got. The operator
+   is committing the unit over a drop, so it is shown the arc before it goes. */
+function drawAim(ox,oy,tile,D){
+  const dist=jumpDist(),land=jumpLanding(dist),[dx,dy]=DIRV[game.face];
+  fx.lineWidth=Math.max(1.5,1.5*D);
+  for(let d=1;d<=dist;d++){
+    const px=ox+(game.px+dx*d)*tile,py=oy+(game.py+dy*d)*tile,on=d===land;
+    fx.strokeStyle=on?'rgba(255,180,74,.95)':'rgba(255,180,74,.28)';
+    fx.setLineDash(on?[]:[3*D,3*D]);
+    fx.strokeRect(px+tile*.18+.5,py+tile*.18+.5,tile*.64,tile*.64);
+  }
+  fx.setLineDash([]);
+  const cx=ox+(game.px+.5)*tile,cy=oy+game.py*tile-tile*.26,
+        w=tile*1.5,h=Math.max(3,3*D),f=Math.min(1,jump.t/JUMP_WIND);
+  fx.fillStyle='rgba(0,0,0,.7)';fx.fillRect(cx-w/2,cy-h/2,w,h);
+  fx.fillStyle=land?'rgba(255,180,74,.95)':'rgba(255,59,47,.85)';
+  fx.fillRect(cx-w/2,cy-h/2,w*f,h);
+  fx.strokeStyle='rgba(255,180,74,.6)';fx.lineWidth=Math.max(1,D);
+  fx.strokeRect(cx-w/2+.5,cy-h/2+.5,w,h);
+  for(let i=1;i<ISO.JUMP;i++){                        // one notch per square of reach
+    const nx=Math.round(cx-w/2+w*i/ISO.JUMP);
+    fx.beginPath();fx.moveTo(nx+.5,cy-h/2);fx.lineTo(nx+.5,cy+h/2);fx.stroke();
+  }
 }
 
 /* The rail a platform runs on: visible even where the platform is not — but
@@ -1047,15 +1247,22 @@ addEventListener('keydown',e=>{
     if(e.code==='KeyE'){e.preventDefault();if(!e.repeat)interact();return}
     if(e.code==='Escape'&&term.on){e.preventDefault();closeTerminal();return}
     if(e.code==='KeyR'&&game.dead){e.preventDefault();if(!e.repeat)respawn();return}
+    if(e.code==='Space'){e.preventDefault();if(!e.repeat)startJump();return}
     if(dir){
       e.preventDefault();if(e.repeat)return;
+      /* mid-wind-up the movement keys turn the unit instead of walking it:
+         lining a jump up along a ledge must not step off the ledge */
+      if(jump.on){game.face=dir;litKey(dir);return}
       held=held.filter(d=>d!==dir);held.push(dir);
       tryMove(dir);repeatAt=performance.now()+230;
     }
   }
 });
-addEventListener('keyup',e=>{const dir=KEYMAP[e.code];if(dir)held=held.filter(d=>d!==dir)});
-addEventListener('blur',()=>held=[]);
+addEventListener('keyup',e=>{
+  if(e.code==='Space'&&state==='console'){e.preventDefault();releaseJump();return}
+  const dir=KEYMAP[e.code];if(dir)held=held.filter(d=>d!==dir);
+});
+addEventListener('blur',()=>{held=[];cancelJump()});
 $('#menu').addEventListener('pointerdown',startGame);
 $('#poem').addEventListener('pointerdown',endPoem);
 $('#nameHintR').style.cursor='pointer';$('#nameHintR').addEventListener('click',()=>state==='name'&&confirmNaming());
@@ -1063,8 +1270,13 @@ $('#nameHintL').style.cursor='pointer';$('#nameHintL').addEventListener('click',
 document.querySelectorAll('#dpad button').forEach(b=>b.addEventListener('pointerdown',e=>{
   e.preventDefault();
   if(b.dataset.act==='use')return game.dead?respawn():interact();
+  if(b.dataset.act==='jump')return startJump();
+  if(jump.on)return void(game.face=b.dataset.dir);
   tryMove(b.dataset.dir);
 }));
+/* held, not tapped — the pad releases wherever the finger lifts */
+['pointerup','pointercancel'].forEach(ev=>
+  addEventListener(ev,()=>{if(jump.on)releaseJump()}));
 $('#tiny').addEventListener('pointerdown',e=>{if(e.target===$('#tiny'))closeTerminal()});
 
 let last=performance.now();
@@ -1073,7 +1285,7 @@ function loop(now){
   if((state==='menu'||state==='dive')&&!usingVideo)drawMenu(now,dt);
   if(state==='console'){
     updateTrams(dt);checkFooting();
-    if(held.length&&now>=repeatAt&&game.mt>=1){tryMove(held[held.length-1]);repeatAt=now+125}
+    if(held.length&&now>=repeatAt&&game.mt>=1&&!jump.on){tryMove(held[held.length-1]);repeatAt=now+125}
     drawFeed(now,dt);
   }
   requestAnimationFrame(loop);

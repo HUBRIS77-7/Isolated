@@ -165,7 +165,7 @@ let view  = {x:0, y:0, z:22};          // world offset (tiles) + px per tile
 let tool  = 'brush', paint = '#', bsize = 1;
 let undo  = [], redo = [];
 let hover = null, drag = null, rectAnchor = null, panning = null, spaceDown = false;
-let sealed = new Set();
+let sealed = new Set(), gated = new Set();   // no way in at all · only by jumping
 let sel = null, picking = null;          // block under the inspector, field awaiting a click
 
 const clone = m => JSON.parse(JSON.stringify(m));
@@ -182,10 +182,12 @@ function setMap(m, resetView){
 function changed(save){
   ISO.normalize(map);
   const a = ISO.audit(map);
-  const seen = ISO.reachable(map, map.spawn, {powered:true});
-  sealed = new Set();
-  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++)
-    if(ISO.walkable(map,x,y) && !seen.has(x+','+y)) sealed.add(x+','+y);
+  sealed = new Set(); gated = new Set();
+  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
+    const k = x+','+y;
+    if(!ISO.walkable(map,x,y) || a.seen.has(k)) continue;
+    (a.jumpSeen.has(k) ? gated : sealed).add(k);      // amber: needs vault servos
+  }
   $('#stats').innerHTML =
     `${map.w} × ${map.h} · ${map.w*map.h} tiles<br>`+
     `${a.walkable} walkable · ${map.beacons.length} beacon(s)<br>`+
@@ -297,6 +299,15 @@ function field(key, spec, value){
     pick.onclick = ()=>{ picking = picking === key ? null : key; drawInspector() };
     row.append(at, pick);
     wrap.appendChild(row);
+  }else if(spec.type === 'pick'){
+    const sl = document.createElement('select');
+    (spec.opts || []).forEach(o=>{
+      const n = document.createElement('option');
+      n.value = o.value; n.textContent = o.label; n.selected = o.value === value;
+      sl.appendChild(n);
+    });
+    sl.onchange = ()=>write(sl.value);
+    wrap.appendChild(sl);
   }else if(spec.type === 'dir'){
     const sl = document.createElement('select');
     for(const d in ISO.DIRS){
@@ -361,6 +372,7 @@ function draw(){
     const [sx,sy] = toScreen(x,y);
     ISO.drawCell(cx, map, x, y, sx, sy, z, D, ISO.propsAt(map,x,y));
     if(sealed.has(x+','+y)){ cx.fillStyle = 'rgba(255,59,47,.22)'; cx.fillRect(sx,sy,z,z) }
+    else if(gated.has(x+','+y)){ cx.fillStyle = 'rgba(255,180,74,.18)'; cx.fillRect(sx,sy,z,z) }
   }
 
   if(z > 7){                                   // grid
