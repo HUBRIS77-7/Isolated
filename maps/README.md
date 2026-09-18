@@ -8,7 +8,9 @@ editor.
 
 Open **`editor.html`** in a browser (no server needed). Draw, then
 **Download .js** and drop the file into this folder. Register it by adding one
-line to `index.html` next to the others:
+line to `index.html` next to the others — and the same line to `editor.html`,
+which is what puts the map in the **Load** list and offers it as a deck an
+elevator can serve:
 
 ```html
 <script src="maps/tiles.js"></script>
@@ -62,7 +64,7 @@ ISO.register({
 | `T`  | Tram      | yes  | Platform that a button calls along a rail    |
 | `b`  | Button    | no   | `[E]` from an adjacent tile signals its targets |
 | `c`  | Terminal  | no   | `[E]` opens a small window of text           |
-| `^`  | Elevator  | yes  | A beacon you place as a tile                 |
+| `^`  | Elevator  | yes  | A car to another deck. `[E]` rides it, and so does a button |
 | `L`  | Locker    | no   | Decoration                                   |
 | `B`  | Box       | no   | Decoration                                   |
 | `A`  | Filing cabinet | no | Decoration                                 |
@@ -106,9 +108,18 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Signal beacon | `armed`     | Starts transmitting rather than dark           |
 | Signal beacon | `objective` | Objective line it puts up while it is lit      |
 | Signal beacon | `label`     | Name shown in the message log                  |
+| Elevator | `dest`         | The deck this car serves — another map's `id`   |
+| Elevator | `arrive`       | Which car it comes out at over there (blank: one stencilled the same) |
+| Elevator | `label`        | Stencilled name — the shaft's name on both decks |
 
-In the editor, pick the **Link** tool (`L`) and click a block: its settings
-appear under **INSTANCE**. Wire a button up with **Pick ▸**, then click the
+In the editor, pick the **Select** tool (`S`, or `L` — it used to be called
+Link) and click a block: its settings appear under **INSTANCE**, under a
+**Block** dropdown holding every kind it could be instead. Changing that
+dropdown — or clicking a surface in the palette while something is selected —
+turns the block into that one where it stands, rather than reaching for the
+brush and painting it again. `Delete` clears the selected square to unmapped.
+A block that takes no settings still selects, so any square can be changed this
+way. Wire a button up with **Pick ▸**, then click the
 block it drives. The picker stays open, so keep clicking to wire a whole bank
 to the one control — click a block a second time to drop it, `Esc` when done.
 Each link is listed under the button with an `×` beside it. Painting a block
@@ -180,6 +191,43 @@ handing it back when it goes quiet. If more than one is transmitting, the
 nearest one with something to say has the line. A beacon is also a landing
 beacon spot, the way an elevator is, so the opening calibration may pick one.
 
+## Decks, and the cars between them
+
+One map is one deck. An **Elevator** (`^`) is a car: a tile that stands on one
+deck and serves another. `[E]` from the plate or from the tile beside it rides
+it, and a button wired to it calls it — though a call only carries a unit that
+is already aboard, so a control across the room reads *the unit is not aboard*
+rather than pulling it in from a distance.
+
+Which deck a car serves is its `dest`: another map's `id`, and that map has to
+be registered in `index.html` for the game to have it. Where the unit is set
+down over there is not a coordinate — a map never holds another map's
+coordinates. It is worked out from the far deck's own cars: the one stencilled
+with the name in `arrive`, or, when that is blank, one stencilled the same as
+the car being ridden. So a shaft is **one name on two decks** — give both cars
+the same `label` and the route runs both ways with nothing else to keep in
+step. Failing that, the game takes a car over there whose own `dest` comes back
+here, then the first car on the deck, and finally the deck's landing record.
+
+What the unit is fitted with crosses with it. Each deck keeps whatever was
+changed on it — doors driven open, stations spent, beacons gone quiet — so a
+car that goes back arrives at the deck as it was left. What does not cross is
+the optical record: the feed holds a reading for five seconds, so a deck is
+walked into dark whichever visit it is.
+
+`[R]` re-initialises the unit on the deck it is standing on, at the record it
+set down on there — its landing record on the deck the run began on, and the
+car it arrived at on any other. That reset is a full one: every deck goes back
+to how it started, not just this one.
+
+Survey flags a car with no deck set, one calling a deck that is not registered,
+one calling the deck it already stands on, and one that comes out at a car
+stencilled with a name the far deck has none of. The canvas writes each car's
+deck under it while you work.
+
+A car is also a landing beacon spot, the way a signal beacon is, so the opening
+calibration may send the unit to one.
+
 ## Blocks bigger than one tile
 
 A map is still one character per tile. A block that covers more than one works
@@ -232,8 +280,9 @@ a wall, a beacon that cannot be reached, ground sealed off from the rest
 (tinted red on the canvas), a button that signals nothing, a terminal with no
 text, a bulkhead no button opens, a tram whose rail runs into a wall, a vent
 with no far end or one that comes out inside a wall, a station stocked with
-nothing, a beacon that spawn already stands inside the range of, and a forklift
-or desk with nowhere to stand.
+nothing, a beacon that spawn already stands inside the range of, a car whose
+deck is not one the game will have, and a forklift or desk with nowhere to
+stand.
 
 Survey checks reach twice: once for a unit that can only walk, and once for one
 with vault servos fitted. Ground that only the jump opens up is **gated**, not

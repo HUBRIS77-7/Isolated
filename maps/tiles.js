@@ -22,7 +22,7 @@
    deadly  — stepping here ends the run
    beacon  — counts as a landing-beacon destination
    press   — the unit can interact with it from an adjacent tile ([E])
-   signal  — what happens when a button signals it: 'toggle' | 'move'
+   signal  — what happens when a button signals it: 'toggle' | 'move' | 'lift'
    away    — log line when the unit walks into a rail the platform has left
    open    — alternate look to draw while the block is open
    foot    — the block covers more than its own tile: {len, wide}. Either is a
@@ -48,7 +48,7 @@
    "x,y". The editor builds its inspector straight from the schema, so a
    new field costs one line here and nothing anywhere else.
 
-   type  — text | lines | bool | int | dir | pick | point | points
+   type  — text | lines | bool | int | dir | pick | point | points | map
    def   — value a freshly painted copy starts with
    opts  — for `pick`, the values it offers: [{value, label}]
    from  — an older field this one replaces, so maps written before the
@@ -111,7 +111,11 @@ const TILES = {
                text:{type:'lines',  label:'Text',    def:'No readable record.'},
                desktop:{type:'bool',label:'Has desktop', def:false}}},
   '^': {key:'^', id:'lift',   name:'Elevator',  walk:true,  fill:'rgba(255,59,47,.14)',  line:'rgba(255,59,47,.6)',  glyph:'⇕',
-        beacon:true, enter:'Transit link. Carrier plate reads live.'},
+        beacon:true, press:'lift', signal:'lift',
+        enter:'Transit link. Carrier plate reads live. [E] rides it.',
+        props:{dest:{type:'map',  label:'Deck it serves',    def:''},
+               arrive:{type:'text',label:'Comes out at car', def:''},
+               label:{type:'text', label:'Stencilled',       def:''}}},
 
   /* ---------- fixtures: they furnish a room and stop the unit ---------- */
   'L': {key:'L', id:'locker', name:'Locker',    walk:false, fill:'rgba(28,240,28,.13)',  line:'rgba(28,240,28,.42)', glyph:'▯',
@@ -400,6 +404,32 @@ function tramPath(map,x,y){
   return out;
 }
 
+/* ---------- decks, and the cars that run between them ----------
+   One deck is one map. A car is one tile on it, and the deck it serves is a
+   setting on that tile — so a map never holds another map's coordinates. Where
+   the unit is set down is worked out from the far deck's own cars instead:
+   stencil one shaft with one name on both decks and it runs both ways. */
+function lifts(map){
+  const out = [];
+  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
+    if(def(tileAt(map,x,y)).press !== 'lift') continue;
+    const p = propsAt(map,x,y) || {};
+    out.push({x, y, label:p.label || '', dest:p.dest || ''});
+  }
+  return out;
+}
+/* Where a car calling `want` sets the unit down on `map`: the car stencilled
+   that name, else one whose own shaft comes back to the deck `from`, else the
+   first car on the deck, else the deck's landing record. */
+function liftLanding(map, want, from){
+  const cars = lifts(map);
+  const car = (want && cars.find(c => c.label === want))
+           || (from && cars.find(c => c.dest === from))
+           || cars[0] || null;
+  return car ? {x:car.x, y:car.y, car:true}
+             : {x:map.spawn.x, y:map.spawn.y, car:false};
+}
+
 const inside = (map,x,y) => x>=0 && y>=0 && x<map.w && y<map.h;
 const tileAt = (map,x,y) => inside(map,x,y) ? map.rows[y][x] : ' ';
 const at     = (map,x,y) => def(tileAt(map,x,y));
@@ -546,6 +576,22 @@ function audit(map){
     }
     if(t.press === 'terminal' && !String(p.text||'').trim())
       out.issues.push('Terminal'+where+' has no text to display.');
+    /* a car has to say which deck it serves, and that deck has to be one the
+       game will actually have loaded */
+    if(t.press === 'lift'){
+      const known = Object.keys(MAPS).length;     // nothing registered: nothing to check against
+      if(!p.dest)
+        out.issues.push(t.name+where+' serves no deck. The shaft reads dead.');
+      else if(p.dest === map.id)
+        out.issues.push(t.name+where+' calls the deck it already stands on.');
+      else if(known && !MAPS[p.dest])
+        out.issues.push(t.name+where+' calls deck "'+p.dest+'", which is not in the record. '+
+                        'Add its script tag to index.html, or correct the id.');
+      else if(known && MAPS[p.dest] && p.arrive &&
+              !lifts(MAPS[p.dest]).some(c=>c.label === p.arrive))
+        out.issues.push(t.name+where+' comes out at a car stencilled "'+p.arrive+
+                        '", which deck "'+p.dest+'" has none of.');
+    }
     if(t.press === 'station' && !ABILITIES[p.ability])
       out.issues.push(t.name+where+' fits nothing the unit can carry.');
     if(t.ping && p.armed &&
@@ -719,6 +765,7 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
 global.ISO = {TILES, ORDER, VOID, DIRS, ABILITIES, JUMP, def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
                schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,
+               lifts, liftLanding,
                footprint, partAt, coveredBy, cluster, lockedShut,
                toJSON, toModule, parse, drawTile, drawCell};
 })(typeof globalThis!=='undefined'?globalThis:this);

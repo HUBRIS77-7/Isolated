@@ -8,6 +8,7 @@ ISO.register({
   "beacons": [{"x": 0, "y": 5}],
   "props": {
     "26,0": {"title":"Destinations","text":"Engineering Command","desktop":false},
+    "28,0": {"dest":"tutorial","arrive":"","label":"ENG-2 SHAFT"},
     "28,1": {"targets":[{"x":28,"y":0}],"label":""},
     "30,1": {"targets":[{"x":30,"y":10},{"x":31,"y":10},{"x":32,"y":10}],"label":""},
     "31,1": {"title":"Tram Concerns","text":"COMPLAINT SENT TO COMMAND: These trams are going to be the death of us! They can barely fit one person, and we're supposed to be moving at a pace that requires us to put three on one. They are hanging off the side!\n","desktop":false},

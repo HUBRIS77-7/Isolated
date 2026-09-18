@@ -86,7 +86,7 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
           <button data-tool="pick">Pick <span class="k">I</span></button>
           <button data-tool="spawn">Spawn <span class="k">P</span></button>
           <button data-tool="beacon">Beacon <span class="k">K</span></button>
-          <button data-tool="link">Link <span class="k">L</span></button>
+          <button data-tool="select">Select <span class="k">S</span></button>
         </div>
         <div class="row"><span class="dim">size</span><button id="bMinus">−</button><b id="bSize">1</b><button id="bPlus">+</button>
           <span class="k">[ ]</span></div>
@@ -140,16 +140,18 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
     <div class="pane"><canvas id="c"></canvas></div>
   </div>
   <div class="term-bar">
-    <span id="hint">Undo Ctrl+Z · Redo Ctrl+Shift+Z · Pan: middle-drag or space-drag · Zoom: wheel · Link (L) to set a block up · R turns it</span>
+    <span id="hint">Undo Ctrl+Z · Redo Ctrl+Shift+Z · Pan: middle-drag or space-drag · Zoom: wheel · Select (S) to change a block or set it up · R turns it</span>
     <span id="pos">X:-- Y:-- ·</span>
   </div>
 </div>
 <div id="toast"></div>
 <div class="crt"></div>
 <input type="file" id="file" accept=".js,.json,.txt" style="display:none">
+<datalist id="decks"></datalist>
 
 <script src="maps/tiles.js"></script>
 <script src="maps/tutorial.js"></script>
+<script src="maps/ENGLVL2.js"></script>
 <script>
 'use strict';
 const $ = s => document.querySelector(s);
@@ -218,8 +220,11 @@ ISO.ORDER.forEach((ch,i)=>{
           + (!t.walk && t.clear ? ' · but sight passes over it' : '')
           + (t.foot ? ' · covers more than its own tile' : '')
           + (t.merge ? ' · touching copies become one block' : '')
-          + (t.props ? ' · set up per instance (Link)' : '');
-  b.onclick = ()=>{ paint = ch; syncPal(); };
+          + (t.props ? ' · set up per instance (Select)' : '');
+  /* with a block selected, the palette changes that block rather than only
+     arming the brush — which is the whole point of the Select tool */
+  b.onclick = ()=>{ if(tool === 'select' && sel) return swapSel(ch);
+                    paint = ch; syncPal(); };
   $('#pal').appendChild(b);
 });
 const syncPal = ()=>document.querySelectorAll('#pal button').forEach(b=>b.classList.toggle('on', b.dataset.ch===paint));
@@ -230,25 +235,71 @@ syncPal();
 /* ---------- instance inspector ----------
    Every control here comes from the block's own `props` schema in tiles.js,
    so a new setting costs one line there and nothing in this file. */
+/* Painting a block that takes settings puts it under the inspector at once. */
 function selectBlock(x,y){
   sel = ISO.schemaOf(ISO.tileAt(map,x,y)) ? {x,y} : null;
   picking = null;
   drawInspector();
 }
+/* The Select tool takes any square, settings or none — a big block by the tile
+   it was painted on, so the inspector always has the anchor rather than half a
+   forklift. */
+function selectAny(x,y){
+  const f = ISO.inside(map,x,y) && ISO.partAt(map,x,y);
+  sel = ISO.inside(map,x,y) ? (f ? {x:f.x, y:f.y} : {x,y}) : null;
+  picking = null;
+  drawInspector();
+}
+/* Change the selected block into another kind in place: same square, same
+   selection, and the new block starts on its own defaults. */
+function swapSel(ch){
+  if(!sel) return;
+  const was = ISO.at(map,sel.x,sel.y).name;
+  paint = ch; syncPal();
+  if(ISO.tileAt(map,sel.x,sel.y) === ch) return;
+  pushUndo();
+  ISO.setTile(map, sel.x, sel.y, ch);
+  changed();
+  toast(was + ' \u2192 ' + ISO.def(ch).name + ' at ' + sel.x + ',' + sel.y);
+}
 function drawInspector(){
   const head = $('#instHead'), box = $('#inst');
   box.innerHTML = '';
-  if(sel && !ISO.schemaOf(ISO.tileAt(map,sel.x,sel.y))) sel = null;   // painted over
+  if(sel && !ISO.inside(map,sel.x,sel.y)) sel = null;                 // resized away
   if(!sel){
     head.className = 'dim';
-    head.textContent = 'Nothing selected. Pick Link (L), then click a block.';
+    head.textContent = 'Nothing selected. Pick Select (S), then click a block.';
     return;
   }
-  const t = ISO.at(map,sel.x,sel.y), schema = ISO.schemaOf(ISO.tileAt(map,sel.x,sel.y));
+  const ch = ISO.tileAt(map,sel.x,sel.y), t = ISO.def(ch);
+  const schema = ISO.schemaOf(ch);
   const vals = ISO.propsAt(map,sel.x,sel.y) || {};
   head.className = '';
   head.textContent = `${t.name} at ${sel.x},${sel.y}`;
+  box.appendChild(swapField(ch));
+  if(!schema){
+    const note = document.createElement('div');
+    note.className = 'dim';
+    note.textContent = 'Takes no settings.';
+    box.appendChild(note);
+  }
   for(const key in schema) box.appendChild(field(key, schema[key], vals[key]));
+}
+/* What this square is, as a list of everything it could be instead. */
+function swapField(ch){
+  const wrap = document.createElement('div');
+  wrap.className = 'fld';
+  const label = document.createElement('span');
+  label.textContent = 'Block';
+  const sl = document.createElement('select');
+  ISO.ORDER.forEach(k=>{
+    const o = document.createElement('option');
+    o.value = k; o.textContent = ISO.def(k).name; o.selected = k === ch;
+    sl.appendChild(o);
+  });
+  sl.onchange = ()=>swapSel(sl.value);
+  wrap.append(label, sl);
+  return wrap;
 }
 function field(key, spec, value){
   const wrap = document.createElement('div');
@@ -317,6 +368,12 @@ function field(key, spec, value){
     }
     sl.onchange = ()=>write(sl.value);
     wrap.appendChild(sl);
+  }else if(spec.type === 'map'){
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.setAttribute('list', 'decks');
+    inp.placeholder = 'deck id'; inp.value = value || '';
+    inp.onchange = ()=>write(inp.value.trim());
+    wrap.appendChild(inp);
   }else if(spec.type === 'lines'){
     const ta = document.createElement('textarea');
     ta.value = value || '';
@@ -441,6 +498,15 @@ function drawWiring(z){
         cx.beginPath(); cx.arc(tx+z/2, ty+z/2, z*.3, 0, 6.283); cx.stroke();
       }
     }
+    /* a car's far end is another deck, not another square — so it is written
+       out rather than drawn to */
+    if(t.press === 'lift' && z >= 16){
+      const d = (ISO.propsAt(map,x,y)||{}).dest;
+      cx.fillStyle = d ? 'rgba(255,59,47,.85)' : 'rgba(255,59,47,.4)';
+      cx.font = (8*D)+'px "Courier Prime", monospace';
+      cx.textAlign = 'center'; cx.textBaseline = 'top';
+      cx.fillText(d || 'no deck', aX, sy + z + 1);
+    }
     if(t.signal === 'move'){
       const path = ISO.tramPath(map,x,y), end = path[path.length-1];
       const [ex,ey] = toScreen(end.x, end.y);
@@ -501,7 +567,7 @@ function act(p, erase, isStart){
     toast((i>=0 ? 'Unlinked from ' : 'Linked to ')+p.x+','+p.y+' · Esc when done');
     return;
   }
-  if(tool==='link'){ if(isStart) selectBlock(p.x,p.y); return }
+  if(tool==='select'){ if(isStart) selectAny(p.x,p.y); return }
   if(tool==='pick'){ if(ISO.inside(map,p.x,p.y)){ paint = ISO.tileAt(map,p.x,p.y); syncPal() } return }
   if(tool==='spawn'){ if(isStart){ pushUndo(); map.spawn = {x:p.x,y:p.y}; changed() } return }
   if(tool==='beacon'){
@@ -573,7 +639,12 @@ addEventListener('keydown', e=>{
   if(n>=0 && ISO.ORDER[n]){ paint = ISO.ORDER[n]; syncPal(); return }
   if(e.key==='Escape' && picking){ picking = null; drawInspector(); return }
   if(e.key.toLowerCase()==='r'){ rotateSel(); return }
-  const T = {b:'brush', e:'rect', f:'fill', i:'pick', p:'spawn', k:'beacon', l:'link'}[e.key.toLowerCase()];
+  if((e.key==='Delete'||e.key==='Backspace') && sel){                 // clear the selection
+    e.preventDefault(); pushUndo(); ISO.setTile(map, sel.x, sel.y, ' '); changed();
+    toast('Cleared '+sel.x+','+sel.y); return;
+  }
+  const T = {b:'brush', e:'rect', f:'fill', i:'pick', p:'spawn', k:'beacon',
+             s:'select', l:'select'}[e.key.toLowerCase()];
   if(T){ tool = T; syncTool(); return }
   if(e.key==='['){ bsize = Math.max(1,bsize-1); $('#bSize').textContent = bsize }
   if(e.key===']'){ bsize = Math.min(9,bsize+1); $('#bSize').textContent = bsize }
@@ -584,7 +655,7 @@ addEventListener('keyup', e=>{ if(e.code==='Space') spaceDown = false });
    reaching for the inspector while laying out a room. */
 const ROT = ['up','right','down','left'];
 function rotateSel(){
-  if(!sel) return toast('Pick a block with Link (L) first');
+  if(!sel) return toast('Pick a block with Select (S) first');
   const schema = ISO.schemaOf(ISO.tileAt(map,sel.x,sel.y)) || {};
   const key = Object.keys(schema).find(k => schema[k].type === 'dir');
   const name = ISO.at(map,sel.x,sel.y).name;
@@ -651,10 +722,14 @@ $('#bPlay').onclick = ()=>{
 };
 
 /* ---------- boot ---------- */
+/* every map the editor was given: one list to load from, one to point a car at */
 Object.keys(ISO.MAPS).forEach(id=>{
   const o = document.createElement('option');
   o.value = id; o.textContent = id + ' — ' + ISO.MAPS[id].name;
   $('#bundled').appendChild(o);
+  const d = document.createElement('option');
+  d.value = id;
+  $('#decks').appendChild(d);
 });
 let boot = null;
 try{ const d = localStorage.getItem(DRAFT_KEY); if(d) boot = ISO.parse(d) }catch(e){}

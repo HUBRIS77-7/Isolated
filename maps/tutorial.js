@@ -21,6 +21,7 @@ ISO.register({
     "33,15": {"open":false},
     "38,15": {"open":false},
     "39,15": {"open":false},
+    "1,16": {"dest":"Eng-Lvl2","arrive":"","label":"ENG-2 SHAFT"},
     "30,16": {"dir":"left"},
     "33,16": {"open":false},
     "38,16": {"open":false},

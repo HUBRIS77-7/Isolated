@@ -187,6 +187,7 @@ canvas{display:block}
 <!-- the world: shared tile vocabulary, then one file per map (authored in editor.html) -->
 <script src="maps/tiles.js"></script>
 <script src="maps/tutorial.js"></script>
+<script src="maps/ENGLVL2.js"></script>
 
 <script>
 /* =========================================================
@@ -487,17 +488,24 @@ if(typeof ISO==='undefined'){
     cluster:(m,x,y)=>({cells:[{x,y}],x0:x,y0:y,x1:x,y1:y,w:1,h:1}),
     tramPath:(m,x,y)=>[{x,y}], key:(x,y)=>x+','+y,
     vaultable:(m,x,y)=>ISO.at(m,x,y).walk, ABILITIES:{}, JUMP:3,
+    lifts:()=>[], liftLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), register:m=>m,
   };
 }
 function loadMap(){
   const q=new URLSearchParams(location.search);
-  if(q.get('draft')){try{const d=localStorage.getItem('iso.draft');if(d)return ISO.parse(d)}catch(e){}}
+  /* the draft stands in for the deck it says it is, so a car that rides away
+     from it and back comes back to what is being drawn rather than to the
+     bundled copy of the same id */
+  if(q.get('draft')){try{const d=localStorage.getItem('iso.draft');if(d)return ISO.register(ISO.parse(d))}catch(e){}}
   const want=q.get('map');
   if(want&&ISO.MAPS[want])return ISO.MAPS[want];
   return ISO.MAPS.tutorial||ISO.makeMap({w:15,h:11});
 }
-const MAP=loadMap();
-const COLS=MAP.w,ROWS=MAP.h;
+/* The deck the unit is standing on. A car swaps it, so these are not fixed for
+   the length of a run — everything below reads them rather than closing over
+   the deck it started on. */
+let MAP=loadMap();
+let COLS=MAP.w,ROWS=MAP.h;
 const K=(x,y)=>x+','+y;
 const tileDef=(x,y)=>ISO.at(MAP,x,y);
 /* What the unit meets in a square: the block standing over it if one is —
@@ -541,6 +549,31 @@ function indexTrams(){
   for(const tr of world.trams){const c=tr.path[tr.i];world.tramAt.set(K(c.x,c.y),tr)}
 }
 const tramOn=(x,y)=>world.tramAt.get(K(x,y))||null;
+
+/* ---------- decks ----------
+   A run may cross more than one map. The unit carries what it has been fitted
+   with from deck to deck; each deck it leaves keeps whatever it changed there,
+   so a car that goes back comes back to the doors it left open. `level.entry`
+   is where the unit set down on the deck it is standing on — its landing
+   record here, and where [R] re-initialises it. */
+const decks=new Map();
+const START_DECK=MAP.id;                     // the deck the run began on
+const level={entry:{x:MAP.spawn.x, y:MAP.spawn.y}};
+function stashDeck(){
+  decks.set(MAP.id,{open:new Set(world.open), spent:new Set(world.spent),
+                    beacons:new Map(world.beacons),
+                    trams:world.trams.map(t=>Object.assign({},t)),
+                    entry:{x:level.entry.x, y:level.entry.y}});
+}
+function restoreDeck(d){
+  world.open=new Set(d.open); world.spent=new Set(d.spent);
+  world.beacons=new Map(d.beacons);
+  world.trams=d.trams.map(t=>Object.assign({},t));
+  world.lit.clear();
+  sight.live.clear(); sight.seen.clear();     // optical memory does not ride the car
+  level.entry={x:d.entry.x, y:d.entry.y};
+  indexTrams();
+}
 
 /* What the unit can stand on: the tile, plus whatever the power has changed. */
 function walkableAt(x,y){
@@ -846,6 +879,7 @@ function interact(){
     if(t.press==='gate')return driveGate(x,y);
     if(t.press==='vent')return useVent(x,y);
     if(t.press==='station')return useStation(x,y);
+    if(t.press==='lift')return useLift(x,y);
   }
   const n=performance.now();
   if(n-game.useLog>2500){game.useLog=n;say('Nothing within reach answers.','dim')}
@@ -862,11 +896,15 @@ function pressButton(x,y){
   for(const c of targets){
     const t=tileDef(c.x,c.y);
     const r=t.signal==='toggle'?driveDoor(c.x,c.y,tag)
-           :t.signal==='move'  ?callTram(c.x,c.y,tag):null;
+           :t.signal==='move'  ?callTram(c.x,c.y,tag)
+           :t.signal==='lift'  ?rideLift(c.x,c.y,tag,true):null;
     if(r&&!lines.some(l=>l.text===r.text))lines.push(r);
   }
   if(!lines.length)return say('Control'+tag+' pressed. Nothing on the far end answers.','dim');
   for(const l of lines)say(l.text,l.cls);
+  /* the car goes last, so the log reads the press before the deck changes */
+  const go=lines.find(l=>l.go);
+  if(go)travelTo(go.go.deck,go.go.want);
 }
 /* A bulkhead is one tile. A cargo gate is as wide as the author painted it,
    so every tile of the one body answers together — and a gate the unit can
@@ -910,6 +948,53 @@ function useVent(x,y){
   if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
   checkFooting();arrived();
 }
+/* ---------- elevators ----------
+   A car is a shaft with one deck at the far end. [E] from the plate or from
+   the tile beside it rides; a control wired to the car calls it the way one
+   drives a bulkhead, but a call only carries the unit that is already aboard —
+   from across the room it is a call and nothing more. */
+function rideLift(x,y,tag,called){
+  const p=propsOf(x,y), deck=p.dest?ISO.MAPS[p.dest]:null;
+  const aboard=game.px===x&&game.py===y;
+  if(!p.dest)     return {text:'Carriage'+tag+' answers. The shaft serves no deck.',cls:'dim'};
+  if(!deck)       return {text:'Carriage'+tag+' answers. Deck '+p.dest+' is not in the record.',cls:'dim'};
+  if(deck===MAP)  return {text:'Carriage'+tag+' answers. The shaft comes out on this deck.',cls:'dim'};
+  if(called&&!aboard)
+                  return {text:'Carriage'+tag+' called. The unit is not aboard.',cls:'dim'};
+  return {text:'Carriage'+tag+(aboard?' answers. Doors close.':' answers. The unit steps aboard.'),
+          go:{deck, want:p.arrive||p.label||''}};
+}
+function useLift(x,y){
+  world.lit.set(K(x,y),performance.now());
+  const p=propsOf(x,y), r=rideLift(x,y,p.label?' ['+p.label+']':'');
+  say(r.text,r.cls);
+  if(r.go)travelTo(r.go.deck,r.go.want);
+}
+/* Swap the deck under the unit. What it is fitted with crosses with it; the
+   deck it left is put away as it stood, and the deck it arrives on is either
+   how it left it or freshly built. */
+function travelTo(deck,want){
+  if(!deck||deck===MAP)return;
+  const from=MAP.id;
+  stashDeck();
+  const land=ISO.liftLanding(deck,want,from);
+  MAP=deck;COLS=MAP.w;ROWS=MAP.h;
+  const held=decks.get(MAP.id);
+  if(held)restoreDeck(held);else buildWorld();
+  level.entry={x:land.x, y:land.y};
+  cancelJump();closeTerminal();
+  game.px=game.fx=land.x;game.py=game.fy=land.y;
+  game.mt=1;game.bt=1;game.arc=0;game.sink=0;
+  game.visited.clear();game.visited.set(K(land.x,land.y),performance.now());
+  view.ready=false;                        // the camera does not fly between decks
+  say('TRANSIT LINK ENGAGED.','b');
+  say('DECK REGISTERED: '+String(MAP.name||MAP.id).toUpperCase(),'b');
+  if(!land.car)say('No carriage answers on that deck. Set down at its landing record.','dim');
+  /* a beacon picked on the deck behind us means nothing here */
+  if(game.step===2)game.beacon=pickBeacon();
+  checkFooting();arrived();
+}
+
 /* ---------- modification stations ----------
    One station, one package. Docking with it fits whatever it was stocked with
    and leaves it spent — the unit carries the modification from then on, and
@@ -982,14 +1067,18 @@ function die(reason){
 function respawn(){
   if(!game.dead)return;
   game.dead=false;game.sink=0;game.mt=1;game.mdur=.11;game.bt=1;game.face='down';game.arc=0;
-  game.px=game.fx=MAP.spawn.x;game.py=game.fy=MAP.spawn.y;
+  /* on whichever deck the unit is standing, at the record it set down on */
+  game.px=game.fx=level.entry.x;game.py=game.fy=level.entry.y;
   cancelJump();
-  /* the ground, the doors and every beacon go back to how they started —
-     what the unit has been fitted with does not */
+  /* the ground, the doors and every beacon go back to how they started, on
+     this deck and on every deck behind it — what the unit has been fitted
+     with does not */
+  decks.clear();
   buildWorld();
+  game.visited.clear();
   game.visited.set(K(game.px,game.py),performance.now());
   game.active=true;
-  say('Re-initialised at the landing record.','dim');
+  say('Re-initialised at the '+(MAP.id===START_DECK?'landing':'transit')+' record.','dim');
   objective(game.baseObj||'Explore.');refreshObjective();
 }
 function tutorial(dir){
