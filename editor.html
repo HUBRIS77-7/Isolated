@@ -140,7 +140,7 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
     <div class="pane"><canvas id="c"></canvas></div>
   </div>
   <div class="term-bar">
-    <span id="hint">Undo Ctrl+Z · Redo Ctrl+Shift+Z · Pan: middle-drag or space-drag · Zoom: wheel · Link (L) to set a block up</span>
+    <span id="hint">Undo Ctrl+Z · Redo Ctrl+Shift+Z · Pan: middle-drag or space-drag · Zoom: wheel · Link (L) to set a block up · R turns it</span>
     <span id="pos">X:-- Y:-- ·</span>
   </div>
 </div>
@@ -212,7 +212,10 @@ ISO.ORDER.forEach((ch,i)=>{
   b.dataset.ch = ch;
   b.innerHTML = `<span class="sw" style="background:${t.fill||'transparent'};border-color:${t.line||'var(--gfaint)'}">${t.glyph||''}</span>`+
                 `<span>${t.name}</span><span class="k">${i<10 ? (i+1)%10 : ''}</span>`;
-  b.title = (t.walk ? 'Walkable' : 'Blocks the unit') + (t.props ? ' · set up per instance (Link)' : '');
+  b.title = (t.walk ? 'Walkable' : 'Blocks the unit')
+          + (t.foot ? ' · covers more than its own tile' : '')
+          + (t.merge ? ' · touching copies become one block' : '')
+          + (t.props ? ' · set up per instance (Link)' : '');
   b.onclick = ()=>{ paint = ch; syncPal(); };
   $('#pal').appendChild(b);
 });
@@ -355,7 +358,7 @@ function draw(){
 
   for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
     const [sx,sy] = toScreen(x,y);
-    ISO.drawTile(cx, ISO.tileAt(map,x,y), sx, sy, z, D, ISO.propsAt(map,x,y));
+    ISO.drawCell(cx, map, x, y, sx, sy, z, D, ISO.propsAt(map,x,y));
     if(sealed.has(x+','+y)){ cx.fillStyle = 'rgba(255,59,47,.22)'; cx.fillRect(sx,sy,z,z) }
   }
 
@@ -414,6 +417,16 @@ function drawWiring(z){
       cx.beginPath(); cx.moveTo(aX,aY); cx.lineTo(tx+z/2,ty+z/2); cx.stroke(); cx.setLineDash([]);
       cx.strokeStyle = 'rgba(255,180,74,.85)';
       cx.strokeRect(tx+z*.18, ty+z*.18, z*.64, z*.64);
+    }
+    if(t.press === 'vent'){
+      const d = (ISO.propsAt(map,x,y)||{}).dest;
+      if(d){
+        const [tx,ty] = toScreen(d.x, d.y);
+        cx.strokeStyle = 'rgba(191,247,220,.5)'; cx.setLineDash([2*D,5*D]);
+        cx.beginPath(); cx.moveTo(aX,aY); cx.lineTo(tx+z/2,ty+z/2); cx.stroke(); cx.setLineDash([]);
+        cx.strokeStyle = 'rgba(191,247,220,.8)';
+        cx.beginPath(); cx.arc(tx+z/2, ty+z/2, z*.3, 0, 6.283); cx.stroke();
+      }
     }
     if(t.signal === 'move'){
       const path = ISO.tramPath(map,x,y), end = path[path.length-1];
@@ -546,12 +559,28 @@ addEventListener('keydown', e=>{
   const n = '1234567890'.indexOf(e.key);
   if(n>=0 && ISO.ORDER[n]){ paint = ISO.ORDER[n]; syncPal(); return }
   if(e.key==='Escape' && picking){ picking = null; drawInspector(); return }
+  if(e.key.toLowerCase()==='r'){ rotateSel(); return }
   const T = {b:'brush', e:'rect', f:'fill', i:'pick', p:'spawn', k:'beacon', l:'link'}[e.key.toLowerCase()];
   if(T){ tool = T; syncTool(); return }
   if(e.key==='['){ bsize = Math.max(1,bsize-1); $('#bSize').textContent = bsize }
   if(e.key===']'){ bsize = Math.min(9,bsize+1); $('#bSize').textContent = bsize }
 });
 addEventListener('keyup', e=>{ if(e.code==='Space') spaceDown = false });
+
+/* Anything that carries a `dir` setting turns with R, which is quicker than
+   reaching for the inspector while laying out a room. */
+const ROT = ['up','right','down','left'];
+function rotateSel(){
+  if(!sel) return toast('Pick a block with Link (L) first');
+  const schema = ISO.schemaOf(ISO.tileAt(map,sel.x,sel.y)) || {};
+  const key = Object.keys(schema).find(k => schema[k].type === 'dir');
+  const name = ISO.at(map,sel.x,sel.y).name;
+  if(!key) return toast(name+' does not turn');
+  const cur = (ISO.propsAt(map,sel.x,sel.y) || {})[key];
+  const next = ROT[(ROT.indexOf(cur) + 1 + ROT.length) % ROT.length];
+  pushUndo(); ISO.setProp(map, sel.x, sel.y, key, next); changed();
+  toast(name+' now '+next);
+}
 
 function doUndo(){ if(!undo.length) return; redo.push(clone(map)); map = ISO.normalize(undo.pop()); setMap(map,false); autosave(); toast('Undo') }
 function doRedo(){ if(!redo.length) return; undo.push(clone(map)); map = ISO.normalize(redo.pop()); setMap(map,false); autosave(); toast('Redo') }

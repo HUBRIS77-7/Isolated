@@ -23,6 +23,14 @@
    signal  — what happens when a button signals it: 'toggle' | 'move'
    away    — log line when the unit walks into a rail the platform has left
    open    — alternate look to draw while the block is open
+   foot    — the block covers more than its own tile: {len, wide}. Either is a
+             number, or the name of a per-instance field holding one, so a
+             fixture can be a fixed two tiles long or sized copy by copy. It
+             runs along the block's `dir`, so rotating it turns the footprint.
+   parts   — glyph per footprint cell (without it, `glyph` is stamped once)
+   merge   — touching copies of the same block draw as one body, so an author
+             builds something as big as they like out of ordinary tiles
+   sized   — its log line reports how big the copy the unit found actually is
    props   — per-instance settings (see below)                      */
 
 /* ---------- per-instance settings ----------
@@ -77,6 +85,37 @@ const TILES = {
                desktop:{type:'bool',label:'Has desktop', def:false}}},
   '^': {key:'^', id:'lift',   name:'Elevator',  walk:true,  fill:'rgba(255,59,47,.14)',  line:'rgba(255,59,47,.6)',  glyph:'⇕',
         beacon:true, enter:'Transit link. Carrier plate reads live.'},
+
+  /* ---------- fixtures: they furnish a room and stop the unit ---------- */
+  'L': {key:'L', id:'locker', name:'Locker',    walk:false, fill:'rgba(28,240,28,.13)',  line:'rgba(28,240,28,.42)', glyph:'▯',
+        bump:'Crew locker. Door welded by corrosion.'},
+  'B': {key:'B', id:'box',    name:'Box',       walk:false, fill:'rgba(28,240,28,.1)',   line:'rgba(28,240,28,.36)', glyph:'□',
+        bump:'Supply box. Too heavy to shift.'},
+  'A': {key:'A', id:'cabinet',name:'Filing cabinet', walk:false, fill:'rgba(28,240,28,.12)', line:'rgba(28,240,28,.4)', glyph:'⊟',
+        bump:'Filing cabinet. Drawers jammed shut.'},
+  '/': {key:'/', id:'gap',    name:'Broken wall', walk:true, fill:'rgba(28,240,28,.09)',  line:'rgba(28,240,28,.3)',  glyph:'▞',
+        enter:'Wall breached here. The gap is wide enough to pass.'},
+  'C': {key:'C', id:'crate',  name:'Cargo container', walk:false, fill:'rgba(255,180,74,.1)', line:'rgba(255,180,74,.45)', glyph:'▩',
+        merge:true, sized:true, bump:'Cargo container. Hull seals read intact.'},
+  'F': {key:'F', id:'fork',   name:'Forklift',  walk:false, fill:'rgba(255,180,74,.18)', line:'rgba(255,180,74,.6)',
+        foot:{len:2}, parts:['▫','≡'],
+        bump:'Cargo handler. Power cell flat.',
+        props:{dir:{type:'dir', label:'Faces', def:'right'}}},
+  'D': {key:'D', id:'desk',   name:'Desk',      walk:false, fill:'rgba(28,240,28,.12)',  line:'rgba(28,240,28,.38)',
+        foot:{len:3}, parts:['≡','≡','≡'],
+        bump:'Work surface. Bolted to the deck.',
+        props:{dir:{type:'dir', label:'Runs', def:'right'}}},
+
+  /* ---------- powered: the gate answers a button or the unit itself ---------- */
+  'G': {key:'G', id:'gate',   name:'Cargo gate', walk:false, fill:'rgba(255,180,74,.2)', line:'rgba(255,180,74,.6)', glyph:'▥',
+        bump:'Cargo gate. Sealed. [E] to drive it, or find the control.',
+        signal:'toggle', press:'gate', merge:true,
+        open:{fill:'rgba(255,180,74,.05)', line:'rgba(255,180,74,.3)', glyph:'▏'},
+        props:{open:{type:'bool', label:'Starts open', def:false}}},
+  'V': {key:'V', id:'vent',   name:'Vent',      walk:true,  fill:'rgba(191,247,220,.1)', line:'rgba(191,247,220,.45)', glyph:'☰',
+        press:'vent', enter:'Duct cover reads loose. [E] to crawl through.',
+        props:{dest:{type:'point', label:'Comes out at', def:null},
+               label:{type:'text', label:'Stencilled', def:''}}},
 };
 const ORDER = Object.keys(TILES);
 const VOID = TILES[' '];
@@ -85,6 +124,95 @@ const DIRS = {up:[0,-1], down:[0,1], left:[-1,0], right:[1,0]};
 const def = ch => TILES[ch] || VOID;
 const schemaOf = ch => def(ch).props || null;
 const pk = (x,y) => x+','+y;
+
+/* ---------- blocks bigger than one tile ----------
+   A map is still one character per tile: a big block is its anchor character
+   and nothing else, and the tiles it covers are worked out from its own
+   settings. So rotating a desk or growing a container is a change of setting,
+   never a redraw of the rows — and an author never has to keep several
+   characters in step by hand.
+
+   Two ways to be big, because the two read differently to an author:
+     foot  — the block states its own size ({len, wide} along its `dir`), so a
+             forklift is always two tiles and a desk always three.
+     merge — plain tiles that happen to touch draw as one body, so a container
+             is exactly as big as the author painted it.                     */
+const bumpVersion = map => { map._v = (map._v|0) + 1; return map };
+const versionOf = map => map._v|0;
+
+/* len/wide are either a number or the name of a field on this copy. */
+function footSize(t, p){
+  const read = v => (typeof v === 'number') ? v : Math.max(1, (p && p[v]|0) || 1);
+  return {len: Math.max(1, read(t.foot.len == null ? 1 : t.foot.len)),
+          wide:Math.max(1, read(t.foot.wide == null ? 1 : t.foot.wide))};
+}
+
+/* Every cell the block anchored at x,y covers, anchor first. `i` runs along
+   the block's facing and `j` across it, which is what `parts` is indexed by. */
+function footprint(map,x,y){
+  const t = at(map,x,y);
+  if(!t.foot) return [{x, y, i:0, j:0}];
+  const p = propsAt(map,x,y) || {};
+  const {len, wide} = footSize(t, p);
+  const [dx,dy] = DIRS[p.dir] || DIRS.right;
+  const ax = -dy, ay = dx;                     // across the facing
+  const out = [];
+  for(let j=0;j<wide;j++)for(let i=0;i<len;i++)
+    out.push({x:x+dx*i+ax*j, y:y+dy*i+ay*j, i, j});
+  return out;
+}
+
+/* "x,y" -> {x,y of the anchor, i, j} for every cell any big block covers.
+   Rebuilt only when the map actually changes; both renderers hit it per tile. */
+const FOOT = new WeakMap();
+function footIndex(map){
+  const cached = FOOT.get(map);
+  if(cached && cached.v === versionOf(map)) return cached.index;
+  const index = {};
+  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
+    if(!at(map,x,y).foot) continue;
+    for(const c of footprint(map,x,y)){
+      if(!inside(map,c.x,c.y)) continue;
+      const k = pk(c.x,c.y);
+      if(k in index) continue;                 // whoever claimed it first keeps it
+      index[k] = {x, y, i:c.i, j:c.j};
+    }
+  }
+  FOOT.set(map, {v:versionOf(map), index});
+  return index;
+}
+/* The big block this cell belongs to, anchor included (null if none). */
+const partAt = (map,x,y) => footIndex(map)[pk(x,y)] || null;
+/* …and the same, but only where the cell is not the anchor itself: this is
+   what makes the far half of a forklift as solid as the half you painted. */
+function coveredBy(map,x,y){
+  const f = partAt(map,x,y);
+  return (f && (f.x !== x || f.y !== y)) ? f : null;
+}
+
+/* Everything one merged block is made of, 4-way, plus its bounding box.
+   A block that does not merge is a cluster of one, so callers need no branch. */
+function cluster(map,x,y){
+  const ch = tileAt(map,x,y);
+  let x0=x, y0=y, x1=x, y1=y;
+  const cells = [];
+  if(!def(ch).merge || !inside(map,x,y)){
+    cells.push({x,y});
+  }else{
+    const seen = new Set([pk(x,y)]), q = [[x,y]];
+    while(q.length){
+      const [cx,cy] = q.pop();
+      cells.push({x:cx, y:cy});
+      if(cx<x0)x0=cx; if(cx>x1)x1=cx; if(cy<y0)y0=cy; if(cy>y1)y1=cy;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx=cx+dx, ny=cy+dy, k=pk(nx,ny);
+        if(seen.has(k) || tileAt(map,nx,ny) !== ch) continue;
+        seen.add(k); q.push([nx,ny]);
+      }
+    }
+  }
+  return {ch, cells, x0, y0, x1, y1, w:x1-x0+1, h:y1-y0+1};
+}
 
 /* ---------- map objects ---------- */
 /* A map is { id, name, w, h, spawn:{x,y}, beacons:[{x,y}], rows:[string],
@@ -117,7 +245,7 @@ function normalize(map){
   map.spawn = clampPt(map.spawn || {x:0,y:0}, w, h);
   map.beacons = (map.beacons||[]).map(p=>clampPt(p,w,h));
   normalizeProps(map);
-  return map;
+  return bumpVersion(map);
 }
 const clampPt = (p,w,h) => ({x:Math.min(w-1,Math.max(0,p.x|0)), y:Math.min(h-1,Math.max(0,p.y|0))});
 
@@ -184,6 +312,7 @@ function setProp(map,x,y,key,value){
   if(!s || !s[key]) return false;
   const p = map.props[pk(x,y)] || (map.props[pk(x,y)] = {});
   p[key] = coerce(s[key], value);
+  bumpVersion(map);                   // rotating a desk moves the tiles it covers
   return true;
 }
 
@@ -213,7 +342,12 @@ function tramPath(map,x,y){
 const inside = (map,x,y) => x>=0 && y>=0 && x<map.w && y<map.h;
 const tileAt = (map,x,y) => inside(map,x,y) ? map.rows[y][x] : ' ';
 const at     = (map,x,y) => def(tileAt(map,x,y));
-const walkable = (map,x,y) => at(map,x,y).walk;
+/* The floor a forklift is parked on is still floor in the rows; what makes it
+   solid is the block standing over it. */
+const walkable = (map,x,y) => at(map,x,y).walk && !coveredBy(map,x,y);
+/* What the unit actually runs into here — the block covering the cell if one
+   does, otherwise the tile itself. Bump lines and looks both come from it. */
+const bodyAt = (map,x,y) => { const f = coveredBy(map,x,y); return f ? at(map,f.x,f.y) : at(map,x,y) };
 
 function setTile(map,x,y,ch){
   if(!inside(map,x,y)) return false;
@@ -224,6 +358,7 @@ function setTile(map,x,y,ch){
   const props = map.props || (map.props = {});
   const fresh = defaults(ch);
   if(fresh) props[pk(x,y)] = fresh; else delete props[pk(x,y)];
+  bumpVersion(map);
   return true;
 }
 
@@ -316,8 +451,32 @@ function audit(map){
     }
     if(t.press === 'terminal' && !String(p.text||'').trim())
       out.issues.push('Terminal'+where+' has no text to display.');
-    if(t.signal === 'toggle' && !wired[pk(x,y)])
+    if(t.press === 'vent'){
+      const d = p.dest;
+      if(!d) out.issues.push('Vent'+where+' has no far end set.');
+      else if(!inside(map, d.x, d.y))
+        out.issues.push('Vent'+where+' comes out beyond the record.');
+      else if(!walkable(map, d.x, d.y))
+        out.issues.push('Vent'+where+' comes out inside '+at(map,d.x,d.y).name+
+                        ' at '+d.x+','+d.y+'.');
+    }
+    /* a gate the unit can drive itself does not need a control */
+    if(t.signal === 'toggle' && !t.press && !wired[pk(x,y)])
       out.issues.push(t.name+where+' has no button wired to it.');
+    if(t.foot) for(const c of footprint(map,x,y)){
+      if(!c.i && !c.j) continue;                       // the tile it is painted on
+      if(!inside(map, c.x, c.y)){
+        out.issues.push(t.name+where+' reaches past the edge of the record.');
+        continue;
+      }
+      const f = partAt(map, c.x, c.y);
+      if(f && (f.x !== x || f.y !== y))
+        out.issues.push(t.name+where+' overlaps '+at(map,f.x,f.y).name+
+                        ' at '+f.x+','+f.y+'.');
+      else if(!at(map,c.x,c.y).walk && tileAt(map,c.x,c.y) !== ' ')
+        out.issues.push(t.name+where+' stands in '+at(map,c.x,c.y).name+
+                        ' at '+c.x+','+c.y+'.');
+    }
     if(t.signal === 'move'){
       if(!wired[pk(x,y)]) out.issues.push(t.name+where+' has no button wired to it.');
       tramPath(map,x,y).slice(1).forEach(c=>{
@@ -373,27 +532,70 @@ const MAPS = {};
 function register(map){ const m = normalize(map); MAPS[m.id] = m; return m; }
 
 /* ---------- shared tile painter (same look in game and editor) ---------- */
-/* state.open — draw the block's open variant (a bulkhead that has been signalled) */
-function drawTile(ctx, ch, px, py, size, scale, state){
-  const t = def(ch);
-  const look = (state && state.open && t.open) ? Object.assign({}, t, t.open) : t;
+/* state.open — draw the block's open variant (a bulkhead that has been signalled)
+
+   One cell of one body. `join` says which sides carry on into the same body,
+   so the seams inside a container or along a desk are left out and the thing
+   reads as one object rather than a row of squares. */
+function paintCell(ctx, look, px, py, size, scale, join, glyph){
   if(!look.fill) return;
   ctx.fillStyle = look.fill;
   ctx.fillRect(px, py, size, size);
   if(look.line){
     ctx.strokeStyle = look.line; ctx.lineWidth = Math.max(1, scale||1);
-    ctx.strokeRect(px+.5, py+.5, size-1, size-1);
+    if(!join){
+      ctx.strokeRect(px+.5, py+.5, size-1, size-1);
+    }else{
+      const x0 = px+.5, y0 = py+.5, x1 = px+size-.5, y1 = py+size-.5;
+      ctx.beginPath();
+      if(!join.n){ ctx.moveTo(x0,y0); ctx.lineTo(x1,y0) }
+      if(!join.s){ ctx.moveTo(x0,y1); ctx.lineTo(x1,y1) }
+      if(!join.w){ ctx.moveTo(x0,y0); ctx.lineTo(x0,y1) }
+      if(!join.e){ ctx.moveTo(x1,y0); ctx.lineTo(x1,y1) }
+      ctx.stroke();
+    }
   }
-  if(look.glyph && size > 10){
+  if(glyph && size > 10){
     ctx.fillStyle = look.line || look.fill;
     ctx.font = Math.round(size*.62)+'px "Courier Prime", monospace';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(look.glyph, px+size/2, py+size/2+size*.04);
+    ctx.fillText(glyph, px+size/2, py+size/2+size*.04);
   }
+}
+const lookOf = (t, state) => (state && state.open && t.open) ? Object.assign({}, t, t.open) : t;
+
+/* One tile on its own — kept for callers that have a character and nothing else. */
+function drawTile(ctx, ch, px, py, size, scale, state){
+  const t = def(ch);
+  paintCell(ctx, lookOf(t, state), px, py, size, scale, null, t.glyph);
+}
+
+/* One cell of a map: the tile there, or the body of whatever big block stands
+   over it. This is what both renderers call, so a block that spans tiles looks
+   the same while it is being drawn as it does while it is being played. */
+function drawCell(ctx, map, x, y, px, py, size, scale, state){
+  const f = partAt(map, x, y);
+  if(f){
+    const t = at(map, f.x, f.y);
+    const mine = (nx,ny) => { const g = partAt(map,nx,ny); return !!g && g.x===f.x && g.y===f.y };
+    const join = {n:mine(x,y-1), s:mine(x,y+1), w:mine(x-1,y), e:mine(x+1,y)};
+    const glyph = t.parts ? (t.parts[f.i] || null)
+                          : ((f.i===0 && f.j===0) ? t.glyph : null);
+    return paintCell(ctx, lookOf(t, state), px, py, size, scale, join, glyph);
+  }
+  const ch = tileAt(map, x, y), t = def(ch);
+  if(t.merge){
+    const mine = (nx,ny) => tileAt(map,nx,ny) === ch;
+    const join = {n:mine(x,y-1), s:mine(x,y+1), w:mine(x-1,y), e:mine(x+1,y)};
+    /* stamped once per body, on the corner it starts from */
+    const glyph = (!join.w && !join.n) ? t.glyph : null;
+    return paintCell(ctx, lookOf(t, state), px, py, size, scale, join, glyph);
+  }
+  paintCell(ctx, lookOf(t, state), px, py, size, scale, null, t.glyph);
 }
 
 global.ISO = {TILES, ORDER, VOID, DIRS, def, MAPS, register, makeMap, normalize, resize, trim,
-               inside, tileAt, at, walkable, setTile, reachable, audit,
+               inside, tileAt, at, bodyAt, walkable, setTile, reachable, audit,
                schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,
-               toJSON, toModule, parse, drawTile};
+               footprint, partAt, coveredBy, cluster, toJSON, toModule, parse, drawTile, drawCell};
 })(typeof globalThis!=='undefined'?globalThis:this);
