@@ -1,5 +1,6 @@
-{
-  "id": "Eng-Lvl2",
+/* ISOLATION map — edit by hand, or open editor.html and load this file. */
+ISO.register({
+  "id": "ENGLVL2",
   "name": "ENGINEERING LEVEL 2",
   "w": 54,
   "h": 27,
@@ -103,4 +104,4 @@
     "............vv........#vvvvvvvvvvvvvv#                ",
     "GGGGGGGGGGGGGGGGGGGGGG#vvvvvvvvvvvvvv#                "
   ]
-}
+});

@@ -1,4 +1,5 @@
-{
+/* ISOLATION map — edit by hand, or open editor.html and load this file. */
+ISO.register({
   "id": "tutorial",
   "name": "Landing Site — Node 77",
   "w": 54,
@@ -61,4 +62,4 @@
     "                                                      ",
     "                                                      "
   ]
-}
+});
