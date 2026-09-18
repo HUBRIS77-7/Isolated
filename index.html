@@ -188,6 +188,7 @@ canvas{display:block}
 <script src="maps/tiles.js"></script>
 <script src="maps/tutorial.js"></script>
 <script src="maps/ENGLVL2.js"></script>
+<script src="maps/ENG-COMMAND.js"></script>
 
 <script>
 /* =========================================================
@@ -487,7 +488,7 @@ if(typeof ISO==='undefined'){
     footprint:(m,x,y)=>[{x,y,i:0,j:0}], partAt:()=>null, coveredBy:()=>null,
     cluster:(m,x,y)=>({cells:[{x,y}],x0:x,y0:y,x1:x,y1:y,w:1,h:1}),
     tramPath:(m,x,y)=>[{x,y}], key:(x,y)=>x+','+y,
-    vaultable:(m,x,y)=>ISO.at(m,x,y).walk, ABILITIES:{}, JUMP:3,
+    vaultable:(m,x,y)=>ISO.at(m,x,y).walk, ABILITIES:{}, JUMP:4,
     lifts:()=>[], liftLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), register:m=>m,
   };
 }
@@ -691,7 +692,7 @@ const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,mdu
   arc:0};                       // squares the move in flight is covering, if it is a jump
 /* Winding up: how long the key has been held, and how far that carries. */
 const jump={on:false, t:0};
-const JUMP_WIND=.62;                       // seconds of hold for the full three squares
+const JUMP_WIND=.62;                       // seconds of hold for the full four squares
 const jumpDist=()=>1+Math.min(ISO.JUMP-1, Math.floor(jump.t/JUMP_WIND*ISO.JUMP));
 game.visited.set(K(MAP.spawn.x,MAP.spawn.y),0);
 buildWorld();
@@ -816,7 +817,7 @@ function tryMove(dir){
 
 /* ---------- [SPACE]: the jump ----------
    Held, not tapped: the longer the wind-up, the further it carries, up to the
-   three squares the servos are rated for. The movement keys aim it while it is
+   four squares the servos are rated for. The movement keys aim it while it is
    winding up rather than walking the unit off the edge it is lining up on. */
 function startJump(){
   if(!game.active||game.dead||term.on)return;

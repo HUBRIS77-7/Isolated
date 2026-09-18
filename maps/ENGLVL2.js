@@ -1,5 +1,6 @@
-{
-  "id": "Eng-Lvl2",
+/* ISOLATION map — edit by hand, or open editor.html and load this file. */
+ISO.register({
+  "id": "ENGLVL2",
   "name": "ENGINEERING LEVEL 2",
   "w": 54,
   "h": 27,
@@ -17,6 +18,7 @@
     "22,2": {"dir":"down"},
     "24,2": {"dir":"down"},
     "26,2": {"dir":"down"},
+    "0,3": {"ability":"jump","label":"VAULT SERVOS"},
     "18,4": {"targets":[{"x":19,"y":5},{"x":19,"y":6}],"label":""},
     "51,4": {"dir":"right"},
     "19,5": {"open":false},
@@ -78,7 +80,7 @@
     ".....vv...vvv.=vv~~#......c.^###########L.............",
     ".....vv...vvv.=vvvv#........b#bc.D..AA.#L....D....BB..",
     ".....vv...vvv..,,vv#D.D.D.D..#.........#L.........BB..",
-    ".....vv...vvv..vv,=#.........#........................",
+    "M....vv...vvv..vv,=#.........#........................",
     ".....vv...vvv.....b#.........#.........#...........D..",
     ".....vv...vvv......%........c#.......F.#..L.D.........",
     "o....vv...vvv......%.........#.........#.#######.#....",
@@ -103,4 +105,4 @@
     "............vv........#vvvvvvvvvvvvvv#                ",
     "GGGGGGGGGGGGGGGGGGGGGG#vvvvvvvvvvvvvv#                "
   ]
-}
+});
