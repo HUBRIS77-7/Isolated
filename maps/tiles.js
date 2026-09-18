@@ -11,6 +11,8 @@
 
 /* Every tile is one character in a map row.
    walk    — can the unit stand here
+   clear   — sight passes through it even where the unit cannot: mesh, a
+             console flush to the wall, a surface low enough to look over
    fill    — body colour (null = draw nothing, pure negative space)
    line    — outline colour
    glyph   — optional character stamped in the tile
@@ -69,7 +71,7 @@ const TILES = {
   'o': {key:'o', id:'relay',  name:'Relay',     walk:false, fill:'rgba(255,180,74,.2)',  line:'rgba(255,180,74,.7)', glyph:'◉',
         bump:'Fixed structure. Origin unknown.'},
   'x': {key:'x', id:'fence',  name:'Fencing',   walk:false, fill:'rgba(28,240,28,.03)',  line:'rgba(28,240,28,.4)',  glyph:'╳',
-        bump:'Fencing. Mesh reads clear but holds.'},
+        clear:true, bump:'Fencing. Mesh reads clear but holds.'},
   'v': {key:'v', id:'pit',    name:'Pit',       walk:true,  fill:'rgba(0,0,0,.92)',      line:'rgba(255,59,47,.35)', glyph:'▽',
         deadly:'FLOOR ENDS. NO SURFACE BELOW.', alert:true},
   'T': {key:'T', id:'tram',   name:'Tram',      walk:true,  fill:'rgba(191,247,220,.14)',line:'rgba(191,247,220,.55)',glyph:'▤',
@@ -78,11 +80,11 @@ const TILES = {
         props:{dir:{type:'dir',  label:'Travels',       def:'right'},
                dist:{type:'int', label:'Distance',      def:4, min:1, max:60}}},
   'b': {key:'b', id:'button', name:'Button',    walk:false, fill:'rgba(255,180,74,.16)', line:'rgba(255,180,74,.7)', glyph:'◎',
-        bump:'Control surface. [E] to press.', press:'button',
+        clear:true, bump:'Control surface. [E] to press.', press:'button',
         props:{targets:{type:'points', label:'Signals blocks at', def:[], from:'target'},
                label:{type:'text',    label:'Stencilled', def:''}}},
   'c': {key:'c', id:'term',   name:'Terminal',  walk:false, fill:'rgba(28,240,28,.14)',  line:'rgba(28,240,28,.6)',  glyph:'▣',
-        bump:'Powered console. [E] to read.', press:'terminal',
+        clear:true, bump:'Powered console. [E] to read.', press:'terminal',
         props:{title:{type:'text',  label:'Header',  def:'UNLABELLED CONSOLE'},
                text:{type:'lines',  label:'Text',    def:'No readable record.'},
                desktop:{type:'bool',label:'Has desktop', def:false}}},
@@ -106,7 +108,7 @@ const TILES = {
         props:{dir:{type:'dir', label:'Faces', def:'right'}}},
   'D': {key:'D', id:'desk',   name:'Desk',      walk:false, fill:'rgba(28,240,28,.12)',  line:'rgba(28,240,28,.38)',
         foot:{len:3}, parts:['≡','≡','≡'],
-        bump:'Work surface. Bolted to the deck.',
+        clear:true, bump:'Work surface. Bolted to the deck.',
         props:{dir:{type:'dir', label:'Runs', def:'right'}}},
 
   /* ---------- powered: the gate answers a button or the unit itself ---------- */

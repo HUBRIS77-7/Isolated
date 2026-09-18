@@ -516,6 +516,7 @@ const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map()};
 const TRAM_STEP=.34;                       // seconds the platform takes per tile
 function buildWorld(){
   world.open.clear(); world.trams.length=0; world.lit.clear();
+  sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
     const t=tileDef(x,y), p=propsOf(x,y);
     if(t.signal==='toggle'&&p.open) world.open.add(K(x,y));
@@ -549,6 +550,83 @@ function tramBlocked(c){
   return t.signal!=='move';
 }
 
+/* ---------- sight ----------
+   The feed shows what a unit standing there could actually see: a clear line
+   to the square, and nothing at all through what is solid. Ground it has lost
+   sight of is held as the last reading for a few seconds and then let go, so
+   the map the operator reads is always something the unit really looked at. */
+const SIGHT=9;                   // tiles the optics resolve
+const LINGER=5;                  // seconds a lost square is held on the record
+const FADE=1.4;                  // seconds it then takes to go
+const MEMORY=.45;                // how bright a held square draws
+const sight={live:new Set(), seen:new Map()};
+
+/* Sight stops at whatever a body stops at: structure, a door still shut, a
+   block tall enough to stand behind. Mesh, consoles and low surfaces are
+   marked `clear` in the vocabulary and pass it; unmapped space registers
+   nothing and so carries nothing through. */
+function blocksSight(x,y){
+  if(!ISO.inside(MAP,x,y))return true;
+  if(tramOn(x,y))return false;                         // the platform is floor
+  const f=ISO.coveredBy(MAP,x,y), ax=f?f.x:x, ay=f?f.y:y, t=tileDef(ax,ay);
+  if(t.signal==='toggle')return !world.open.has(K(ax,ay));
+  return !(t.walk||t.clear);
+}
+
+/* Recursive shadowcasting, one octant at a time. It is symmetric: if the unit
+   can see a square, something standing on that square could see the unit. */
+const OCTANTS=[[1,0,0,1],[0,1,1,0],[0,-1,1,0],[-1,0,0,1],
+               [-1,0,0,-1],[0,-1,-1,0],[0,1,-1,0],[1,0,0,-1]];
+function castOctant(out,cx,cy,row,start,end,xx,xy,yx,yy){
+  if(start<end)return;
+  let blocked=false,next=start;
+  for(let j=row;j<=SIGHT&&!blocked;j++){
+    const dy=-j;
+    for(let dx=-j;dx<=0;dx++){
+      const l=(dx-.5)/(dy+.5), r=(dx+.5)/(dy-.5);
+      if(start<r)continue;
+      if(end>l)break;
+      const x=cx+dx*xx+dy*xy, y=cy+dx*yx+dy*yy;
+      if(dx*dx+dy*dy<=SIGHT*SIGHT&&ISO.inside(MAP,x,y))out.add(K(x,y));
+      if(blocked){
+        if(blocksSight(x,y)){next=r;continue}
+        blocked=false;start=next;
+      }else if(blocksSight(x,y)&&j<SIGHT){
+        blocked=true;
+        castOctant(out,cx,cy,j+1,start,l,xx,xy,yx,yy);
+        next=r;
+      }
+    }
+  }
+}
+/* Rebuilt every frame: a door driven open or a platform pulling away changes
+   what the unit can see without it having moved a tile. */
+function look(now){
+  sight.live.clear();
+  sight.live.add(K(game.px,game.py));
+  for(const [xx,xy,yx,yy] of OCTANTS)
+    castOctant(sight.live,game.px,game.py,1,1,0,xx,xy,yx,yy);
+  sight.live.forEach(k=>sight.seen.set(k,now));
+}
+/* Full while it is held, then gone. One curve, so a platform the unit has
+   lost sight of fades on the same clock as the ground under it. */
+function memAlpha(when,now){
+  const age=(now-when)/1000;
+  return age<=LINGER ? MEMORY : MEMORY*Math.max(0,1-(age-LINGER)/FADE);
+}
+/* How brightly a square draws: lit where the unit is looking, dimmer where it
+   is only remembered, nothing where the record has run out. */
+function sightAlpha(x,y,now){
+  const k=K(x,y);
+  if(sight.live.has(k))
+    return 1-.28*Math.min(1,Math.hypot(x-game.px,y-game.py)/SIGHT);
+  const when=sight.seen.get(k);
+  if(when===undefined)return 0;
+  const a=memAlpha(when,now);
+  if(a<=0){sight.seen.delete(k);return 0}
+  return a;
+}
+
 const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,mdur:.11,bx:0,by:0,bt:1,
   active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0,toldAbout:new Set(),
   face:'down',dead:false,sink:0,useLog:0,lastObj:''};
@@ -576,6 +654,7 @@ function startConsole(){
   say('STATUS','b',8,300);
   say('LONG-TERM TRAVEL DAMAGE: MINIMAL. SUCCESSFUL ARRIVAL','dim',6,120);
   say('WARNING: NO LONG-RANGE SIGNAL CARRIER.','alert',6,400).then(()=>$('#feed').classList.add('on'));
+  say('OPTICAL SURVEY ONLY. LINE OF SIGHT. LAST READING HELD 5s.','dim',6,120);
   say('');
   say('***ACTIVATING PRERECORDED MESSAGE***','b',8,400);
   say(`Name Registered Identified: ${PLAYER.full.toUpperCase()}. UNIT COMPUTATIONAL STATUS NOTICED. MISSION STILL WITHIN ACCEPTABLE PARAMETERS OF SUSTAINMENT`,'',18,400);
@@ -818,9 +897,13 @@ function drawFeed(now,dt){
   const x0=Math.max(0,Math.floor(view.x)-1),y0=Math.max(0,Math.floor(view.y)-1);
   const x1=Math.min(COLS,Math.ceil(view.x+vc)+1),y1=Math.min(ROWS,Math.ceil(view.y+vr)+1);
 
+  look(now);
   fx.clearRect(0,0,W,H);
   for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const a=sightAlpha(x,y,now);
+    if(a<=0)continue;                       // never looked at, or let go of
     const px=ox+x*tile,py=oy+y*tile;
+    fx.globalAlpha=a;
     /* a platform is drawn where it actually is, not where its rows entry sits */
     if(tileDef(x,y).signal!=='move')
       ISO.drawCell(fx,MAP,x,y,px,py,tile,D,
@@ -831,27 +914,37 @@ function drawFeed(now,dt){
       fx.fillStyle=`rgba(28,240,28,${.04+.12*Math.max(0,1-age/8)})`;
       fx.fillRect(px+1,py+1,tile-2,tile-2);
     }
+    fx.globalAlpha=1;
   }
   /* survey dots only where the record actually reaches — the negative space
      around them is what gives a map its shape */
   if(tile>=12){
     const mapped=(x,y)=>ISO.tileAt(MAP,x,y)!==' ';
-    fx.fillStyle='rgba(28,240,28,.35)';
-    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)
-      if(mapped(x-1,y-1)||mapped(x,y-1)||mapped(x-1,y)||mapped(x,y))
-        fx.fillRect(ox+x*tile-D,oy+y*tile-D,2*D,2*D);
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+      if(!(mapped(x-1,y-1)||mapped(x,y-1)||mapped(x-1,y)||mapped(x,y)))continue;
+      /* a corner is only as good as the brightest square meeting at it */
+      const a=Math.max(sightAlpha(x-1,y-1,now),sightAlpha(x,y-1,now),
+                       sightAlpha(x-1,y,now),sightAlpha(x,y,now));
+      if(a<=0)continue;
+      fx.fillStyle=`rgba(28,240,28,${.35*a})`;
+      fx.fillRect(ox+x*tile-D,oy+y*tile-D,2*D,2*D);
+    }
   }
 
-  drawRails(ox,oy,tile,D);
-  drawTrams(ox,oy,tile,D);
+  drawRails(ox,oy,tile,D,now);
+  drawTrams(ox,oy,tile,D,now);
   world.lit.forEach((when,k)=>{                       // a control answering a press
     const age=(now-when)/450;
     if(age>1)return void world.lit.delete(k);
     const [x,y]=k.split(',').map(Number);
-    fx.strokeStyle=`rgba(255,180,74,${1-age})`;fx.lineWidth=2*D;
+    const a=sightAlpha(x,y,now);
+    if(a<=0)return;
+    fx.strokeStyle=`rgba(255,180,74,${(1-age)*a})`;fx.lineWidth=2*D;
     fx.strokeRect(ox+x*tile+.5,oy+y*tile+.5,tile-1,tile-1);
   });
 
+  /* the beacon transmits: the unit reads it through walls, which is what
+     makes it something to steer by while everything else has to be seen */
   if(game.beacon){
     const cx=ox+(game.beacon[0]+.5)*tile,cy=oy+(game.beacon[1]+.5)*tile,p=(t%1.4)/1.4;
     fx.strokeStyle=`rgba(255,59,47,${1-p})`;fx.lineWidth=1.5*D;
@@ -884,25 +977,45 @@ function drawFeed(now,dt){
   $('#coords').textContent=`X:${String(game.px).padStart(2,'0')} Y:${String(game.py).padStart(2,'0')}`;
 }
 
-/* The rail a platform runs on: visible even where the platform is not. */
-function drawRails(ox,oy,tile,D){
+/* The rail a platform runs on: visible even where the platform is not — but
+   only along the stretch the unit has actually looked down. */
+function drawRails(ox,oy,tile,D,now){
   if(!world.trams.length)return;
-  fx.strokeStyle='rgba(191,247,220,.22)';fx.lineWidth=Math.max(1,D);
+  fx.lineWidth=Math.max(1,D);
   fx.setLineDash([tile*.2,tile*.2]);
   for(const tr of world.trams){
     const a=tr.path[0],b=tr.path[tr.path.length-1];
-    fx.beginPath();
-    fx.moveTo(ox+(a.x+.5)*tile,oy+(a.y+.5)*tile);
-    fx.lineTo(ox+(b.x+.5)*tile,oy+(b.y+.5)*tile);
-    fx.stroke();
+    const dx=Math.sign(b.x-a.x),dy=Math.sign(b.y-a.y);
+    for(const c of tr.path){
+      const al=sightAlpha(c.x,c.y,now);
+      if(al<=0)continue;
+      const cx=ox+(c.x+.5)*tile,cy=oy+(c.y+.5)*tile;
+      fx.strokeStyle=`rgba(191,247,220,${.22*al})`;
+      fx.beginPath();
+      fx.moveTo(cx-dx*tile/2,cy-dy*tile/2);
+      fx.lineTo(cx+dx*tile/2,cy+dy*tile/2);
+      fx.stroke();
+    }
   }
   fx.setLineDash([]);
 }
-function drawTrams(ox,oy,tile,D){
+/* A platform in sight is drawn where it is. One the unit has lost is held at
+   the last square it was seen on — the record says where it was, not where it
+   has got to since. */
+function drawTrams(ox,oy,tile,D,now){
   const t=ISO.def('T');
   for(const tr of world.trams){
     const c=tr.path[tr.i],e=ease(tr.t);
-    const px=ox+lerp(tr.ax,c.x,e)*tile,py=oy+lerp(tr.ay,c.y,e)*tile;
+    let x,y,a;
+    if(sight.live.has(K(c.x,c.y))){
+      x=lerp(tr.ax,c.x,e);y=lerp(tr.ay,c.y,e);a=sightAlpha(c.x,c.y,now);
+      tr.sx=x;tr.sy=y;tr.st=now;
+    }else if(tr.st!==undefined){
+      x=tr.sx;y=tr.sy;a=memAlpha(tr.st,now);
+    }else continue;                              // never seen: not on the map
+    if(a<=0)continue;
+    const px=ox+x*tile,py=oy+y*tile;
+    fx.globalAlpha=a;
     fx.fillStyle=t.fill;fx.fillRect(px,py,tile,tile);
     fx.strokeStyle=t.line;fx.lineWidth=Math.max(1.5,1.5*D);
     fx.strokeRect(px+.5,py+.5,tile-1,tile-1);
@@ -911,6 +1024,7 @@ function drawTrams(ox,oy,tile,D){
       fx.textAlign='center';fx.textBaseline='middle';
       fx.fillText(t.glyph,px+tile/2,py+tile/2+tile*.04);
     }
+    fx.globalAlpha=1;
   }
 }
 
