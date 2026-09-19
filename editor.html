@@ -34,6 +34,19 @@ input[type=text]{width:100%}
 .pal{display:flex;flex-direction:column;gap:3px}
 .pal button{display:flex;align-items:center;gap:7px;text-align:left;padding:2px 5px;border-color:var(--gfaint)}
 .pal button.on{border-color:var(--g)}
+.cat{border-bottom:1px solid #041a04}
+.cat:last-child{border-bottom:0}
+.cat-h{display:flex;width:100%;align-items:center;gap:6px;background:#000;border:0;
+  border-left:2px solid var(--gfaint);padding:3px 6px;margin:1px 0;color:var(--gdim);
+  font-size:12px;letter-spacing:.1em;text-align:left}
+.cat-h:hover{background:#031a03;color:var(--g)}
+.cat-h .n{margin-left:auto;font-size:11px}
+.cat-h.has{color:var(--amber);border-left-color:var(--amber)}
+.cat-b{display:flex;flex-direction:column;gap:3px;padding:2px 0 6px 7px}
+.cat.shut .cat-b{display:none}
+.slot{display:flex;gap:4px;align-items:center;margin-bottom:3px}
+.slot input[type=text]{flex:1;width:auto;min-width:0}
+.slot select{max-width:96px}
 .sw{width:17px;height:17px;flex:none;border:1px solid var(--gdim);display:grid;place-items:center;font-size:12px;line-height:1}
 .k{color:var(--gdim);margin-left:auto;font-size:12px}
 .dim{color:var(--gdim)}
@@ -140,7 +153,7 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
     <div class="pane"><canvas id="c"></canvas></div>
   </div>
   <div class="term-bar">
-    <span id="hint">Undo Ctrl+Z · Redo Ctrl+Shift+Z · Pan: middle-drag or space-drag · Zoom: wheel · Select (S) to change a block or set it up · R turns it</span>
+    <span id="hint">Undo Ctrl+Z · Redo Ctrl+Shift+Z · Pan: middle-drag or space-drag · Zoom: wheel · Select (S) to change a block or set it up · R turns it · palette headings fold</span>
     <span id="pos">X:-- Y:-- ·</span>
   </div>
 </div>
@@ -169,6 +182,7 @@ let tool  = 'brush', paint = '#', bsize = 1;
 let undo  = [], redo = [];
 let hover = null, drag = null, rectAnchor = null, panning = null, spaceDown = false;
 let sealed = new Set(), gated = new Set();   // no way in at all · only by jumping
+let onCircuit = {};                          // circuit name -> the blocks waiting on it
 let sel = null, picking = null;          // block under the inspector, field awaiting a click
 
 const clone = m => JSON.parse(JSON.stringify(m));
@@ -191,6 +205,11 @@ function changed(save){
     if(!ISO.walkable(map,x,y) || a.seen.has(k)) continue;
     (a.jumpSeen.has(k) ? gated : sealed).add(k);      // amber: needs vault servos
   }
+  onCircuit = {};
+  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
+    const c = ISO.circuitOf(map,x,y);
+    if(c) (onCircuit[c] || (onCircuit[c] = [])).push({x,y});
+  }
   $('#stats').innerHTML =
     `${map.w} × ${map.h} · ${map.w*map.h} tiles<br>`+
     `${a.walkable} walkable · ${map.beacons.length} beacon(s)<br>`+
@@ -210,25 +229,83 @@ function autosave(){
 }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toast.t); toast.t=setTimeout(()=>t.classList.remove('on'),1800); }
 
-/* ---------- palette ---------- */
-ISO.ORDER.forEach((ch,i)=>{
+/* ---------- palette ----------
+   Thirty blocks is too long a list to read, so it is drawn in the categories
+   tiles.js declares — each one a section that folds away. Which are folded is
+   the author's own arrangement of the workbench, so it is kept between visits.
+   A tile in no category still appears, under "Other": adding a block can
+   never lose it. */
+const CAT_KEY = 'iso.editor.cats';
+let shut = new Set();
+try{ shut = new Set(JSON.parse(localStorage.getItem(CAT_KEY) || '[]')) }catch(e){}
+const saveCats = ()=>{ try{ localStorage.setItem(CAT_KEY, JSON.stringify([...shut])) }catch(e){} };
+
+const HOTKEY = {};                                  // the digits 1-0 still belong to ORDER
+ISO.ORDER.forEach((ch,i)=>{ if(i<10) HOTKEY[ch] = (i+1)%10 });
+function catsOf(){
+  const listed = new Set(), out = [];
+  for(const c of (ISO.CATS||[])){
+    const keys = [...c.keys].filter(ch=>ISO.TILES[ch]);
+    keys.forEach(ch=>listed.add(ch));
+    if(keys.length) out.push({id:c.id, name:c.name, keys});
+  }
+  const rest = ISO.ORDER.filter(ch=>!listed.has(ch));
+  if(rest.length) out.push({id:'other', name:'Other', keys:rest});
+  return out;
+}
+function tileButton(ch){
   const t = ISO.def(ch);
   const b = document.createElement('button');
   b.dataset.ch = ch;
   b.innerHTML = `<span class="sw" style="background:${t.fill||'transparent'};border-color:${t.line||'var(--gfaint)'}">${t.glyph||''}</span>`+
-                `<span>${t.name}</span><span class="k">${i<10 ? (i+1)%10 : ''}</span>`;
+                `<span>${t.name}</span><span class="k">${HOTKEY[ch] == null ? '' : HOTKEY[ch]}</span>`;
   b.title = (t.walk ? 'Walkable' : 'Blocks the unit')
           + (!t.walk && t.clear ? ' · but sight passes over it' : '')
           + (t.foot ? ' · covers more than its own tile' : '')
           + (t.merge ? ' · touching copies become one block' : '')
+          + (t.powered ? ' · runs on power (Select → circuit)' : '')
+          + (t.take ? ' · small enough for the unit to carry off' : '')
           + (t.props ? ' · set up per instance (Select)' : '');
   /* with a block selected, the palette changes that block rather than only
      arming the brush — which is the whole point of the Select tool */
   b.onclick = ()=>{ if(tool === 'select' && sel) return swapSel(ch);
                     paint = ch; syncPal(); };
-  $('#pal').appendChild(b);
-});
-const syncPal = ()=>document.querySelectorAll('#pal button').forEach(b=>b.classList.toggle('on', b.dataset.ch===paint));
+  return b;
+}
+function buildPal(){
+  const pal = $('#pal');
+  pal.innerHTML = '';
+  catsOf().forEach(c=>{
+    const wrap = document.createElement('div');
+    wrap.className = 'cat' + (shut.has(c.id) ? ' shut' : '');
+    wrap.dataset.cat = c.id;
+    const head = document.createElement('button');
+    head.className = 'cat-h';
+    head.innerHTML = `<span class="arrow"></span><span>${c.name.toUpperCase()}</span>`+
+                     `<span class="n">${c.keys.length}</span>`;
+    head.onclick = ()=>{
+      shut.has(c.id) ? shut.delete(c.id) : shut.add(c.id);
+      wrap.classList.toggle('shut', shut.has(c.id));
+      saveCats(); syncPal();
+    };
+    const body = document.createElement('div');
+    body.className = 'cat-b';
+    c.keys.forEach(ch=>body.appendChild(tileButton(ch)));
+    wrap.append(head, body);
+    pal.appendChild(wrap);
+  });
+}
+/* The armed block is marked wherever it is — and its category is marked too,
+   so a brush loaded from a folded section is not a mystery. */
+function syncPal(){
+  document.querySelectorAll('#pal button[data-ch]').forEach(b=>b.classList.toggle('on', b.dataset.ch===paint));
+  document.querySelectorAll('#pal .cat').forEach(w=>{
+    const head = w.querySelector('.cat-h');
+    head.querySelector('.arrow').textContent = w.classList.contains('shut') ? '▸' : '▾';
+    head.classList.toggle('has', !!w.querySelector('button[data-ch].on'));
+  });
+}
+buildPal();
 const syncTool = ()=>document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('on', b.dataset.tool===tool));
 document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{tool=b.dataset.tool;syncTool()});
 syncPal();
@@ -293,10 +370,15 @@ function swapField(ch){
   const label = document.createElement('span');
   label.textContent = 'Block';
   const sl = document.createElement('select');
-  ISO.ORDER.forEach(k=>{
-    const o = document.createElement('option');
-    o.value = k; o.textContent = ISO.def(k).name; o.selected = k === ch;
-    sl.appendChild(o);
+  catsOf().forEach(c=>{
+    const g = document.createElement('optgroup');
+    g.label = c.name;
+    c.keys.forEach(k=>{
+      const o = document.createElement('option');
+      o.value = k; o.textContent = ISO.def(k).name; o.selected = k === ch;
+      g.appendChild(o);
+    });
+    sl.appendChild(g);
   });
   sl.onchange = ()=>swapSel(sl.value);
   wrap.append(label, sl);
@@ -351,6 +433,52 @@ function field(key, spec, value){
     pick.onclick = ()=>{ picking = picking === key ? null : key; drawInspector() };
     row.append(at, pick);
     wrap.appendChild(row);
+  }else if(spec.type === 'slots'){
+    /* a list of small records — a fusebox way is a circuit name and the
+       rating it takes, and a box has as many as its author drew */
+    const rows = value || [], fields = spec.fields || {};
+    const put = (i,k,v) => write(rows.map((r,j)=>j===i ? Object.assign({}, r, {[k]:v}) : r));
+    rows.forEach((row,i)=>{
+      const line = document.createElement('div');
+      line.className = 'slot';
+      const n = document.createElement('span');
+      n.className = 'dim'; n.textContent = (i+1);
+      line.appendChild(n);
+      for(const k in fields){
+        const f = fields[k];
+        if(f.type === 'pick'){
+          const sl = document.createElement('select');
+          (f.opts || []).forEach(o=>{
+            const n2 = document.createElement('option');
+            n2.value = o.value; n2.textContent = o.label; n2.selected = o.value === row[k];
+            sl.appendChild(n2);
+          });
+          sl.title = f.label || k;
+          sl.onchange = ()=>put(i, k, sl.value);
+          line.appendChild(sl);
+        }else{
+          const inp = document.createElement('input');
+          inp.type = f.type === 'int' ? 'number' : 'text';
+          inp.placeholder = f.label || k; inp.title = f.label || k;
+          inp.value = row[k] == null ? '' : row[k];
+          inp.onchange = ()=>put(i, k, inp.value);
+          line.appendChild(inp);
+        }
+      }
+      const drop = document.createElement('button');
+      drop.className = 'drop'; drop.textContent = '×'; drop.title = 'Remove';
+      drop.onclick = ()=>write(rows.filter((_,j)=>j!==i));
+      line.appendChild(drop);
+      wrap.appendChild(line);
+    });
+    const add = document.createElement('button');
+    add.textContent = rows.length ? '+ another' : '+ add';
+    add.onclick = ()=>{
+      const row = {};
+      for(const k in fields) row[k] = fields[k].def;
+      write(rows.concat(row));
+    };
+    wrap.appendChild(add);
   }else if(spec.type === 'pick'){
     const sl = document.createElement('select');
     (spec.opts || []).forEach(o=>{
@@ -498,6 +626,39 @@ function drawWiring(z){
         cx.strokeStyle = 'rgba(191,247,220,.8)';
         cx.beginPath(); cx.arc(tx+z/2, ty+z/2, z*.3, 0, 6.283); cx.stroke();
       }
+    }
+    /* a fusebox is wired to a name rather than to a square, so its line is
+       drawn to everything standing on that name */
+    if(t.press === 'fusebox'){
+      const ways = ISO.waysOf(map,x,y);
+      ways.forEach(w=>{
+        for(const b of (onCircuit[w.circuit] || [])){
+          const [tx,ty] = toScreen(b.x, b.y);
+          cx.strokeStyle = 'rgba(120,255,190,.4)'; cx.setLineDash([6*D,4*D]);
+          cx.beginPath(); cx.moveTo(aX,aY); cx.lineTo(tx+z/2,ty+z/2); cx.stroke(); cx.setLineDash([]);
+        }
+      });
+      if(z >= 16){
+        cx.font = (8*D)+'px "Courier Prime", monospace';
+        cx.textAlign = 'center'; cx.textBaseline = 'top';
+        ways.forEach((w,i)=>{
+          cx.fillStyle = w.circuit ? 'rgba(120,255,190,.85)' : 'rgba(255,59,47,.85)';
+          cx.fillText(w.circuit || 'unstencilled', aX, sy + z + 1 + i*9*D);
+        });
+        if(!ways.length){
+          cx.fillStyle = 'rgba(255,59,47,.85)';
+          cx.fillText('no ways', aX, sy + z + 1);
+        }
+      }
+    }
+    /* a block on a circuit says which one above it, in red while no box on
+       this deck feeds that name — which is a block that never wakes up */
+    const circ = ISO.circuitOf(map,x,y);
+    if(circ && z >= 16){
+      cx.fillStyle = ISO.circuitFed(map,circ) ? 'rgba(120,255,190,.85)' : 'rgba(255,59,47,.9)';
+      cx.font = (8*D)+'px "Courier Prime", monospace';
+      cx.textAlign = 'center'; cx.textBaseline = 'bottom';
+      cx.fillText(circ, aX, sy - 1);
     }
     /* a car's far end is another deck, not another square — so it is written
        out rather than drawn to */

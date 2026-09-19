@@ -1,4 +1,5 @@
-{
+/* ISOLATION map — edit by hand, or open editor.html and load this file. */
+ISO.register({
   "id": "ENG-COMMAND",
   "name": "ENGINEERING COMMAND",
   "w": 54,
@@ -103,4 +104,4 @@
     "vvvvvvvvvvvvvvvvvvvvvvvvvv#.#vvvvvvvvvvvvvvvvvvvvvvvvv",
     "vvvvvvvvvvvvvvvvvvvvvvvvvv#^#vvvvvvvvvvvvvvvvvvvvvvvvv"
   ]
-}
+});

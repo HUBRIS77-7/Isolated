@@ -92,6 +92,27 @@ canvas{display:block}
 .key.lit{background:var(--g);color:#000;border-color:var(--g);text-shadow:none}
 @media (max-width:760px){.split{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr)}#console{padding-bottom:140px}}
 
+/* the fusebox: it takes the message log's place in the column until it is closed */
+#fuseBody{flex:1;min-height:0;overflow-y:auto;padding:8px;font-size:13px;line-height:1.3}
+#fuseHead{color:var(--gdim);margin-bottom:6px}
+.way{display:flex;gap:8px;align-items:baseline;border:1px solid var(--gfaint);
+  padding:3px 6px;margin-bottom:4px;cursor:pointer}
+.way.on{border-color:var(--amber)}
+.way .n{color:var(--gdim);flex:none}
+.way .c{flex:1;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.way .s{flex:none}
+.way .s.live{color:var(--g)}
+.way .s.dead{color:var(--gdim)}
+.way .s.bad{color:var(--red)}
+#fuseHand{margin-top:9px;border-top:1px solid var(--gfaint);padding-top:7px;color:var(--gdim)}
+.hand{display:inline-block;border:1px solid var(--gfaint);color:var(--g);
+  padding:1px 7px;margin:4px 4px 0 0;cursor:pointer}
+.hand.on{border-color:var(--amber);color:var(--amber)}
+#fuseFoot{flex:none;border-top:1px solid var(--gfaint);padding:4px 8px;font-size:12px;
+  color:var(--gdim);display:flex;justify-content:space-between;gap:10px}
+#fuseNote{color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#carry{padding:0 8px 8px;font-size:12px;color:var(--gdim);display:none}
+
 /* the tiny window a terminal opens into */
 #tiny{position:fixed;inset:0;z-index:35;display:none;place-items:center;background:rgba(0,0,0,.55);padding:16px}
 #tiny.on{display:grid}
@@ -160,9 +181,18 @@ canvas{display:block}
     <div class="term-body split">
       <div class="box"><h4>&lt;Environment Feed&gt;</h4><canvas id="feed"></canvas></div>
       <div class="rcol">
-        <div class="box" style="flex:1"><h4>&lt;Message Log&gt;</h4><div id="log"></div></div>
+        <div class="box" id="logBox" style="flex:1"><h4>&lt;Message Log&gt;</h4><div id="log"></div></div>
+        <div class="box" id="fuseWin" style="flex:1;display:none"><h4>&lt;Fusebox&gt;</h4>
+          <div id="fuseBody">
+            <div id="fuseHead"></div>
+            <div id="fuseWays"></div>
+            <div id="fuseHand"></div>
+          </div>
+          <div id="fuseFoot"><span id="fuseNote"></span><span>[E]/[ESC] CLOSE</span></div>
+        </div>
         <div class="box" id="objWrap"><h4>&lt;Objective&gt;</h4>
           <div id="obj" class="dim">—</div>
+          <div id="carry"></div>
           <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div></div>
         </div>
       </div>
@@ -489,6 +519,8 @@ if(typeof ISO==='undefined'){
     cluster:(m,x,y)=>({cells:[{x,y}],x0:x,y0:y,x1:x,y1:y,w:1,h:1}),
     tramPath:(m,x,y)=>[{x,y}], key:(x,y)=>x+','+y,
     vaultable:(m,x,y)=>ISO.at(m,x,y).walk, ABILITIES:{}, JUMP:4,
+    FUSES:{}, ITEMS:{}, CATS:[], CARRY:6,
+    circuitOf:()=>'', waysOf:()=>[], boxes:()=>[], circuitFed:()=>false, itemAt:()=>null,
     lifts:()=>[], liftLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), register:m=>m,
   };
 }
@@ -527,17 +559,28 @@ function bumpLine(x,y,t){
    The rows say what is where. Everything that can change while the unit is
    walking about lives here instead, so a reset is one call to buildWorld(). */
 const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
-              spent:new Set(), beacons:new Map()};
+              spent:new Set(), beacons:new Map(),
+              /* one entry per fusebox: the ways it feeds and what is seated in
+                 each of them. This is the whole of the power state — a circuit
+                 is live because a way here holds the fuse it takes. */
+              ways:new Map(),
+              /* small objects the unit has set down, by the square they lie on */
+              drops:new Map()};
 const TRAM_STEP=.34;                       // seconds the platform takes per tile
 function buildWorld(){
   world.open.clear(); world.trams.length=0; world.lit.clear();
   world.spent.clear(); world.beacons.clear();
+  world.ways.clear(); world.drops.clear();
   sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
     const t=tileDef(x,y), p=propsOf(x,y);
     if(t.signal==='toggle'&&p.open) world.open.add(K(x,y));
     if(t.signal==='move') world.trams.push({home:K(x,y), path:ISO.tramPath(MAP,x,y),
                                             i:0, dest:0, ax:x, ay:y, t:1});
+    /* every box starts with its ways empty: a fuse is something the unit
+       finds and seats, never something the record hands it */
+    if(t.press==='fusebox') world.ways.set(K(x,y),
+        ISO.waysOf(MAP,x,y).map(w=>({circuit:w.circuit, rating:w.rating, fuse:null})));
     /* every armed beacon transmits from the moment the run starts, and a
        re-initialise arms them all again */
     if(t.ping&&p.armed) world.beacons.set(K(x,y),{x, y, range:p.range|0,
@@ -563,17 +606,45 @@ const level={entry:{x:MAP.spawn.x, y:MAP.spawn.y}};
 function stashDeck(){
   decks.set(MAP.id,{open:new Set(world.open), spent:new Set(world.spent),
                     beacons:new Map(world.beacons),
+                    ways:new Map([...world.ways].map(([k,w])=>[k,w.map(o=>Object.assign({},o))])),
+                    drops:new Map(world.drops),
                     trams:world.trams.map(t=>Object.assign({},t)),
                     entry:{x:level.entry.x, y:level.entry.y}});
 }
 function restoreDeck(d){
   world.open=new Set(d.open); world.spent=new Set(d.spent);
   world.beacons=new Map(d.beacons);
+  /* a deck keeps the fuses that were seated on it, and whatever was set down */
+  world.ways=new Map([...d.ways].map(([k,w])=>[k,w.map(o=>Object.assign({},o))]));
+  world.drops=new Map(d.drops);
   world.trams=d.trams.map(t=>Object.assign({},t));
   world.lit.clear();
   sight.live.clear(); sight.seen.clear();     // optical memory does not ride the car
   level.entry={x:d.entry.x, y:d.entry.y};
   indexTrams();
+}
+
+/* ---------- power ----------
+   A block is live unless its author put it on a circuit, so a map that says
+   nothing about power plays exactly as it always did. A circuit is live while
+   some fusebox way stencilled with its name holds a fuse of the rating that
+   way takes. Nothing here changes what the unit can stand on — an unpowered
+   block is not a hole in the deck, it is a block that will not answer. */
+const circuitAt=(x,y)=>ISO.circuitOf(MAP,x,y);
+function circuitLive(name){
+  if(!name)return true;                     // nothing was ever switched off
+  for(const ways of world.ways.values())
+    for(const w of ways) if(w.circuit===name&&w.fuse&&w.fuse.variant===w.rating)return true;
+  return false;
+}
+const powered=(x,y)=>circuitLive(circuitAt(x,y));
+/* What the log says when something dead is prodded. A block on a circuit no
+   box on this deck feeds reads differently from one merely waiting on a fuse:
+   the first is a dead end, the second is an errand. */
+function deadLine(name,x,y,tag){
+  const c=circuitAt(x,y);
+  return name+(tag||'')+' does not answer. Circuit ['+c+'] reads dead'+
+         (ISO.circuitFed(MAP,c)?'. The way for it sits empty.':' — no fusebox on this deck feeds it.');
 }
 
 /* What the unit can stand on: the tile, plus whatever the power has changed. */
@@ -689,6 +760,7 @@ const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,mdu
   active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0,toldAbout:new Set(),
   face:'down',dead:false,sink:0,useLog:0,baseObj:'',
   abilities:new Set(),          // what a modification station has fitted so far
+  carry:[],                     // small objects in the manipulator, newest last
   arc:0};                       // squares the move in flight is covering, if it is a jump
 /* Winding up: how long the key has been held, and how far that carries. */
 const jump={on:false, t:0};
@@ -726,7 +798,7 @@ function objective(t,borrowed){
 function beaconObjective(){
   let best=null,bd=Infinity;
   world.beacons.forEach(b=>{
-    if(!b.objective)return;
+    if(!b.objective||!powered(b.x,b.y))return;
     const d=Math.abs(b.x-game.px)+Math.abs(b.y-game.py);
     if(d<bd){bd=d;best=b}
   });
@@ -793,14 +865,18 @@ function arrived(){
 function checkBeacons(){
   if(!world.beacons.size)return;
   for(const [k,b] of [...world.beacons]){
+    if(!powered(b.x,b.y))continue;                     // a dark beacon says nothing
     if(Math.max(Math.abs(game.px-b.x),Math.abs(game.py-b.y))>b.range)continue;
     world.beacons.delete(k);world.spent.add(k);
     world.lit.set(k,performance.now());
     say('Beacon'+(b.label?' ['+b.label+']':'')+' reached. Transmitter goes quiet.','b');
   }
 }
+/* Either of the two screens the unit can open. While one is up the deck keys
+   belong to it, not to the chassis. */
+const uiOpen=()=>term.on||fuse.on;
 function tryMove(dir){
-  if(!game.active||game.dead||term.on||game.mt<1)return;
+  if(!game.active||game.dead||uiOpen()||game.mt<1)return;
   game.face=dir;
   const [dx,dy]=DIRV[dir],nx=game.px+dx,ny=game.py+dy,t=bodyDef(nx,ny);
   if(!walkableAt(nx,ny)){
@@ -820,7 +896,7 @@ function tryMove(dir){
    four squares the servos are rated for. The movement keys aim it while it is
    winding up rather than walking the unit off the edge it is lining up on. */
 function startJump(){
-  if(!game.active||game.dead||term.on)return;
+  if(!game.active||game.dead||uiOpen())return;
   if(!game.abilities.has('jump')){
     const n=performance.now();
     if(n-game.useLog>2500){game.useLog=n;say('No mobility package fitted. The legs will not wind up.','dim')}
@@ -848,7 +924,7 @@ function releaseJump(){
   if(!jump.on)return;
   const dist=jumpDist();
   cancelJump();
-  if(!game.active||game.dead||term.on)return;
+  if(!game.active||game.dead||uiOpen())return;
   const [dx,dy]=DIRV[game.face],d=jumpLanding(dist),n=performance.now();
   if(!d){
     game.bx=dx;game.by=dy;game.bt=0;
@@ -871,10 +947,17 @@ function inReach(){
 }
 function interact(){
   if(term.on)return closeTerminal();
+  if(fuse.on)return closeFusebox();
   if(!game.active||game.dead)return;
   litKey('use');
   for(const [x,y] of inReach()){
+    /* something set down is lifted before anything built into the deck */
+    if(world.drops.has(K(x,y)))return takeItem(x,y);
     const t=tileDef(x,y);
+    /* an empty clip answers nothing, so the press carries on to whatever else
+       is within reach rather than being swallowed by it */
+    if(t.press==='take'&&!world.spent.has(K(x,y)))return takeItem(x,y);
+    if(t.press==='fusebox')return openFusebox(x,y);
     if(t.press==='button')return pressButton(x,y);
     if(t.press==='terminal')return openTerminal(x,y);
     if(t.press==='gate')return driveGate(x,y);
@@ -891,6 +974,7 @@ function interact(){
 function pressButton(x,y){
   world.lit.set(K(x,y),performance.now());
   const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  if(!powered(x,y))return say(deadLine('Control',x,y,tag),'dim');
   const targets=ISO.signalTargets(MAP,x,y);
   if(!targets.length)return say('Control'+tag+' pressed. No line runs from it.','dim');
   const lines=[];
@@ -912,6 +996,9 @@ function pressButton(x,y){
    reach answers [E] as readily as it answers a control. */
 function driveDoor(x,y,tag){
   const t=tileDef(x,y), cells=ISO.cluster(MAP,x,y).cells, name=t.name;
+  /* one body, one supply: a door is dead if any tile of it is on a dead circuit */
+  const dead=cells.find(c=>!powered(c.x,c.y));
+  if(dead)return {text:deadLine(name,dead.x,dead.y,tag),cls:'dim'};
   /* one body, one answer: a lock anywhere in it locks the whole door */
   if(cells.some(c=>propsOf(c.x,c.y).locked))
     return {text:name+tag+' is locked. It does not answer.',cls:'dim'};
@@ -957,6 +1044,7 @@ function useVent(x,y){
 function rideLift(x,y,tag,called){
   const p=propsOf(x,y), deck=p.dest?ISO.MAPS[p.dest]:null;
   const aboard=game.px===x&&game.py===y;
+  if(!powered(x,y))return {text:deadLine('Carriage',x,y,tag),cls:'dim'};
   if(!p.dest)     return {text:'Carriage'+tag+' answers. The shaft serves no deck.',cls:'dim'};
   if(!deck)       return {text:'Carriage'+tag+' answers. Deck '+p.dest+' is not in the record.',cls:'dim'};
   if(deck===MAP)  return {text:'Carriage'+tag+' answers. The shaft comes out on this deck.',cls:'dim'};
@@ -983,7 +1071,7 @@ function travelTo(deck,want){
   const held=decks.get(MAP.id);
   if(held)restoreDeck(held);else buildWorld();
   level.entry={x:land.x, y:land.y};
-  cancelJump();closeTerminal();
+  cancelJump();closeTerminal();closeFusebox();
   game.px=game.fx=land.x;game.py=game.fy=land.y;
   game.mt=1;game.bt=1;game.arc=0;game.sink=0;
   game.visited.clear();game.visited.set(K(land.x,land.y),performance.now());
@@ -1003,15 +1091,148 @@ function travelTo(deck,want){
 function useStation(x,y){
   world.lit.set(K(x,y),performance.now());
   const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'', a=ISO.ABILITIES[p.ability];
+  if(!powered(x,y))return say(deadLine('Station',x,y,tag),'dim');
   if(!a)return say('Station'+tag+' reads empty. Nothing on the rack registers.','dim');
   if(world.spent.has(K(x,y)))return say('Station'+tag+' is spent. Nothing left to fit.','dim');
   world.spent.add(K(x,y));
   if(!grantAbility(a.id,tag))say(a.name+tag+' already fitted. The arm withdraws.','dim');
 }
 
+/* ---------- small objects ----------
+   Anything loose enough to lift off the deck. [E] takes it; [Q] sets the last
+   one down on the square the unit is standing on. What is carried crosses
+   between decks the way a fitted package does — but not a re-initialise,
+   because the deck is rebuilt around it and whatever was lifted is back in
+   the clip it came out of. */
+function syncCarry(){
+  const el=$('#carry');
+  if(!game.carry.length){el.style.display='none';el.textContent='';return}
+  el.style.display='block';                  // the rule it starts under is display:none
+  el.textContent='CARRYING: '+game.carry.map(i=>i.name).join(' \u00b7 ')+' \u00b7 [Q] or tap here sets one down';
+}
+$('#carry').addEventListener('pointerdown',e=>{e.preventDefault();dropItem()});
+function takeItem(x,y){
+  const k=K(x,y);
+  world.lit.set(k,performance.now());
+  const drop=world.drops.get(k);
+  if(!drop&&world.spent.has(k))return say('Empty clip. Nothing left in it.','dim');
+  const it=drop||ISO.itemAt(MAP,x,y);
+  if(!it)return say('Nothing there small enough to lift.','dim');
+  if(game.carry.length>=ISO.CARRY)
+    return say('Manipulator full. It holds '+ISO.CARRY+' objects and no more.','dim');
+  if(drop)world.drops.delete(k); else world.spent.add(k);
+  game.carry.push(it);
+  say('Lifted '+it.name+(it.label?' ['+it.label+']':'')+'.','dim');
+  syncCarry();
+}
+function dropItem(){
+  if(!game.active||game.dead||uiOpen())return;
+  if(!game.carry.length)return say('Nothing in the manipulator to set down.','dim');
+  const k=K(game.px,game.py);
+  if(world.drops.has(k))return say('Something is already set down here.','dim');
+  if(tileDef(game.px,game.py).press==='take'&&!world.spent.has(k))
+    return say('The clip here is already holding something.','dim');
+  const it=game.carry.pop();
+  world.drops.set(k,it);
+  world.lit.set(k,performance.now());
+  say(it.name+' set down at '+game.px+','+game.py+'.','dim');
+  syncCarry();
+}
+
+/* ---------- the fusebox ----------
+   It takes the message log's place in the column while it is open, because it
+   is the same kind of thing: a panel the operator reads. One row per way the
+   box feeds, and one entry per object in the manipulator. Seat the fuse a way
+   takes and every block on that circuit wakes up; pull it and they go dark
+   again, wherever on the deck they are. */
+const fuse={on:false, x:0, y:0, way:0, hand:0};
+function openFusebox(x,y){
+  world.lit.set(K(x,y),performance.now());
+  const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  fuse.on=true; fuse.x=x; fuse.y=y; fuse.way=0; fuse.hand=0;
+  $('#logBox').style.display='none'; $('#fuseWin').style.display='';
+  $('#fuseNote').textContent='';
+  say('Fusebox'+tag+' opened.','dim');
+  renderFuse();
+}
+function closeFusebox(){
+  if(!fuse.on)return;
+  fuse.on=false;
+  $('#fuseWin').style.display='none'; $('#logBox').style.display='';
+}
+const fuseNote=t=>{$('#fuseNote').textContent=t};
+/* A way is live when what is seated in it is what it takes. A fuse of the
+   wrong rating seats perfectly well and carries nothing — which is the whole
+   reason the screen says what each way takes. */
+function wayState(w){
+  if(!w.fuse)return {cls:'dead', text:'EMPTY'};
+  if(w.fuse.variant===w.rating)return {cls:'live', text:'LIVE'};
+  return {cls:'bad', text:'WRONG RATING'};
+}
+const ratingName=r=>(ISO.FUSES[r]||{}).name||r;
+function renderFuse(){
+  if(!fuse.on)return;
+  const ways=world.ways.get(K(fuse.x,fuse.y))||[], p=propsOf(fuse.x,fuse.y);
+  fuse.way=Math.max(0,Math.min(ways.length-1,fuse.way));
+  fuse.hand=Math.max(0,Math.min(game.carry.length-1,fuse.hand));
+  $('#fuseHead').textContent=(p.label?p.label.toUpperCase():'DISTRIBUTION BOX')+
+    ' \u00b7 '+ways.length+' way'+(ways.length===1?'':'s')+' \u00b7 '+fuse.x+','+fuse.y;
+  const wrap=$('#fuseWays'); wrap.innerHTML='';
+  if(!ways.length){
+    const d=document.createElement('div'); d.className='dim';
+    d.textContent='Nothing is wired to this box.';
+    wrap.appendChild(d);
+  }
+  ways.forEach((w,i)=>{
+    const st=wayState(w), row=document.createElement('div');
+    row.className='way'+(i===fuse.way?' on':'');
+    row.innerHTML='<span class="n">'+(i+1)+'</span>'+
+                  '<span class="c">'+esc(w.circuit||'\u2014 unstencilled \u2014')+'</span>'+
+                  '<span class="dim">takes '+esc(ratingName(w.rating))+'</span>'+
+                  '<span class="s '+st.cls+'">'+st.text+'</span>';
+    row.onclick=()=>{fuse.way=i; workWay(i)};
+    wrap.appendChild(row);
+  });
+  const hand=$('#fuseHand'); hand.innerHTML='';
+  const head=document.createElement('div');
+  head.textContent=game.carry.length?'MANIPULATOR:':'MANIPULATOR EMPTY.';
+  hand.appendChild(head);
+  game.carry.forEach((it,i)=>{
+    const b=document.createElement('span');
+    b.className='hand'+(i===fuse.hand?' on':'');
+    b.textContent=it.name+(it.label?' ['+it.label+']':'');
+    b.onclick=()=>{fuse.hand=i; renderFuse()};
+    hand.appendChild(b);
+  });
+}
+/* Seat what is selected, or pull what is already in. One press does whichever
+   the way is asking for, so the screen needs no second control. */
+function workWay(i){
+  const ways=world.ways.get(K(fuse.x,fuse.y))||[], w=ways[i];
+  if(!w)return;
+  const tag=' on way '+(i+1)+(w.circuit?' ['+w.circuit+']':'');
+  if(w.fuse){
+    if(game.carry.length>=ISO.CARRY){renderFuse();return fuseNote('Manipulator full.')}
+    game.carry.push(w.fuse); w.fuse=null;
+    say('Pulled the '+game.carry[game.carry.length-1].name+tag+'.','dim');
+    fuseNote('Pulled. Circuit falls dead.');
+  }else{
+    const it=game.carry[fuse.hand];
+    if(!it)return fuseNote('Nothing in the manipulator to seat.');
+    if(it.kind!=='fuse')return fuseNote(it.name+' is not a fuse.');
+    game.carry.splice(fuse.hand,1); w.fuse=it;
+    const ok=it.variant===w.rating;
+    say('Seated the '+it.name+tag+'. '+(ok?'Circuit reads live.':'Rating does not match the way.'),
+        ok?'b':'dim');
+    fuseNote(ok?'Seated. Circuit reads live.':'Seated, but the rating is wrong. The way stays dead.');
+  }
+  syncCarry(); renderFuse(); refreshObjective();
+}
+
 function callTram(x,y,tag){
   const tr=world.trams.find(t=>t.home===K(x,y));
   if(!tr)return {text:'Signal sent. Nothing on that rail answers.',cls:'dim'};
+  if(!powered(x,y))return {text:deadLine('Platform',x,y,tag),cls:'dim'};
   tr.dest=tr.dest===0?tr.path.length-1:0;
   return {text:'Platform'+tag+' called. Under way.',cls:'dim'};
 }
@@ -1021,6 +1242,8 @@ function updateTrams(dt){
   for(const tr of world.trams){
     if(tr.t<1){tr.t=Math.min(1,tr.t+dt/TRAM_STEP);continue}
     if(tr.i===tr.dest)continue;
+    /* power cut while it was under way: it stops where it stands */
+    if(!powered(tr.path[0].x,tr.path[0].y)){tr.dest=tr.i;continue}
     const step=tr.dest>tr.i?1:-1, here=tr.path[tr.i], next=tr.path[tr.i+step];
     if(tramBlocked(next)){
       tr.dest=tr.i;
@@ -1046,6 +1269,8 @@ const term={on:false, read:new Set()};
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function openTerminal(x,y){
   const p=propsOf(x,y), title=p.title||'UNLABELLED CONSOLE';
+  world.lit.set(K(x,y),performance.now());
+  if(!powered(x,y))return say(deadLine('Console',x,y,''),'dim');
   term.on=true;
   $('#tinyTitle').textContent=title.toUpperCase();
   $('#tinyBody').innerHTML=String(p.text||'No readable record.')
@@ -1059,7 +1284,7 @@ function closeTerminal(){term.on=false;$('#tiny').classList.remove('on')}
 /* ---------- ending the run ---------- */
 function die(reason){
   if(game.dead)return;
-  game.dead=true;game.active=false;game.sink=0;closeTerminal();cancelJump();
+  game.dead=true;game.active=false;game.sink=0;closeTerminal();closeFusebox();cancelJump();
   say(reason,'alert');
   say('CHASSIS UNRECOVERABLE. SIGNAL LOST.','alert');
   objective('SIGNAL LOST. [R] to re-initialise.',true);
@@ -1076,10 +1301,15 @@ function respawn(){
      with does not */
   decks.clear();
   buildWorld();
+  /* the deck is rebuilt around the unit, clips and all — so anything it was
+     carrying is back where it was lifted from rather than held twice */
+  const had=game.carry.length;
+  game.carry.length=0;syncCarry();
   game.visited.clear();
   game.visited.set(K(game.px,game.py),performance.now());
   game.active=true;
   say('Re-initialised at the '+(MAP.id===START_DECK?'landing':'transit')+' record.','dim');
+  if(had)say('Manipulator empty. Whatever it held is back where it was found.','dim');
   objective(game.baseObj||'Explore.');refreshObjective();
 }
 function tutorial(dir){
@@ -1155,12 +1385,24 @@ function drawFeed(now,dt){
     const a=sightAlpha(x,y,now);
     if(a<=0)continue;                       // never looked at, or let go of
     const px=ox+x*tile,py=oy+y*tile;
-    fx.globalAlpha=a;
+    /* a block waiting on a circuit draws faint, with a dead mark in its
+       corner: from overhead that is the only way an operator can tell a
+       console that is off from one that is merely quiet */
+    const dark=!powered(x,y);
+    fx.globalAlpha=dark?a*.42:a;
     /* a platform is drawn where it actually is, not where its rows entry sits */
     if(tileDef(x,y).signal!=='move')
       ISO.drawCell(fx,MAP,x,y,px,py,tile,D,
                    {open:world.open.has(K(x,y)), locked:propsOf(x,y).locked,
                     spent:world.spent.has(K(x,y))});
+    fx.globalAlpha=a;
+    if(dark&&tile>=14){
+      fx.fillStyle='rgba(255,59,47,.6)';
+      fx.fillRect(px+tile-3*D-2*D,py+2*D,3*D,3*D);
+    }
+    /* something the unit set down lies on top of whatever it was set down on */
+    const drop=world.drops.get(K(x,y));
+    if(drop)ISO.drawTile(fx,drop.tile,px+tile*.18,py+tile*.18,tile*.64,D);
     const v=game.visited.get(x+','+y);
     if(v!==undefined){
       const age=(now-v)/1000;
@@ -1200,7 +1442,7 @@ function drawFeed(now,dt){
      it something to steer by while everything else has to be seen. The landing
      signal and every beacon an author placed are drawn by the same hand. */
   if(game.beacon)drawPing(game.beacon[0],game.beacon[1],ox,oy,tile,D,t);
-  world.beacons.forEach(b=>drawPing(b.x,b.y,ox,oy,tile,D,t));
+  world.beacons.forEach(b=>{if(powered(b.x,b.y))drawPing(b.x,b.y,ox,oy,tile,D,t)});
 
   if(jump.on)drawAim(ox,oy,tile,D);
 
@@ -1334,7 +1576,28 @@ addEventListener('keydown',e=>{
     return;
   }
   if(state==='console'){
+    /* while the fusebox is up the deck keys belong to it */
+    if(fuse.on){
+      e.preventDefault();
+      if(e.repeat)return;
+      if(e.code==='KeyE'||e.code==='Escape')return closeFusebox();
+      if(e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')return workWay(fuse.way);
+      const ways=(world.ways.get(K(fuse.x,fuse.y))||[]).length;
+      const n='123456789'.indexOf(e.key);
+      if(n>=0&&n<ways){fuse.way=n;return workWay(n)}
+      if(dir==='up'||dir==='down'){
+        if(ways)fuse.way=(fuse.way+(dir==='up'?ways-1:1))%ways;
+        return renderFuse();
+      }
+      if(dir==='left'||dir==='right'){
+        const h=game.carry.length;
+        if(h)fuse.hand=(fuse.hand+(dir==='left'?h-1:1))%h;
+        return renderFuse();
+      }
+      return;
+    }
     if(e.code==='KeyE'){e.preventDefault();if(!e.repeat)interact();return}
+    if(e.code==='KeyQ'){e.preventDefault();if(!e.repeat)dropItem();return}
     if(e.code==='Escape'&&term.on){e.preventDefault();closeTerminal();return}
     if(e.code==='KeyR'&&game.dead){e.preventDefault();if(!e.repeat)respawn();return}
     if(e.code==='Space'){e.preventDefault();if(!e.repeat)startJump();return}

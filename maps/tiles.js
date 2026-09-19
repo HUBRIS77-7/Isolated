@@ -40,6 +40,11 @@
    ping    — it transmits: the unit reads it through walls, and it goes quiet
              once the unit is within its own `range`
    sized   — its log line reports how big the copy the unit found actually is
+   powered — it runs on power, so it carries a `circuit` setting: blank and it
+             is live from the start, named and it waits on that circuit
+   take    — it is holding something small enough for the unit to carry off:
+             {kind, from} — which kind of object, and which of this block's own
+             settings names the variant
    props   — per-instance settings (see below)                      */
 
 /* ---------- per-instance settings ----------
@@ -70,6 +75,36 @@ const ABILITY_OPTS = Object.keys(ABILITIES).map(k=>({value:k, label:ABILITIES[k]
    are the same number. */
 const JUMP = 4;
 
+/* ---------- fuses ----------
+   A fuse is a small object the unit carries. Its rating is what a fusebox way
+   is keyed to: seat the right one and the circuit reads live, seat the wrong
+   one and the way stays dead and says so. A new rating costs one entry here —
+   the editor's pickers and the fusebox screen are both built from this list. */
+const FUSES = {
+  a5:  {id:'a5',  tag:'5A',  name:'5A fuse'},
+  a15: {id:'a15', tag:'15A', name:'15A fuse'},
+  a30: {id:'a30', tag:'30A', name:'30A fuse'},
+};
+const FUSE_OPTS = Object.keys(FUSES).map(k=>({value:k, label:FUSES[k].name}));
+
+/* ---------- small objects ----------
+   Anything loose enough for the unit to lift off the deck and carry. A tile
+   says `take`: which kind of object it is holding, and which of its own
+   settings names the variant. Everything else is read from here, so a second
+   kind of object costs one entry and one tile.
+     tile  — the block a dropped copy is drawn as
+     kinds — the variants it comes in, if it comes in any                   */
+const ITEMS = {
+  fuse: {id:'fuse', name:'Fuse', tile:'f', kinds:FUSES},
+};
+/* How many small objects the manipulator holds at once. */
+const CARRY = 6;
+
+/* Every powered block carries this setting. It is written once and fitted to
+   each of them below rather than repeated: blank means the block is live from
+   the moment the run starts, and a name means it waits on that circuit. */
+const CIRCUIT = {type:'text', label:'On circuit (blank: always live)', def:''};
+
 const TILES = {
   ' ': {key:' ', id:'void',   name:'Unmapped',  walk:false, fill:null,
         bump:'Edge of mapped space. Nothing registers beyond.'},
@@ -83,7 +118,7 @@ const TILES = {
         bump:'Obstruction. No route through.'},
   '%': {key:'%', id:'bulk',   name:'Bulkhead',  walk:false, fill:'rgba(191,247,220,.22)',line:'rgba(191,247,220,.5)', glyph:'▚',
         bump:'Bulkhead. Sealed. Look for the control that drives it.',
-        signal:'toggle',
+        signal:'toggle', powered:true,
         open:{fill:'rgba(191,247,220,.05)', line:'rgba(191,247,220,.3)', glyph:'▘'},
         props:{open:{type:'bool', label:'Starts open', def:false}}},
   '~': {key:'~', id:'sludge', name:'Sludge',    walk:true,  fill:'rgba(79,133,112,.28)', line:'rgba(79,133,112,.5)', glyph:'~',
@@ -97,21 +132,29 @@ const TILES = {
   'v': {key:'v', id:'pit',    name:'Pit',       walk:true,  fill:'rgba(0,0,0,.92)',      line:'rgba(255,59,47,.35)', glyph:'▽',
         deadly:'FLOOR ENDS. NO SURFACE BELOW.', alert:true},
   'T': {key:'T', id:'tram',   name:'Tram',      walk:true,  fill:'rgba(191,247,220,.14)',line:'rgba(191,247,220,.55)',glyph:'▤',
-        enter:'Platform plating. Held, not fixed.', signal:'move',
+        enter:'Platform plating. Held, not fixed.', signal:'move', powered:true,
         away:'Bare rail. The platform is at the other end of it.',
         props:{dir:{type:'dir',  label:'Travels',       def:'right'},
                dist:{type:'int', label:'Distance',      def:4, min:1, max:60}}},
   'b': {key:'b', id:'button', name:'Button',    walk:false, fill:'rgba(255,180,74,.16)', line:'rgba(255,180,74,.7)', glyph:'◎',
-        clear:true, bump:'Control surface. [E] to press.', press:'button',
+        clear:true, bump:'Control surface. [E] to press.', press:'button', powered:true,
         props:{targets:{type:'points', label:'Signals blocks at', def:[], from:'target'},
                label:{type:'text',    label:'Stencilled', def:''}}},
   'c': {key:'c', id:'term',   name:'Terminal',  walk:false, fill:'rgba(28,240,28,.14)',  line:'rgba(28,240,28,.6)',  glyph:'▣',
-        clear:true, bump:'Powered console. [E] to read.', press:'terminal',
+        clear:true, bump:'Powered console. [E] to read.', press:'terminal', powered:true,
         props:{title:{type:'text',  label:'Header',  def:'UNLABELLED CONSOLE'},
                text:{type:'lines',  label:'Text',    def:'No readable record.'},
                desktop:{type:'bool',label:'Has desktop', def:false}}},
+  'u': {key:'u', id:'fusebox',name:'Fusebox',   walk:false, fill:'rgba(255,180,74,.14)',
+        line:'rgba(255,180,74,.6)', glyph:'⊞',
+        clear:true, press:'fusebox',
+        bump:'Distribution box. [E] opens the ways.',
+        props:{ways:{type:'slots', label:'Ways it feeds', def:[],
+                     fields:{circuit:{type:'text', label:'Circuit', def:''},
+                             rating:{type:'pick', label:'Takes', def:'a15', opts:FUSE_OPTS}}},
+               label:{type:'text', label:'Stencilled', def:''}}},
   '^': {key:'^', id:'lift',   name:'Elevator',  walk:true,  fill:'rgba(255,59,47,.14)',  line:'rgba(255,59,47,.6)',  glyph:'⇕',
-        beacon:true, press:'lift', signal:'lift',
+        beacon:true, press:'lift', signal:'lift', powered:true,
         enter:'Transit link. Carrier plate reads live. [E] rides it.',
         props:{dest:{type:'map',  label:'Deck it serves',    def:''},
                arrive:{type:'text',label:'Comes out at car', def:''},
@@ -140,7 +183,7 @@ const TILES = {
   /* ---------- powered: the gate answers a button or the unit itself ---------- */
   'G': {key:'G', id:'gate',   name:'Cargo gate', walk:false, fill:'rgba(255,180,74,.2)', line:'rgba(255,180,74,.6)', glyph:'▥',
         bump:'Cargo gate. Sealed. [E] to drive it, or find the control.',
-        signal:'toggle', press:'gate', merge:true,
+        signal:'toggle', press:'gate', merge:true, powered:true,
         open:{fill:'rgba(255,180,74,.05)', line:'rgba(255,180,74,.3)', glyph:'▏'},
         lock:{fill:'rgba(255,180,74,.3)',  line:'rgba(255,180,74,.85)', glyph:'▦',
               bump:'Cargo gate. Locked out. Nothing on this side drives it.'},
@@ -154,7 +197,7 @@ const TILES = {
   /* ---------- the unit itself changes: stations fit it, beacons steer it ---------- */
   'M': {key:'M', id:'station',name:'Modification Station', walk:false,
         fill:'rgba(191,247,220,.24)', line:'rgba(191,247,220,.7)', glyph:'╬',
-        clear:true, press:'station',
+        clear:true, press:'station', powered:true,
         bump:'Modification station. Fabrication arm reads live. [E] to dock.',
         spent:{fill:'rgba(191,247,220,.05)', line:'rgba(191,247,220,.28)', glyph:'╫',
                bump:'Modification station. Stock spent. Nothing left to fit.'},
@@ -162,7 +205,7 @@ const TILES = {
                label:{type:'text', label:'Stencilled', def:''}}},
   '*': {key:'*', id:'ping',   name:'Signal beacon', walk:true,
         fill:'rgba(255,59,47,.12)', line:'rgba(255,59,47,.5)', glyph:'◇',
-        ping:true, beacon:true,
+        ping:true, beacon:true, powered:true,
         enter:'Beacon plate. The transmitter sits flush with the deck.',
         spent:{fill:'rgba(255,59,47,.04)', line:'rgba(255,59,47,.22)', glyph:'◌',
                enter:'Beacon plate. Transmitter dark.'},
@@ -170,7 +213,31 @@ const TILES = {
                armed:{type:'bool', label:'Starts transmitting', def:true},
                objective:{type:'text', label:'Objective while lit', def:''},
                label:{type:'text',  label:'Stencilled', def:''}}},
+  'f': {key:'f', id:'fuse',   name:'Fuse', walk:true, clear:true,
+        fill:'rgba(255,180,74,.1)', line:'rgba(255,180,74,.5)', glyph:'▮',
+        press:'take', take:{kind:'fuse', from:'rating'},
+        enter:'Small object on the deck. [E] lifts it.',
+        spent:{fill:'rgba(255,180,74,.03)', line:'rgba(255,180,74,.2)', glyph:'▫',
+               enter:'Empty clip. Whatever sat in it has been lifted.'},
+        props:{rating:{type:'pick', label:'Rating', def:'a15', opts:FUSE_OPTS},
+               label:{type:'text', label:'Stencilled', def:''}}},
 };
+
+/* ---------- palette categories ----------
+   Only the editor's palette reads these: they are how a list of thirty blocks
+   stays legible, not a second vocabulary. A tile named in none of them still
+   shows up, under "Other", so adding a tile can never lose it. */
+const CATS = [
+  {id:'ground',    name:'Ground',     keys:' .,=+~!v/'},
+  {id:'structure', name:'Structure',  keys:'#%oxG'},
+  {id:'controls',  name:'Controls',   keys:'bcu'},
+  {id:'transit',   name:'Transit',    keys:'T^V'},
+  {id:'fixtures',  name:'Fixtures',   keys:'LBACFD'},
+  {id:'kit',       name:'Unit & kit', keys:'M*f'},
+];
+/* One setting, fitted to every block that runs on power. */
+for(const ch in TILES) if(TILES[ch].powered)
+  TILES[ch].props = Object.assign({}, TILES[ch].props, {circuit:Object.assign({}, CIRCUIT)});
 const ORDER = Object.keys(TILES);
 const VOID = TILES[' '];
 const DIRS = {up:[0,-1], down:[0,1], left:[-1,0], right:[1,0]};
@@ -327,6 +394,18 @@ function coerce(field, v){
                     if(opts.includes(v)) return v;
                     return opts.includes(field.def) ? field.def : (opts[0] || '') }
     case 'point': return (v && typeof v === 'object') ? {x:v.x|0, y:v.y|0} : null;
+    /* a list of rows, each one a small record of its own — a fusebox way is
+       a circuit name and the rating it takes, and there are as many as the
+       author drew */
+    case 'slots': {
+      const fields = field.fields || {};
+      return (Array.isArray(v) ? v : []).map(row=>{
+        const out = {};
+        for(const k in fields)
+          out[k] = coerce(fields[k], (row && k in row) ? row[k] : clone(fields[k].def));
+        return out;
+      });
+    }
     case 'points': {
       /* a lone point is read as a list of one, so older maps still load */
       const list = v == null ? [] : (Array.isArray(v) ? v : [v]);
@@ -393,6 +472,38 @@ function signalIndex(map){
       (out[pk(t.x,t.y)] || (out[pk(t.x,t.y)] = [])).push({x,y});
   }
   return out;
+}
+
+/* ---------- power ----------
+   Every block is live unless its author put it on a circuit, so a map that
+   says nothing about power behaves exactly as it always did. A circuit is a
+   name and nothing more: a fusebox way stencilled with that name, holding a
+   fuse of the rating the way takes, is what makes it live. A dark room is
+   therefore a fuse somewhere else — and a block on a circuit no box feeds
+   never wakes up at all, which is how a block is switched off for good. */
+const circuitOf = (map,x,y) => String((propsAt(map,x,y)||{}).circuit || '').trim();
+const waysOf    = (map,x,y) => ((propsAt(map,x,y)||{}).ways) || [];
+function boxes(map){
+  const out = [];
+  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++)
+    if(def(tileAt(map,x,y)).press === 'fusebox') out.push({x, y, ways:waysOf(map,x,y)});
+  return out;
+}
+/* Is this circuit so much as wired to a box on this deck? Whether it is made
+   up with a fuse is a question about a run; this is a question about the record. */
+const circuitFed = (map,name) => boxes(map).some(b=>b.ways.some(w=>w.circuit === name));
+
+/* ---------- small objects ----------
+   What a takeable tile is holding, in the form the unit carries it in. */
+function itemAt(map,x,y){
+  const t = at(map,x,y);
+  if(!t.take) return null;
+  const spec = ITEMS[t.take.kind];
+  if(!spec) return null;
+  const p = propsAt(map,x,y) || {};
+  const v = spec.kinds ? spec.kinds[p[t.take.from]] : null;
+  return {kind:spec.id, variant:v ? v.id : '', tag:v ? v.tag : '',
+          name:v ? v.name : spec.name, label:p.label || '', tile:spec.tile};
 }
 
 /* The cells a tram sweeps, home first. */
@@ -561,6 +672,19 @@ function audit(map){
 
   /* wiring */
   const wired = signalIndex(map);
+  /* what is on a circuit, and what fuses exist anywhere to make one up: a way
+     the record holds no fuse for is a door that never opens */
+  const onCircuit = {}, stock = {};
+  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
+    const c = circuitOf(map,x,y);
+    if(c) onCircuit[c] = (onCircuit[c]|0) + 1;
+  }
+  const tally = m => { for(let y=0;y<m.h;y++)for(let x=0;x<m.w;x++){
+    const it = itemAt(m,x,y);
+    if(it && it.kind === 'fuse' && it.variant) stock[it.variant] = (stock[it.variant]|0) + 1;
+  } };
+  tally(map);
+  for(const id in MAPS) if(id !== map.id) tally(MAPS[id]);
   for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
     const t = at(map,x,y), p = propsAt(map,x,y) || {}, where = ' at '+x+','+y;
     if(t.press === 'button'){
@@ -592,6 +716,26 @@ function audit(map){
         out.issues.push(t.name+where+' comes out at a car stencilled "'+p.arrive+
                         '", which deck "'+p.dest+'" has none of.');
     }
+    if(t.press === 'fusebox'){
+      const ways = waysOf(map,x,y);
+      if(!ways.length) out.issues.push('Fusebox'+where+' feeds nothing. Give it a way.');
+      ways.forEach((w,i)=>{
+        const way = ' way '+(i+1);
+        if(!w.circuit)
+          out.issues.push('Fusebox'+where+way+' is stencilled with no circuit, so nothing reads from it.');
+        else if(!onCircuit[w.circuit])
+          out.issues.push('Fusebox'+where+' feeds circuit "'+w.circuit+'", which nothing on this deck is on.');
+        if(!stock[w.rating])
+          out.issues.push('Fusebox'+where+way+' takes a '+((FUSES[w.rating]||{}).name || w.rating)+
+                          ', and no fuse of that rating is placed on any deck.');
+      });
+    }
+    /* a block on a circuit no box feeds is off for good — say so, because from
+       the canvas it looks exactly like a block that works */
+    const circ = circuitOf(map,x,y);
+    if(circ && !circuitFed(map,circ))
+      out.issues.push(t.name+where+' is on circuit "'+circ+'", which no fusebox on this deck feeds. '+
+                      'Nothing will ever power it.');
     if(t.press === 'station' && !ABILITIES[p.ability])
       out.issues.push(t.name+where+' fits nothing the unit can carry.');
     if(t.ping && p.armed &&
@@ -762,7 +906,9 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
   paintCell(ctx, lookOf(t, state), px, py, size, scale, null, t.glyph);
 }
 
-global.ISO = {TILES, ORDER, VOID, DIRS, ABILITIES, JUMP, def, MAPS, register, makeMap, normalize, resize, trim,
+global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FUSES, ITEMS, CARRY,
+               circuitOf, waysOf, boxes, circuitFed, itemAt,
+               def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
                schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,
                lifts, liftLanding,
