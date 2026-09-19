@@ -527,6 +527,7 @@ if(typeof ISO==='undefined'){
     FUSES:{}, ITEMS:{}, CATS:[], CARRY:6,
     circuitOf:()=>'', waysOf:()=>[], boxes:()=>[], circuitFed:()=>false, itemAt:()=>null,
     lifts:()=>[], liftLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), register:m=>m,
+    links:()=>[], linkLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), linkNoun:()=>'link',
     stencilled:()=>null, dropLanding:m=>({x:m.spawn.x, y:m.spawn.y, spot:false}),
     underOf:()=>null, underAt:()=>null, seeThrough:()=>false, dropAt:()=>null,
   };
@@ -553,13 +554,22 @@ const tileDef=(x,y)=>ISO.at(MAP,x,y);
 const bodyDef=(x,y)=>ISO.bodyAt(MAP,x,y);
 const propsOf=(x,y)=>ISO.propsAt(MAP,x,y)||{};
 /* A block built out of however many tiles the author used says how big the
-   copy in front of the unit turned out to be. */
+   copy in front of the unit turned out to be, and answers to the name
+   stencilled anywhere on it — a tank is painted from forty tiles and named on
+   one of them, so reading it off the tile the unit happens to be facing would
+   leave most of the wall anonymous. */
 function bumpLine(x,y,t){
   if(t.spent&&t.spent.bump&&world.spent.has(K(x,y)))return t.spent.bump;
   if(t.lock&&t.lock.bump&&propsOf(x,y).locked)return t.lock.bump;
-  if(!t.bump||!t.sized)return t.bump;
+  if(!t.bump||(!t.sized&&!t.merge))return t.bump;
   const b=ISO.cluster(MAP,x,y);
-  return b.cells.length>1 ? t.bump+' '+b.w+' \u00d7 '+b.h+' units.' : t.bump;
+  let line=t.bump;
+  if(t.sized&&b.cells.length>1)line+=' '+b.w+' \u00d7 '+b.h+' units.';
+  if(t.merge){
+    const named=b.cells.map(c=>propsOf(c.x,c.y).label).find(l=>l);
+    if(named)line+=' Stencilled '+named+'.';
+  }
+  return line;
 }
 
 /* ---------- powered blocks ----------
@@ -995,6 +1005,7 @@ function interact(){
     if(t.press==='vent')return useVent(x,y);
     if(t.press==='station')return useStation(x,y);
     if(t.press==='lift')return useLift(x,y);
+    if(t.press==='stair')return useStair(x,y);
   }
   const n=performance.now();
   if(n-game.useLog>2500){game.useLog=n;say('Nothing within reach answers.','dim')}
@@ -1090,6 +1101,21 @@ function useLift(x,y){
   say(r.text,r.cls);
   if(r.go)travelTo(r.go.deck,r.go.want);
 }
+/* ---------- stairways ----------
+   The other way off a deck, and the one that asks nothing of it: no carriage,
+   no control and no circuit, so a flight of steps still runs on a deck with
+   everything on it dead. [E] from the steps or from the tile beside them
+   climbs; nothing else drives them, because there is nothing to drive. */
+function useStair(x,y){
+  world.lit.set(K(x,y),performance.now());
+  const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  const deck=p.dest?ISO.MAPS[p.dest]:null;
+  if(!p.dest)    return say('Companionway'+tag+' is bricked up. The steps run to no deck.','dim');
+  if(!deck)      return say('Companionway'+tag+'. Deck '+p.dest+' is not in the record.','dim');
+  if(deck===MAP) return say('Companionway'+tag+' comes back out on this deck.','dim');
+  say('Companionway'+tag+'. The chassis takes the steps.','dim');
+  travelTo(deck,p.arrive||p.label||'','stair');
+}
 /* Swap the deck under the unit. What it is fitted with crosses with it; the
    deck it left is put away as it stood, and the deck it arrives on is either
    how it left it or freshly built. */
@@ -1097,12 +1123,14 @@ function travelTo(deck,want,how,square){
   if(!deck||deck===MAP)return;
   const from=MAP.id;
   stashDeck();
-  /* a car sets the unit down in the car at the far end; a drop has no car to
-     come out of, so it is put down at whatever the far deck stencils — unless
-     the two decks are stacked, in which case the square it went through the
-     floor at is the square it comes down on */
+  /* a link sets the unit down at the far end of its own kind — a car in a
+     car, a flight of steps at a flight; a drop has neither to come out of, so
+     it is put down at whatever the far deck stencils — unless the two decks
+     are stacked, in which case the square it went through the floor at is the
+     square it comes down on */
   const land=square?{x:square.x, y:square.y, spot:true, car:true}
-                   :how==='drop'?ISO.dropLanding(deck,want,from):ISO.liftLanding(deck,want,from);
+                   :how==='drop'?ISO.dropLanding(deck,want,from)
+                                :ISO.linkLanding(deck,how||'lift',want,from);
   MAP=deck;COLS=MAP.w;ROWS=MAP.h;
   const held=decks.get(MAP.id);
   if(held)restoreDeck(held);else buildWorld();
@@ -1120,7 +1148,7 @@ function travelTo(deck,want,how,square){
        again would be a fall with no bottom to it */
     if(bodyDef(game.px,game.py).fall)
       return die('CAME DOWN THROUGH THE DECK BELOW. NOTHING ARRESTS THE FALL.');
-  }else if(!land.car)say('No carriage answers on that deck. Set down at its landing record.','dim');
+  }else if(!land.car)say('No '+ISO.linkNoun(how||'lift')+' answers on that deck. Set down at its landing record.','dim');
   /* a beacon picked on the deck behind us means nothing here */
   if(game.step===2)game.beacon=pickBeacon();
   checkFooting();arrived();
@@ -1422,7 +1450,7 @@ function tutorial(dir){
   }
 }
 function litKey(dir){const k=document.querySelector(`.key[data-dir="${dir}"]`);k&&k.classList.add('lit')}
-/* An elevator block is a beacon that an author placed as a tile. */
+/* A car or a flight of steps is a beacon that an author placed as a tile. */
 function beaconSpots(){
   const out=MAP.beacons.map(b=>({x:b.x,y:b.y}));
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++) if(tileDef(x,y).beacon) out.push({x,y});

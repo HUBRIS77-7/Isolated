@@ -42,6 +42,10 @@
    sized   — its log line reports how big the copy the unit found actually is
    slow    — the unit labours over it: how much longer than an ordinary step a
              move onto or off it takes. A body has to be climbed over
+   link    — it joins two decks and the unit can be set down on it: {kind,
+             noun}. `kind` is what it pairs with at the far end — a car comes
+             out at a car and a flight of steps at a flight — and `noun` is
+             what the log and the survey call one
    fall    — walking into it drops the unit to the deck below, one way only:
              it carries `dest`/`arrive` the way a car does, and with nothing
              registered under it the drop is simply the end of the run
@@ -142,6 +146,15 @@ const TILES = {
         bump:'Fixed structure. Origin unknown.'},
   'x': {key:'x', id:'fence',  name:'Fencing',   walk:false, fill:'rgba(28,240,28,.03)',  line:'rgba(28,240,28,.4)',  glyph:'╳',
         clear:true, bump:'Fencing. Mesh reads clear but holds.'},
+  /* A wall that is not a wall of a room: it is the side of a vessel, and what
+     it holds back is on the other side of it. Touching copies read as one
+     body the way crating does, so a tank is as big as it is painted rather
+     than a fixed size — which is the only way to draw a settling tank that
+     takes up half a deck. */
+  'W': {key:'W', id:'tank',   name:'Tank wall',  walk:false, fill:'rgba(79,133,112,.4)',  line:'rgba(140,214,182,.7)', glyph:'▨',
+        merge:true, sized:true,
+        bump:'Tank wall. Welded plate, seams weeping. Nothing reads through the volume behind it.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
   'v': {key:'v', id:'pit',    name:'Pit',       walk:true,  fill:'rgba(0,0,0,.92)',      line:'rgba(255,59,47,.35)', glyph:'▽',
         see:true, deadly:'FLOOR ENDS. NO SURFACE BELOW.', alert:true,
         over:{fill:'rgba(0,0,0,.3)', line:'rgba(255,59,47,.45)'}},
@@ -169,10 +182,22 @@ const TILES = {
                label:{type:'text', label:'Stencilled', def:''}}},
   '^': {key:'^', id:'lift',   name:'Elevator',  walk:true,  fill:'rgba(255,59,47,.14)',  line:'rgba(255,59,47,.6)',  glyph:'⇕',
         beacon:true, press:'lift', signal:'lift', powered:true,
+        link:{kind:'lift', noun:'carriage'},
         enter:'Transit link. Carrier plate reads live. [E] rides it.',
         props:{dest:{type:'map',  label:'Deck it serves',    def:''},
                arrive:{type:'text',label:'Comes out at car', def:''},
                label:{type:'text', label:'Stencilled',       def:''}}},
+  /* The other way between decks, and the plain one: no carriage, no control
+     and no circuit — a flight of steps works on a deck with nothing left
+     running on it. The chassis climbs rather than walks, which is the only
+     price it asks. */
+  's': {key:'s', id:'stair',  name:'Stairway',  walk:true,  fill:'rgba(191,247,220,.18)',line:'rgba(191,247,220,.65)',glyph:'⇅',
+        beacon:true, press:'stair', slow:1.9,
+        link:{kind:'stair', noun:'flight'},
+        enter:'Companionway. The steps run off this deck. [E] climbs them.',
+        props:{dest:{type:'map',  label:'Deck it climbs to',     def:''},
+               arrive:{type:'text',label:'Comes out at flight',  def:''},
+               label:{type:'text', label:'Stencilled',           def:''}}},
 
   /* ---------- fixtures: they furnish a room and stop the unit ---------- */
   'L': {key:'L', id:'locker', name:'Locker',    walk:false, fill:'rgba(28,240,28,.13)',  line:'rgba(28,240,28,.42)', glyph:'▯',
@@ -288,9 +313,9 @@ const TILES = {
    shows up, under "Other", so adding a tile can never lose it. */
 const CATS = [
   {id:'ground',    name:'Ground',     keys:' .,=+~!v/:'},
-  {id:'structure', name:'Structure',  keys:'#%oxG'},
+  {id:'structure', name:'Structure',  keys:'#%oxWG'},
   {id:'controls',  name:'Controls',   keys:'bcun'},
-  {id:'transit',   name:'Transit',    keys:'T^VO'},
+  {id:'transit',   name:'Transit',    keys:'T^sVO'},
   {id:'fixtures',  name:'Fixtures',   keys:'LBACFD'},
   {id:'remains',   name:'Remains',    keys:';SXY'},
   {id:'kit',       name:'Unit & kit', keys:'M*f'},
@@ -581,31 +606,46 @@ function tramPath(map,x,y){
   return out;
 }
 
-/* ---------- decks, and the cars that run between them ----------
-   One deck is one map. A car is one tile on it, and the deck it serves is a
-   setting on that tile — so a map never holds another map's coordinates. Where
-   the unit is set down is worked out from the far deck's own cars instead:
-   stencil one shaft with one name on both decks and it runs both ways. */
-function lifts(map){
+/* ---------- decks, and the links that run between them ----------
+   One deck is one map. A link — a car, a flight of steps — is one tile on it,
+   and the deck it serves is a setting on that tile, so a map never holds
+   another map's coordinates. Where the unit is set down is worked out from the
+   far deck's own links instead: stencil one shaft with one name on both decks
+   and it runs both ways. A link only ever pairs with its own kind, so a car
+   comes out at a car and a flight comes out at a flight. */
+function links(map, kind){
   const out = [];
   for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
-    if(def(tileAt(map,x,y)).press !== 'lift') continue;
+    const l = def(tileAt(map,x,y)).link;
+    if(!l || l.kind !== kind) continue;
     const p = propsAt(map,x,y) || {};
     out.push({x, y, label:p.label || '', dest:p.dest || ''});
   }
   return out;
 }
-/* Where a car calling `want` sets the unit down on `map`: the car stencilled
-   that name, else one whose own shaft comes back to the deck `from`, else the
-   first car on the deck, else the deck's landing record. */
-function liftLanding(map, want, from){
-  const cars = lifts(map);
-  const car = (want && cars.find(c => c.label === want))
-           || (from && cars.find(c => c.dest === from))
-           || cars[0] || null;
-  return car ? {x:car.x, y:car.y, car:true}
+/* Where a link of this kind calling `want` sets the unit down on `map`: the
+   one stencilled that name, else one whose own far end comes back to the deck
+   `from`, else the first of its kind on the deck, else the deck's landing
+   record. */
+function linkLanding(map, kind, want, from){
+  const ends = links(map, kind);
+  const end = (want && ends.find(c => c.label === want))
+           || (from && ends.find(c => c.dest === from))
+           || ends[0] || null;
+  return end ? {x:end.x, y:end.y, car:true}
              : {x:map.spawn.x, y:map.spawn.y, car:false};
 }
+/* What the log and the survey call a link of this kind — read off the block
+   itself, so a new way between decks names itself along with everything else. */
+function linkNoun(kind){
+  for(const ch in TILES)
+    if(TILES[ch].link && TILES[ch].link.kind === kind) return TILES[ch].link.noun;
+  return 'link';
+}
+/* The cars on a deck, and where one of them sets the unit down. Kept as they
+   were: a car is simply the first kind of link there was. */
+const lifts       = map => links(map, 'lift');
+const liftLanding = (map, want, from) => linkLanding(map, 'lift', want, from);
 
 /* ---------- a drop, rather than a ride ----------
    A breach has no car at the bottom of it, so where the unit comes down is
@@ -836,21 +876,27 @@ function audit(map){
     }
     if(t.press === 'terminal' && !String(p.text||'').trim())
       out.issues.push('Terminal'+where+' has no text to display.');
-    /* a car has to say which deck it serves, and that deck has to be one the
+    /* a link has to say which deck it serves, and that deck has to be one the
        game will actually have loaded */
-    if(t.press === 'lift'){
+    if(t.link){
       const known = Object.keys(MAPS).length;     // nothing registered: nothing to check against
+      const noun  = t.link.noun;
       if(!p.dest)
-        out.issues.push(t.name+where+' serves no deck. The shaft reads dead.');
+        out.issues.push(t.name+where+' serves no deck. The route reads dead.');
       else if(p.dest === map.id)
         out.issues.push(t.name+where+' calls the deck it already stands on.');
       else if(known && !MAPS[p.dest])
         out.issues.push(t.name+where+' calls deck "'+p.dest+'", which is not in the record. '+
                         'Add its script tag to index.html, or correct the id.');
       else if(known && MAPS[p.dest] && p.arrive &&
-              !lifts(MAPS[p.dest]).some(c=>c.label === p.arrive))
-        out.issues.push(t.name+where+' comes out at a car stencilled "'+p.arrive+
+              !links(MAPS[p.dest], t.link.kind).some(c=>c.label === p.arrive))
+        out.issues.push(t.name+where+' comes out at a '+noun+' stencilled "'+p.arrive+
                         '", which deck "'+p.dest+'" has none of.');
+      /* a flight of steps with no answering flight over there is a route that
+         only runs one way, which is almost never what an author drew */
+      else if(known && MAPS[p.dest] && !links(MAPS[p.dest], t.link.kind).length)
+        out.issues.push(t.name+where+' comes out on deck "'+p.dest+'", which has no '+noun+
+                        ' to come out at. The unit is set down at that deck\'s landing record.');
     }
     /* a breach is a car with no car in it: it still has to say which deck is
        under the hole, and where on that deck the unit comes down */
@@ -928,6 +974,18 @@ function audit(map){
       if(head.x===x && head.y===y && new Set(body.cells.map(setting)).size > 1)
         out.issues.push(t.name+where+' is one body, but its tiles are set differently. '+
                         'It answers as a whole: locked anywhere means locked.');
+    }
+    /* one body, one name: a tank is painted from forty tiles and stencilled on
+       whichever of them the author clicked, so two names on one body is an
+       author expecting two tanks and having drawn one */
+    if(t.merge && t.props && t.props.label){
+      const body = cluster(map,x,y);
+      const head = body.cells.reduce((a,b)=>(b.y<a.y || (b.y===a.y && b.x<a.x)) ? b : a);
+      const names = new Set(body.cells.map(c=>String((propsAt(map,c.x,c.y)||{}).label || ''))
+                                      .filter(n=>n));
+      if(head.x===x && head.y===y && names.size > 1)
+        out.issues.push(t.name+where+' is one body stencilled '+names.size+' different ways ('+
+                        [...names].join(', ')+'). It reads as one, and answers to the first name on it.');
     }
     if(t.foot) for(const c of footprint(map,x,y)){
       if(!c.i && !c.j) continue;                       // the tile it is painted on
@@ -1109,7 +1167,7 @@ global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FUSES, ITEMS, CAR
                def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
                schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,
-               lifts, liftLanding, stencilled, dropLanding,
+               links, linkLanding, linkNoun, lifts, liftLanding, stencilled, dropLanding,
                underOf, underAt, seeThrough, dropAt,
                footprint, partAt, coveredBy, cluster, lockedShut,
                toJSON, toModule, parse, drawTile, drawCell};
