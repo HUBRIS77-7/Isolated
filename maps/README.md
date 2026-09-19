@@ -39,8 +39,9 @@ ISO.register({
                                      //   alone, the way every deck used to
   "beacons": [{"x": 7, "y": 8}],     // tutorial beacon spots; one is picked at
                                      // random. If empty, the game picks any
-                                     // reachable tile ≥6 steps away. Elevator
-                                     // tiles count as beacon spots too.
+                                     // reachable tile ≥6 steps away. A car
+                                     // or a flight of steps counts as a
+                                     // beacon spot too.
   "props": {                         // per-instance settings, keyed "x,y"
     "48,13": {"targets": [{"x": 47, "y": 12},
                           {"x": 47, "y": 13}], "label": "LANDING"}
@@ -70,6 +71,7 @@ ISO.register({
 | `c`  | Terminal  | no   | `[E]` opens a small window of text           |
 | `u`  | Fusebox   | no   | `[E]` opens the fusebox screen — seat a fuse, wake a circuit |
 | `^`  | Elevator  | yes  | A car to another deck. `[E]` rides it, and so does a button |
+| `s`  | Stairway  | yes  | Steps to another deck. `[E]` climbs them. No power, no control — and slow, because the chassis climbs |
 | `L`  | Locker    | no   | Decoration                                   |
 | `B`  | Box       | no   | Decoration                                   |
 | `A`  | Filing cabinet | no | Decoration                                 |
@@ -132,6 +134,9 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Elevator | `dest`         | The deck this car serves — another map's `id`   |
 | Elevator | `arrive`       | Which car it comes out at over there (blank: one stencilled the same) |
 | Elevator | `label`        | Stencilled name — the shaft's name on both decks |
+| Stairway | `dest`         | The deck the steps climb to — another map's `id` |
+| Stairway | `arrive`       | Which flight it comes out at over there (blank: one stencilled the same) |
+| Stairway | `label`        | Stencilled name — the companionway's name on both decks |
 | Fusebox  | `ways`         | The circuits it feeds, and the fuse each way takes |
 | Fusebox  | `label`        | Name shown in the message log and on the screen |
 | Fuse     | `rating`       | Which fuse this one is — a way only wakes for its own |
@@ -336,6 +341,39 @@ deck under it while you work.
 
 A car is also a landing beacon spot, the way a signal beacon is, so the opening
 calibration may send the unit to one.
+
+## A flight of steps instead of a car
+
+A **Stairway** (`s`) is the same route without the machinery. It joins two
+decks exactly the way a car does — `[E]` from the steps or from the tile beside
+them climbs, `dest` names the deck at the other end, and `arrive` and `label`
+stencil it — but it runs on nothing. There is no circuit field on it, so no
+fusebox can take it away, and no control drives it, because there is nothing
+to drive: a button wired to a flight of steps signals a block that does not
+answer, and Survey says so. That is the whole point of it. A deck whose power
+the author has killed still has a way off it, and a car is a way off a deck
+only while somebody has kept the lights on.
+
+What it costs instead is time. The chassis climbs rather than walks, so a step
+onto or off a flight takes about twice as long as an ordinary one — the same
+`slow` a body across the deck carries.
+
+A link only ever pairs with its own kind: a car comes out at a car and a flight
+comes out at a flight, so two shafts stencilled alike never get crossed. Give
+the flight on each deck the same `label` and the companionway runs both ways
+with nothing else to keep in step. Failing that, the game takes a flight over
+there whose own `dest` comes back here, then the first flight on the deck, and
+finally the deck's landing record.
+
+A flight of steps is also a landing beacon spot, the way a car is.
+
+Survey flags a flight with no deck set, one climbing to a deck that is not
+registered, one climbing to the deck it already stands on, one coming out at a
+flight stencilled with a name the far deck has none of, and one coming out on
+a deck with no flight on it at all — which is a companionway that only runs one
+way. That last check reads cars too, so a car serving a deck with nothing to
+arrive in is now flagged rather than quietly setting the unit down at that
+deck's landing record.
 
 ## A hole instead of a car
 

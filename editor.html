@@ -680,10 +680,10 @@ function drawWiring(z){
       cx.textAlign = 'center'; cx.textBaseline = 'bottom';
       cx.fillText(circ, aX, sy - 1);
     }
-    /* a car's far end is another deck, not another square — so it is written
+    /* a link's far end is another deck, not another square — so it is written
        out rather than drawn to. A breach says the same thing about the deck
        under the hole, with the stencil it comes down at beside it. */
-    if((t.press === 'lift' || t.fall) && z >= 16){
+    if((t.link || t.fall) && z >= 16){
       const q = ISO.propsAt(map,x,y)||{}, d = q.dest;
       const want = t.fall ? (q.arrive || q.label || '') : '';
       cx.fillStyle = d ? 'rgba(255,59,47,.85)' : 'rgba(255,59,47,.4)';
