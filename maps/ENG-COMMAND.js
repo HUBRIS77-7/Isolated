@@ -1,7 +1,7 @@
 /* ISOLATION map — edit by hand, or open editor.html and load this file. */
 ISO.register({
-  "id": "EngCom",
-  "name": "EngineeringCommand",
+  "id": "ENG-COMMAND",
+  "name": "ENGINEERING COMMAND",
   "w": 61,
   "h": 133,
   "spawn": {"x": 29, "y": 132},
@@ -65,7 +65,7 @@ ISO.register({
     "32,87": {"dest":{"x":16,"y":16},"label":""},
     "28,116": {"targets":[{"x":29,"y":116}],"label":"","circuit":""},
     "29,116": {"dir":"up","dist":29,"circuit":""},
-    "29,132": {"dest":"","arrive":"","label":"","circuit":""}
+    "29,132": {"dest":"ENGLVL2","arrive":"","label":"ENGINEERING COMMAND ELEVATOR","circuit":""}
   },
   "rows": [
     "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
