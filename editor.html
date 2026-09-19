@@ -88,6 +88,12 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
           <button id="bOpen">Open file…</button>
         </div>
         <div class="row"><select id="bundled" style="flex:1"></select><button id="bLoad">Load</button></div>
+        <div class="row"><span class="dim">below</span>
+          <input type="text" id="mUnder" list="decks" placeholder="deck under this one" style="flex:1;width:auto"></div>
+        <div class="row"><span class="dim">offset</span>
+          <input type="number" id="mUdx" style="width:56px" title="Where that deck's 0,0 sits in this one">
+          <input type="number" id="mUdy" style="width:56px" title="Where that deck's 0,0 sits in this one">
+          <span class="dim">x / y</span></div>
       </div>
 
       <div class="sec">
@@ -192,6 +198,7 @@ function setMap(m, resetView){
   map = ISO.normalize(m);
   $('#mName').value = map.name; $('#mId').value = map.id;
   $('#mW').value = map.w; $('#mH').value = map.h;
+  showUnder();
   if(resetView !== false) fit();
   changed(false);
 }
@@ -213,7 +220,10 @@ function changed(save){
   $('#stats').innerHTML =
     `${map.w} × ${map.h} · ${map.w*map.h} tiles<br>`+
     `${a.walkable} walkable · ${map.beacons.length} beacon(s)<br>`+
-    `spawn ${map.spawn.x},${map.spawn.y}`;
+    `spawn ${map.spawn.x},${map.spawn.y}`+
+    (map.under ? `<br>over ${map.under.deck}`+
+                 (map.under.dx||map.under.dy ? ` at ${map.under.dx},${map.under.dy}` : '')+
+                 (ISO.underOf(map) ? '' : ' — not in the record') : '');
   $('#issues').innerHTML = a.issues.length
     ? a.issues.map(t=>`<li class="alert">${t}</li>`).join('')
     : '<li class="ok">Survey clean.</li>';
@@ -556,7 +566,17 @@ function draw(){
 
   for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
     const [sx,sy] = toScreen(x,y);
-    ISO.drawCell(cx, map, x, y, sx, sy, z, D, ISO.propsAt(map,x,y));
+    /* whatever shows through an opening: the deck registered under this one,
+       drawn first and dimmer, exactly as the game draws it */
+    let u = (map.under && ISO.seeThrough(map,x,y)) ? ISO.underAt(map,x,y) : null;
+    if(u && !ISO.bodyAt(u.map,u.x,u.y).fill) u = null;   // unmapped down there
+    if(u){
+      cx.globalAlpha = .34;
+      ISO.drawCell(cx, u.map, u.x, u.y, sx, sy, z, D, ISO.propsAt(u.map,u.x,u.y));
+      cx.globalAlpha = 1;
+    }
+    ISO.drawCell(cx, map, x, y, sx, sy, z, D,
+                 Object.assign({over:!!u}, ISO.propsAt(map,x,y)));
     if(sealed.has(x+','+y)){ cx.fillStyle = 'rgba(255,59,47,.22)'; cx.fillRect(sx,sy,z,z) }
     else if(gated.has(x+','+y)){ cx.fillStyle = 'rgba(255,180,74,.18)'; cx.fillRect(sx,sy,z,z) }
   }
@@ -845,6 +865,23 @@ $('#bPlus').onclick  = ()=>{ bsize = Math.min(9,bsize+1); $('#bSize').textConten
 $('#mName').oninput  = ()=>{ map.name = $('#mName').value; autosave() };
 $('#mId').oninput    = ()=>{ map.id   = $('#mId').value.trim().replace(/[^a-z0-9_-]/gi,'-'); autosave() };
 $('#mId').onchange   = ()=>{ $('#mId').value = map.id };          // show what was actually kept
+/* The deck under this one. An id and an offset is the whole of it: blank the
+   id and the deck stands on its own again, the way every deck used to. */
+function showUnder(){
+  const u = map.under;
+  $('#mUnder').value = u ? u.deck : '';
+  $('#mUdx').value = u ? u.dx : 0;
+  $('#mUdy').value = u ? u.dy : 0;
+}
+function writeUnder(){
+  const deck = $('#mUnder').value.trim();
+  pushUndo();
+  map.under = deck ? {deck, dx:parseInt($('#mUdx').value,10)|0, dy:parseInt($('#mUdy').value,10)|0} : null;
+  changed(); showUnder();
+}
+$('#mUnder').onchange = writeUnder;
+$('#mUdx').onchange   = writeUnder;
+$('#mUdy').onchange   = writeUnder;
 
 $('#bApply').onclick = ()=>{ pushUndo(); ISO.resize(map, +$('#mW').value, +$('#mH').value, 0, 0); changed() };
 document.querySelectorAll('[data-edge]').forEach(b=>b.onclick = ()=>{

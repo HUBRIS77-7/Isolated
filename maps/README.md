@@ -33,6 +33,10 @@ ISO.register({
   "name": "Landing Site — Node 77",  // shown nowhere yet; for your own use
   "w": 41, "h": 27,
   "spawn": {"x": 26, "y": 22},       // where the unit starts
+  "under": {"deck": "cargo-bay",     // the deck this one is stacked on, and
+            "dx": 0, "dy": 0},       //   where its 0,0 sits in these squares.
+                                     //   Leave it out and the deck stands
+                                     //   alone, the way every deck used to
   "beacons": [{"x": 7, "y": 8}],     // tutorial beacon spots; one is picked at
                                      // random. If empty, the game picks any
                                      // reachable tile ≥6 steps away. Elevator
@@ -60,7 +64,7 @@ ISO.register({
 | `!`  | Hazard    | yes  | Logs a warning the first time                |
 | `o`  | Relay     | no   |                                              |
 | `x`  | Fencing   | no   | Blocks like a wall; you can see through it   |
-| `v`  | Pit       | yes  | Walk in and the run ends. `[R]` re-initialises |
+| `v`  | Pit       | yes  | Walk in and the run ends — or drops to the deck below, if the map is stacked on one |
 | `T`  | Tram      | yes  | Platform that a button calls along a rail    |
 | `b`  | Button    | no   | `[E]` from an adjacent tile signals its targets |
 | `c`  | Terminal  | no   | `[E]` opens a small window of text           |
@@ -70,6 +74,7 @@ ISO.register({
 | `B`  | Box       | no   | Decoration                                   |
 | `A`  | Filing cabinet | no | Decoration                                 |
 | `/`  | Broken wall | yes | Reads as wall, but the gap is walkable      |
+| `:`  | Catwalk   | yes  | Open grating. The deck below reads through it |
 | `C`  | Cargo container | no | Touching copies become one container — as big as you paint it |
 | `F`  | Forklift  | no   | Two tiles long; turns with its `dir`         |
 | `D`  | Desk      | no   | Three tiles long; turns with its `dir`       |
@@ -120,7 +125,7 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Signal beacon | `objective` | Objective line it puts up while it is lit      |
 | Signal beacon | `label`     | Name shown in the message log                  |
 | Dead body | `dir`         | Which way it lies                              |
-| Hull breach | `dest`       | The deck under the hole — another map's `id`   |
+| Hull breach | `dest`       | The deck under the hole — another map's `id`. Blank: the deck the map is stacked on |
 | Hull breach | `arrive`     | The stencil on that deck it comes down at      |
 | Hull breach | `label`      | Stencilled name — also the stencil `arrive` falls back to |
 | Note     | `title`, `text`| What the scrap says                            |
@@ -366,6 +371,58 @@ registered, one dropping to the deck it is cut into, one coming down at a
 stencil the far deck has none of or at a stencil with nothing to stand on, and
 one with no stencil at all, which leaves where the unit lands up to the far
 deck. The canvas writes the deck and the stencil under the hole while you work.
+
+## One deck drawn under another
+
+A map is still one deck, and a map that says nothing about what is beneath it
+is exactly the map it always was. Saying something is one setting on the record
+rather than on a block: **below**, in the editor's RECORD panel, naming another
+deck's `id`, with an **offset** saying where that deck's `0,0` sits in this
+deck's squares. Two decks of the same size laid straight on top of one another
+want `0,0`; a small platform over a large bay wants whatever lines the two up.
+
+What that buys is what an operator would actually see. Wherever this deck is
+**open** — a catwalk's grating, a pit, a hull breach — the square underneath is
+drawn first and dimmer, and the opening is drawn over the top of it. Crating,
+a forklift, a body on the bay floor all read through the hole they are under,
+darker than the deck the unit is standing on, which is the whole point: the
+unit is looking down at them. It follows the optics like everything else, so
+the deck below is only drawn where the unit can see the opening, and it is let
+go of on the same clock. A deck that has been walked is drawn as the unit left
+it — the doors it opened down there stay open under the grating.
+
+Three blocks are open in this sense:
+
+| Block | Open because |
+|-------|--------------|
+| `:` Catwalk | Grating: it is walked on, and read straight through |
+| `v` Pit | A hole one tile across |
+| `O` Hull breach | A hole three tiles across |
+
+Unmapped space is **not** one of them. Negative space is what gives a map its
+shape, and a deck stacked on another would lose that shape entirely if every
+blank square turned into a window. So the open air beside a catwalk is painted
+as pit — which is what it is: somewhere the unit falls out of.
+
+And it is not only cosmetic. A hole over a registered deck is a way down: step
+into one and the unit comes down on the deck below **at the same square it went
+through**, because the two are drawn in line and there is nothing else it could
+mean. That is the one thing a stencil could never get right, and it is why a
+pit over a deck stops being an ending and becomes a drop. A breach with its own
+`dest` still goes where its author sent it — the hole's own setting is read
+first — and a hole over nothing is exactly what it always was: the end of the
+run.
+
+What comes down on nothing to stand on is still a fall: an opening over crating
+or a wall kills, and Survey counts those for you, along with openings hanging
+past the edge of the deck below and a `below` naming a deck that is not
+registered. The unit goes down and never up: an elevator or a long way round is
+still the only way back, which is what keeps a stack of decks a route rather
+than a free-for-all.
+
+Everything else about decks is unchanged. Each one keeps what was changed on
+it, fuses and all, and `[R]` re-initialises the unit on the deck it fell to, at
+the square it came down on.
 
 ## What the crew left behind
 
