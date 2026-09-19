@@ -171,6 +171,31 @@ Anything with a `dir` — a forklift, a desk, a platform — also turns with
 **`R`** while it is selected, which is quicker than reaching for the dropdown
 while laying out a room.
 
+## Drawing with something other than the brush
+
+**Brush** (`B`) paints a square of tiles, as many across as the **size**
+control says. **Rect** (`E`) and **Circle** (`C`) are both a drag: press at one
+corner, release at the other, and the block fills the box or the ellipse that
+fits inside it. A square drag makes a circle and anything else makes an
+ellipse, so there is one tool rather than two. **Fill** (`F`) floods everything
+of one kind that touches where you clicked. All of them lay the loaded block
+with the left button and clear back to unmapped with the right, and all of them
+are one step of `Ctrl+Z`.
+
+A circle comes two ways, and the **circle** switch under the size control says
+which — `Ring` for the wall of something, `Solid` for a floor. **`O`** flips
+it. A ring is the disc with its middle taken out, and it is left two tiles
+thick where the curve turns a corner on purpose: nothing that merges reads as
+one body through a corner join, so a ring joined only corner-to-corner would
+come out as four separate walls rather than one tank. Which makes the circle
+tool and the tank wall the pair they look like — drag a square with `W` loaded
+and the vessel is drawn, stencilled and merged in one gesture.
+
+While the drag is open the canvas draws the tiles the release would actually
+lay, inside a dashed box, because a bounding box on its own says nothing about
+where a curve is going to land. A drag that swings off the edge of the record
+lays the part of the curve that is on it and drops the rest.
+
 The canvas draws the wiring while you work: amber from each button to every
 block it drives, and a pale line along the rail each platform runs.
 
@@ -535,8 +560,9 @@ CLARIFIER 3.* A named tank is also somewhere a hull breach can `arrive` at,
 like any other stencilled block; the unit comes down beside the wall rather
 than inside it, plating being plating.
 
-What goes **inside** the ring is a decision, and all three answers are
-reasonable:
+The **Circle** tool draws one in a gesture — load `W`, drag a square, and the
+ring comes out closed and merged. What goes **inside** the ring is a decision,
+and all three answers are reasonable:
 
 | Inside | Reads as | Survey |
 |--------|----------|--------|

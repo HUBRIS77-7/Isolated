@@ -101,6 +101,7 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
         <div class="row grid2" style="display:grid">
           <button data-tool="brush" class="on">Brush <span class="k">B</span></button>
           <button data-tool="rect">Rect <span class="k">E</span></button>
+          <button data-tool="circle">Circle <span class="k">C</span></button>
           <button data-tool="fill">Fill <span class="k">F</span></button>
           <button data-tool="pick">Pick <span class="k">I</span></button>
           <button data-tool="spawn">Spawn <span class="k">P</span></button>
@@ -109,6 +110,8 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
         </div>
         <div class="row"><span class="dim">size</span><button id="bMinus">−</button><b id="bSize">1</b><button id="bPlus">+</button>
           <span class="k">[ ]</span></div>
+        <div class="row"><span class="dim">circle</span><button id="cMode">Ring</button>
+          <span class="k">O</span></div>
       </div>
 
       <div class="sec">
@@ -159,7 +162,7 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
     <div class="pane"><canvas id="c"></canvas></div>
   </div>
   <div class="term-bar">
-    <span id="hint">Undo Ctrl+Z · Redo Ctrl+Shift+Z · Pan: middle-drag or space-drag · Zoom: wheel · Select (S) to change a block or set it up · R turns it · palette headings fold</span>
+    <span id="hint">Undo Ctrl+Z · Redo Ctrl+Shift+Z · Pan: middle-drag or space-drag · Zoom: wheel · Select (S) to change a block or set it up · R turns it · O rings or fills a circle · palette headings fold</span>
     <span id="pos">X:-- Y:-- ·</span>
   </div>
 </div>
@@ -184,7 +187,7 @@ const DRAFT_KEY = 'iso.editor.draft', PLAY_KEY = 'iso.draft';
 /* ---------- state ---------- */
 let map   = null;
 let view  = {x:0, y:0, z:22};          // world offset (tiles) + px per tile
-let tool  = 'brush', paint = '#', bsize = 1;
+let tool  = 'brush', paint = '#', bsize = 1, ringed = true;
 let undo  = [], redo = [];
 let hover = null, drag = null, rectAnchor = null, panning = null, spaceDown = false;
 let sealed = new Set(), gated = new Set();   // no way in at all · only by jumping
@@ -613,7 +616,22 @@ function draw(){
   drawWiring(z);
 
   // cursor / preview
-  if(hover){
+  if(hover && tool==='circle' && rectAnchor){
+    /* a box tells you nothing about which tiles a curve is going to land on,
+       so the preview is the curve itself, inside the box it was dragged in */
+    const r = rectBounds(rectAnchor,hover), [bx0,by0] = toScreen(r.x0, r.y0);
+    cx.strokeStyle = 'rgba(255,180,74,.35)'; cx.lineWidth = Math.max(1,D);
+    cx.setLineDash([3*D,3*D]);
+    cx.strokeRect(bx0+.5, by0+.5, (r.x1-r.x0+1)*z, (r.y1-r.y0+1)*z);
+    cx.setLineDash([]);
+    cx.fillStyle = 'rgba(255,180,74,.22)'; cx.strokeStyle = 'rgba(255,180,74,.9)';
+    cx.lineWidth = Math.max(1.5,1.5*D);
+    for(const c of ellipseCells(r, !ringed)){
+      const [sx,sy] = toScreen(c.x, c.y);
+      cx.fillRect(sx, sy, z, z);
+      cx.strokeRect(sx+.5, sy+.5, z-1, z-1);
+    }
+  }else if(hover){
     const r = (tool==='rect' && rectAnchor) ? rectBounds(rectAnchor,hover) : brushBounds(hover);
     const [sx,sy] = toScreen(r.x0, r.y0);
     cx.strokeStyle = 'rgba(255,180,74,.9)'; cx.lineWidth = Math.max(1.5,1.5*D);
@@ -717,9 +735,48 @@ const brushBounds = p => { const r = bsize-1>>1, e = bsize-1-r;
   return {x0:p.x-r, y0:p.y-r, x1:p.x+e, y1:p.y+e} };
 const rectBounds = (a,b) => ({x0:Math.min(a.x,b.x), y0:Math.min(a.y,b.y), x1:Math.max(a.x,b.x), y1:Math.max(a.y,b.y)});
 
+/* The ellipse that fits the box the drag made — the same gesture as Rect, so a
+   circle is a square drag and anything else is an ellipse. A tile counts as
+   covered when its middle falls inside, which is what makes a round tank read
+   as round rather than as a diamond with the corners knocked off.
+
+   A ring is the disc with its inside taken out, and what counts as the inside
+   is a tile with all eight of its neighbours in the disc as well. Eight rather
+   than four is the whole trick: it leaves the wall two tiles thick where the
+   curve turns a corner, and that is what keeps the ring joined up 4-way
+   wherever the drag is dropped. Nothing that merges — a tank wall, crating —
+   reads as one body through a diagonal join, so a ring that was only joined
+   corner-to-corner would come out as four separate walls. */
+function ellipseCells(r, solid){
+  const w = r.x1-r.x0+1, h = r.y1-r.y0+1;
+  const cx = r.x0 + w/2, cy = r.y0 + h/2, rx = w/2, ry = h/2;
+  const inside = (x,y) => { const dx=(x+.5-cx)/rx, dy=(y+.5-cy)/ry; return dx*dx+dy*dy <= 1 };
+  /* the curve is worked out from the box that was dragged, whatever it was
+     dragged across, but only the squares the record actually has are walked —
+     a drag that swings off the deck is a shape nobody can lay, and the preview
+     redraws every frame */
+  const x0 = Math.max(r.x0, 0), y0 = Math.max(r.y0, 0),
+        x1 = Math.min(r.x1, map.w-1), y1 = Math.min(r.y1, map.h-1);
+  const cells = [];
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+    if(!inside(x,y)) continue;
+    if(!solid){
+      let edge = false;
+      for(let j=-1;j<=1 && !edge;j++)for(let i=-1;i<=1;i++)
+        if((i||j) && !inside(x+i,y+j)){ edge = true; break }
+      if(!edge) continue;                      // deep inside the disc: not wall
+    }
+    cells.push({x,y});
+  }
+  return cells;
+}
+
 /* ---------- editing ---------- */
 function applyRect(r, ch){ let n=0;
   for(let y=r.y0;y<=r.y1;y++)for(let x=r.x0;x<=r.x1;x++) if(ISO.setTile(map,x,y,ch)) n++;
+  return n }
+function applyCells(cells, ch){ let n=0;
+  for(const c of cells) if(ISO.setTile(map,c.x,c.y,ch)) n++;
   return n }
 
 function floodFill(p, ch){
@@ -768,7 +825,7 @@ function act(p, erase, isStart){
     changed(); return;
   }
   if(tool==='fill'){ if(isStart){ pushUndo(); floodFill(p,ch); changed() } return }
-  if(tool==='rect'){ if(isStart) rectAnchor = p; return }        // committed on pointerup
+  if(tool==='rect'||tool==='circle'){ if(isStart) rectAnchor = p; return }  // committed on pointerup
   if(isStart) pushUndo();
   if(applyRect(brushBounds(p), ch)) changed();
   if(isStart && !erase && ISO.schemaOf(ch)) selectBlock(p.x,p.y);   // set it up straight away
@@ -801,7 +858,12 @@ c.addEventListener('pointermove', e=>{
   if(drag) act(p, drag.erase, false);
 });
 addEventListener('pointerup', e=>{
-  if(rectAnchor && hover && drag){ pushUndo(); applyRect(rectBounds(rectAnchor,hover), drag.erase?' ':paint); changed() }
+  if(rectAnchor && hover && drag){
+    pushUndo();
+    const r = rectBounds(rectAnchor,hover), ch = drag.erase?' ':paint;
+    if(tool==='circle') applyCells(ellipseCells(r, !ringed), ch); else applyRect(r, ch);
+    changed();
+  }
   rectAnchor = null; drag = null; panning = null;
 });
 c.addEventListener('pointerleave', ()=>{ hover = null; $('#pos').textContent='X:-- Y:-- ·' });
@@ -833,7 +895,8 @@ addEventListener('keydown', e=>{
     e.preventDefault(); pushUndo(); ISO.setTile(map, sel.x, sel.y, ' '); changed();
     toast('Cleared '+sel.x+','+sel.y); return;
   }
-  const T = {b:'brush', e:'rect', f:'fill', i:'pick', p:'spawn', k:'beacon',
+  if(e.key.toLowerCase()==='o'){ setRinged(!ringed); return }
+  const T = {b:'brush', e:'rect', c:'circle', f:'fill', i:'pick', p:'spawn', k:'beacon',
              s:'select', l:'select'}[e.key.toLowerCase()];
   if(T){ tool = T; syncTool(); return }
   if(e.key==='['){ bsize = Math.max(1,bsize-1); $('#bSize').textContent = bsize }
@@ -860,6 +923,10 @@ function doUndo(){ if(!undo.length) return; redo.push(clone(map)); map = ISO.nor
 function doRedo(){ if(!redo.length) return; undo.push(clone(map)); map = ISO.normalize(redo.pop()); setMap(map,false); autosave(); toast('Redo') }
 
 /* ---------- controls ---------- */
+/* A ring is the wall of something and a solid one is a floor, which is enough
+   of a difference to be worth a switch rather than a modifier nobody finds. */
+function setRinged(v){ ringed = v; $('#cMode').textContent = ringed ? 'Ring' : 'Solid' }
+$('#cMode').onclick = ()=>setRinged(!ringed);
 $('#bMinus').onclick = ()=>{ bsize = Math.max(1,bsize-1); $('#bSize').textContent = bsize };
 $('#bPlus').onclick  = ()=>{ bsize = Math.min(9,bsize+1); $('#bSize').textContent = bsize };
 $('#mName').oninput  = ()=>{ map.name = $('#mName').value; autosave() };
