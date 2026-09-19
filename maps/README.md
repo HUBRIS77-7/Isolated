@@ -64,6 +64,7 @@ ISO.register({
 | `T`  | Tram      | yes  | Platform that a button calls along a rail    |
 | `b`  | Button    | no   | `[E]` from an adjacent tile signals its targets |
 | `c`  | Terminal  | no   | `[E]` opens a small window of text           |
+| `u`  | Fusebox   | no   | `[E]` opens the fusebox screen — seat a fuse, wake a circuit |
 | `^`  | Elevator  | yes  | A car to another deck. `[E]` rides it, and so does a button |
 | `L`  | Locker    | no   | Decoration                                   |
 | `B`  | Box       | no   | Decoration                                   |
@@ -76,10 +77,14 @@ ISO.register({
 | `V`  | Vent      | yes  | `[E]` crawls through to the square it is linked to |
 | `M`  | Modification Station | no | `[E]` fits the unit with an ability, once. Then it is spent |
 | `*`  | Signal beacon | yes | Transmits through walls until the unit gets close, then goes quiet |
+| `f`  | Fuse      | yes  | Small enough to carry off. `[E]` lifts it, `[Q]` sets it down |
 
 To add a tile type, add one entry to `TILES` in `tiles.js`. It shows up in the
 editor palette on its own and the game obeys it straight away — walkability,
 colour, glyph and the line it writes to the message log all come from there.
+Name it in one of the `CATS` groups in the same file to say which heading it
+files under in the palette; a tile named in none of them still appears, under
+**Other**, so a block can never go missing by being forgotten.
 
 ## Blocks that need setting up
 
@@ -111,6 +116,19 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Elevator | `dest`         | The deck this car serves — another map's `id`   |
 | Elevator | `arrive`       | Which car it comes out at over there (blank: one stencilled the same) |
 | Elevator | `label`        | Stencilled name — the shaft's name on both decks |
+| Fusebox  | `ways`         | The circuits it feeds, and the fuse each way takes |
+| Fusebox  | `label`        | Name shown in the message log and on the screen |
+| Fuse     | `rating`       | Which fuse this one is — a way only wakes for its own |
+| Fuse     | `label`        | Name shown in the message log                  |
+| *anything powered* | `circuit` | The circuit it waits on. Blank — the default — means it is live from the start |
+
+The palette is filed under headings — **Ground**, **Structure**, **Controls**,
+**Transit**, **Fixtures**, **Unit & kit** — and each heading folds away with a
+click, so a room is laid out from the six or seven blocks it actually uses
+rather than from a list of thirty. Which headings are folded is kept between
+visits, like the draft is. The number keys still reach the first ten blocks
+wherever they are filed, and a brush loaded out of a folded section marks its
+heading amber so it is never a mystery where the block went.
 
 In the editor, pick the **Select** tool (`S`, or `L` — it used to be called
 Link) and click a block: its settings appear under **INSTANCE**, under a
@@ -141,6 +159,81 @@ as one.
 
 A map written before a button could drive more than one block still loads: its
 single `target` is read as a list of one.
+
+## Power, and the fuses that wake it
+
+Every block is live unless you say otherwise, so a map that never mentions
+power behaves exactly the way maps always have. Saying otherwise is one
+setting: put a block **on a circuit** by writing a name in its `circuit` field,
+and from then on it waits. A control on a dead circuit does not answer the
+press. A bulkhead does not move, whichever control reaches it. A console is
+dark, a station's arm is dead, a platform stays where it is, a car will not
+ride, and a beacon does not transmit at all. What a dead block never becomes is
+a hole in the deck: it stands exactly where it stood, as solid as it ever was.
+
+A circuit is a name and nothing else. What makes it live is a **Fusebox** (`u`)
+somewhere on the same deck with a **way** stencilled with that name, holding a
+fuse of the rating that way takes. Each way is two things — the circuit it
+feeds, and the fuse it takes — and a box has as many ways as you give it.
+
+So the errand a fusebox creates is: find a fuse, carry it back, seat it in the
+right way. Seating the wrong rating is allowed and does nothing — the screen
+says `WRONG RATING` and the circuit stays dead, which is the whole reason each
+way says what it takes. Pulling a fuse back out kills the circuit again
+wherever on the deck it runs, so one fuse shared between two ways is a real
+decision rather than a puzzle with one answer.
+
+`[E]` on a fusebox opens the **fusebox screen**, which takes the message log's
+place in the column until it is closed — it is the same sort of thing, a panel
+the operator reads. One row per way, with what is seated in it and whether it
+reads `LIVE`, `EMPTY` or `WRONG RATING`, and under them whatever the
+manipulator is holding. `[↑]`/`[↓]` move between ways, `[←]`/`[→]` choose which
+carried fuse is in hand, `[ENTER]` seats it — or pulls out what is already
+there, because a way only ever wants one of the two. The number keys work the
+ways directly, and `[E]` or `[ESC]` closes the screen and gives the log back.
+Everything that happens in there is written to the log as well, so closing it
+leaves a record rather than a gap.
+
+A block on a circuit **no fusebox on the deck feeds** is off for good, which is
+how a block is switched off permanently — Survey says as much, because from the
+canvas it looks exactly like a block that works. The canvas draws the supply
+the way it draws the wiring: a dotted mint line from each box to every block on
+a circuit it feeds, each way's circuit written under the box, and the circuit
+written over each block that waits on one — in red when nothing feeds it.
+In the game a block waiting on a dead circuit draws faint, with a small red
+mark in its corner, so an operator can tell a console that is off from one that
+is merely quiet.
+
+Fuses come in ratings, listed in `FUSES` in `tiles.js`: **5A**, **15A** and
+**30A** so far. A new rating is one entry there — the editor's pickers and the
+fusebox screen are both built from that list.
+
+Power crosses decks the way everything else does: each deck keeps the fuses
+seated in its own boxes, so a car that goes back comes back to the circuits it
+left live. `[R]` puts every deck back to how it started, fuses included.
+
+## Small objects, and carrying them
+
+Some things are small enough for the unit to pick up. `[E]` lifts one into the
+manipulator and `[Q]` sets the last one down on the square the unit is standing
+on — or a tap on the CARRYING line, which is where what is being held is
+listed. The manipulator holds six objects.
+
+A **Fuse** (`f`) is the first of them: the fuse a fusebox way is waiting for,
+placed as a tile wherever the map wants the unit to have to go. Lifting one
+leaves the empty clip behind, drawn as such, so a room remembers what was taken
+out of it. Anything set down lies on the deck where it was left and can be
+lifted again, by the unit that left it or after it has walked the long way
+round.
+
+What is being carried crosses between decks, the way a fitted package does.
+What it does not survive is `[R]`: the deck is rebuilt around the unit, clips
+and all, so anything it was holding is back where it was found rather than held
+twice.
+
+To add another kind of small object, add one entry to `ITEMS` in `tiles.js` and
+one tile that says it holds that kind — the lifting, the carrying, the setting
+down and the drawing all follow from there.
 
 ## What the unit is fitted with
 
@@ -282,7 +375,11 @@ text, a bulkhead no button opens, a tram whose rail runs into a wall, a vent
 with no far end or one that comes out inside a wall, a station stocked with
 nothing, a beacon that spawn already stands inside the range of, a car whose
 deck is not one the game will have, and a forklift or desk with nowhere to
-stand.
+stand. On power it flags a fusebox that feeds nothing, a way stencilled with no
+circuit, a way that feeds a circuit nothing on the deck is on, a way whose fuse
+is placed on no deck at all, and a block waiting on a circuit no box on its
+deck feeds — the one that would otherwise look exactly like a block that
+works.
 
 Survey checks reach twice: once for a unit that can only walk, and once for one
 with vault servos fitted. Ground that only the jump opens up is **gated**, not
