@@ -191,7 +191,7 @@ ISO.register({
     "96,82": {"title":"UNLABELLED CONSOLE","text":"No readable record.","desktop":false,"circuit":""},
     "97,82": {"ways":[{"circuit":"TRAMBUTTON","rating":"a15"}],"label":""},
     "48,86": {"title":"UNLABELLED CONSOLE","text":"No readable record.","desktop":false,"circuit":""},
-    "48,89": {"dest":"WaterTreatmentBottom","arrive":"","label":""}
+    "48,89": {"dest":"WaterTreatmentBottom","arrive":"","label":"COLLECTION-TANK-STAIR"}
   },
   "rows": [
     "..................................................................##################################",
