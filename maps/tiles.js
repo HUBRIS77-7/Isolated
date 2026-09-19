@@ -789,20 +789,16 @@ function audit(map){
       out.issues.push('Deck "'+below+'" is registered under this one but is not in the record. '+
                       'Add its script tag to index.html, or correct the id.');
     else if(known && MAPS[below]){
-      let off = 0, solid = 0, holes = 0;
-      for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
-        if(!seeThrough(map,x,y) || !bodyAt(map,x,y).deadly) continue;
-        holes++;
-        const u = underAt(map,x,y);
-        if(!u) off++;
-        else if(!dropAt(map,x,y)) solid++;
-      }
-      if(off) out.issues.push(off+' opening(s) sit past the edge of deck "'+below+
-                              '". The unit falls through them to nothing.');
-      if(solid) out.issues.push(solid+' opening(s) come down on '+
-                                'ground the unit cannot stand on. The fall ends the run there.');
-      if(!holes) out.issues.push('Deck "'+below+'" is registered under this one, but nothing on '+
-                                 'this deck is open enough to read it through.');
+      /* an opening the deck below does not reach, or one over crating, is a
+         hole that kills — which is what a hole has always been, so it is not
+         something to report. The one mistake worth naming is a deck stacked
+         under a deck with nothing open in it, which draws and does nothing */
+      let open = 0;
+      for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++)
+        if(seeThrough(map,x,y) && underAt(map,x,y)) open++;
+      if(!open) out.issues.push('Deck "'+below+'" is registered under this one, but nothing on '+
+                                'this deck is open over it. Paint a catwalk, a pit or a breach '+
+                                'where it should read through, or check the offset.');
     }
   }
 

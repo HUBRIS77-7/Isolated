@@ -414,11 +414,17 @@ first — and a hole over nothing is exactly what it always was: the end of the
 run.
 
 What comes down on nothing to stand on is still a fall: an opening over crating
-or a wall kills, and Survey counts those for you, along with openings hanging
-past the edge of the deck below and a `below` naming a deck that is not
-registered. The unit goes down and never up: an elevator or a long way round is
-still the only way back, which is what keeps a stack of decks a route rather
-than a free-for-all.
+or a wall kills, the way a hole has always killed, and so does one the deck
+below does not reach — which is what makes a **partial** deck below worth
+knowing about. The deck underneath does not have to be a whole deck. Paint only
+the piece that shows through the openings, put it where it belongs with the
+offset, and every opening outside it reads as the plain pit it always was. A
+ten-by-six scrap under a gantry is a perfectly good deck below.
+
+The unit goes down and never up: an elevator or a long way round is still the
+only way back, which is what keeps a stack of decks a route rather than a
+free-for-all. Survey flags a `below` naming a deck that is not registered, one
+naming itself, and a deck stacked under a deck with nothing open over it.
 
 Everything else about decks is unchanged. Each one keeps what was changed on
 it, fuses and all, and `[R]` re-initialises the unit on the deck it fell to, at
