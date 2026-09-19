@@ -45,6 +45,13 @@
    fall    — walking into it drops the unit to the deck below, one way only:
              it carries `dest`/`arrive` the way a car does, and with nothing
              registered under it the drop is simply the end of the run
+   see     — it is an opening rather than a surface: whatever deck the map
+             registers beneath it is drawn through the hole, dimmer, and a
+             see-through tile that is deadly is a hole rather than an end —
+             with a deck under it the unit drops through instead of dying
+   over    — alternate look for a see-through block that has a deck under it,
+             so a pit over a registered deck reads as a drop rather than as
+             an unbroken square of black
    powered — it runs on power, so it carries a `circuit` setting: blank and it
              is live from the start, named and it waits on that circuit
    take    — it is holding something small enough for the unit to carry off:
@@ -136,7 +143,8 @@ const TILES = {
   'x': {key:'x', id:'fence',  name:'Fencing',   walk:false, fill:'rgba(28,240,28,.03)',  line:'rgba(28,240,28,.4)',  glyph:'╳',
         clear:true, bump:'Fencing. Mesh reads clear but holds.'},
   'v': {key:'v', id:'pit',    name:'Pit',       walk:true,  fill:'rgba(0,0,0,.92)',      line:'rgba(255,59,47,.35)', glyph:'▽',
-        deadly:'FLOOR ENDS. NO SURFACE BELOW.', alert:true},
+        see:true, deadly:'FLOOR ENDS. NO SURFACE BELOW.', alert:true,
+        over:{fill:'rgba(0,0,0,.3)', line:'rgba(255,59,47,.45)'}},
   'T': {key:'T', id:'tram',   name:'Tram',      walk:true,  fill:'rgba(191,247,220,.14)',line:'rgba(191,247,220,.55)',glyph:'▤',
         enter:'Platform plating. Held, not fixed.', signal:'move', powered:true,
         away:'Bare rail. The platform is at the other end of it.',
@@ -175,6 +183,9 @@ const TILES = {
         bump:'Filing cabinet. Drawers jammed shut.'},
   '/': {key:'/', id:'gap',    name:'Broken wall', walk:true, fill:'rgba(28,240,28,.09)',  line:'rgba(28,240,28,.3)',  glyph:'▞',
         enter:'Wall breached here. The gap is wide enough to pass.'},
+  ':': {key:':', id:'grate',  name:'Catwalk',   walk:true,  see:true, clear:true,
+        fill:'rgba(28,240,28,.03)', line:'rgba(28,240,28,.32)', glyph:'┼',
+        enter:'Open grating. The deck below reads straight through it.'},
   'C': {key:'C', id:'crate',  name:'Cargo container', walk:false, fill:'rgba(255,180,74,.1)', line:'rgba(255,180,74,.45)', glyph:'▩',
         merge:true, sized:true, bump:'Cargo container. Hull seals read intact.'},
   'F': {key:'F', id:'fork',   name:'Forklift',  walk:false, fill:'rgba(255,180,74,.18)', line:'rgba(255,180,74,.6)',
@@ -254,6 +265,7 @@ const TILES = {
   'O': {key:'O', id:'breach', name:'Hull breach', walk:true, alert:true,
         foot:{len:3, wide:3}, parts:['\u25bd','\u25bd','\u25bd'],
         fill:'rgba(0,0,0,.92)', line:'rgba(255,59,47,.45)',
+        see:true, over:{fill:'rgba(0,0,0,.3)', line:'rgba(255,59,47,.55)'},
         fall:true, deadly:'FLOOR ENDS. NOTHING REGISTERS BELOW.',
         enter:'PLATING GIVES WAY.',
         props:{dest:{type:'map',  label:'Deck it drops to',  def:''},
@@ -275,7 +287,7 @@ const TILES = {
    stays legible, not a second vocabulary. A tile named in none of them still
    shows up, under "Other", so adding a tile can never lose it. */
 const CATS = [
-  {id:'ground',    name:'Ground',     keys:' .,=+~!v/'},
+  {id:'ground',    name:'Ground',     keys:' .,=+~!v/:'},
   {id:'structure', name:'Structure',  keys:'#%oxG'},
   {id:'controls',  name:'Controls',   keys:'bcun'},
   {id:'transit',   name:'Transit',    keys:'T^VO'},
@@ -385,6 +397,7 @@ function cluster(map,x,y){
 
 /* ---------- map objects ---------- */
 /* A map is { id, name, w, h, spawn:{x,y}, beacons:[{x,y}], rows:[string],
+              under:{deck, dx, dy} | null,
               props:{ "x,y": {...per-instance settings} } }               */
 function makeMap(opts){
   opts = opts || {};
@@ -396,6 +409,7 @@ function makeMap(opts){
     w, h,
     spawn: opts.spawn || {x:w>>1, y:h>>1},
     beacons: opts.beacons || [],
+    under: opts.under || null,
     rows: opts.rows || Array.from({length:h}, ()=>fill.repeat(w)),
     props: opts.props || {},
   });
@@ -413,6 +427,10 @@ function normalize(map){
   map.w = w; map.h = h; map.rows = rows;
   map.spawn = clampPt(map.spawn || {x:0,y:0}, w, h);
   map.beacons = (map.beacons||[]).map(p=>clampPt(p,w,h));
+  /* the deck this one is stacked on: an id and where its origin sits in this
+     deck's own squares, so two decks of different sizes still line up */
+  const u = map.under;
+  map.under = (u && u.deck) ? {deck:String(u.deck), dx:u.dx|0, dy:u.dy|0} : null;
   normalizeProps(map);
   return bumpVersion(map);
 }
@@ -760,6 +778,34 @@ function audit(map){
   });
   if(!out.walkable) out.issues.push('No walkable ground anywhere on this map.');
 
+  /* the deck stacked under this one, and what the openings in this one find
+     when they get there */
+  const below = map.under && map.under.deck;
+  if(below){
+    const known = Object.keys(MAPS).length;
+    if(below === map.id)
+      out.issues.push('This deck is registered under itself. Nothing shows through its openings.');
+    else if(known && !MAPS[below])
+      out.issues.push('Deck "'+below+'" is registered under this one but is not in the record. '+
+                      'Add its script tag to index.html, or correct the id.');
+    else if(known && MAPS[below]){
+      let off = 0, solid = 0, holes = 0;
+      for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
+        if(!seeThrough(map,x,y) || !bodyAt(map,x,y).deadly) continue;
+        holes++;
+        const u = underAt(map,x,y);
+        if(!u) off++;
+        else if(!dropAt(map,x,y)) solid++;
+      }
+      if(off) out.issues.push(off+' opening(s) sit past the edge of deck "'+below+
+                              '". The unit falls through them to nothing.');
+      if(solid) out.issues.push(solid+' opening(s) come down on '+
+                                'ground the unit cannot stand on. The fall ends the run there.');
+      if(!holes) out.issues.push('Deck "'+below+'" is registered under this one, but nothing on '+
+                                 'this deck is open enough to read it through.');
+    }
+  }
+
   /* wiring */
   const wired = signalIndex(map);
   /* what is on a circuit, and what fuses exist anywhere to make one up: a way
@@ -924,6 +970,8 @@ function toJSON(map){
     '  "w": '+map.w+',\n  "h": '+map.h+',\n'+
     '  "spawn": {"x": '+map.spawn.x+', "y": '+map.spawn.y+'},\n'+
     '  "beacons": ['+map.beacons.map(b=>'{"x": '+b.x+', "y": '+b.y+'}').join(', ')+'],\n'+
+    (map.under ? '  "under": {"deck": '+JSON.stringify(map.under.deck)+
+                 ', "dx": '+map.under.dx+', "dy": '+map.under.dy+'},\n' : '')+
     '  "props": {'+(keys.length
       ? '\n'+keys.map(k=>'    '+JSON.stringify(k)+': '+JSON.stringify(map.props[k])).join(',\n')+'\n  '
       : '')+'},\n'+
@@ -951,6 +999,36 @@ function parse(text){
 /* Each maps/<id>.js calls ISO.register(...) as it loads. */
 const MAPS = {};
 function register(map){ const m = normalize(map); MAPS[m.id] = m; return m; }
+
+/* ---------- the deck underneath ----------
+   One map is still one deck. `under` says which deck lies beneath this one and
+   how the two line up, and that is the whole of it: the renderer reads it to
+   draw what shows through an opening, and a hole reads it to know where the
+   unit comes down. A deck that names none is exactly the deck it always was. */
+function underOf(map){
+  const u = map && map.under;
+  if(!u || !u.deck) return null;
+  const m = MAPS[u.deck];
+  return (m && m !== map) ? m : null;
+}
+/* The square of the deck below that sits under this one — null off its edge,
+   or where there is no deck below at all. */
+function underAt(map, x, y){
+  const m = underOf(map);
+  if(!m) return null;
+  const ux = x - (map.under.dx|0), uy = y - (map.under.dy|0);
+  return inside(m, ux, uy) ? {map:m, x:ux, y:uy} : null;
+}
+/* Whether the deck above is open here: a catwalk's grating, a pit, a breach. */
+const seeThrough = (map,x,y) => !!bodyAt(map,x,y).see;
+/* Where a hole comes out: the square directly below it, when there is a deck
+   under this one and something to stand on down there. */
+function dropAt(map, x, y){
+  if(!seeThrough(map,x,y)) return null;
+  const u = underAt(map, x, y);
+  if(!u || !walkable(u.map, u.x, u.y) || bodyAt(u.map, u.x, u.y).deadly) return null;
+  return u;
+}
 
 /* ---------- shared tile painter (same look in game and editor) ---------- */
 /* state.open — draw the block's open variant (a bulkhead that has been signalled)
@@ -990,6 +1068,9 @@ function lookOf(t, state){
   if(state && state.open   && t.open)  return Object.assign({}, t, t.open);
   if(state && state.locked && t.lock)  return Object.assign({}, t, t.lock);
   if(state && state.spent  && t.spent) return Object.assign({}, t, t.spent);
+  /* a hole with a deck under it is drawn as a way through rather than as a
+     square of black, so whatever is down there can be read through it */
+  if(state && state.over   && t.over)  return Object.assign({}, t, t.over);
   return t;
 }
 
@@ -1029,6 +1110,7 @@ global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FUSES, ITEMS, CAR
                inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
                schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,
                lifts, liftLanding, stencilled, dropLanding,
+               underOf, underAt, seeThrough, dropAt,
                footprint, partAt, coveredBy, cluster, lockedShut,
                toJSON, toModule, parse, drawTile, drawCell};
 })(typeof globalThis!=='undefined'?globalThis:this);

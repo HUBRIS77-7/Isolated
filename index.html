@@ -528,6 +528,7 @@ if(typeof ISO==='undefined'){
     circuitOf:()=>'', waysOf:()=>[], boxes:()=>[], circuitFed:()=>false, itemAt:()=>null,
     lifts:()=>[], liftLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), register:m=>m,
     stencilled:()=>null, dropLanding:m=>({x:m.spawn.x, y:m.spawn.y, spot:false}),
+    underOf:()=>null, underAt:()=>null, seeThrough:()=>false, dropAt:()=>null,
   };
 }
 function loadMap(){
@@ -913,7 +914,7 @@ function tryMove(dir){
     if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
     /* a hole answers before a drop does: what is under the breach decides
        whether the unit lands on a deck or on nothing at all */
-    if(t.fall&&!tramOn(nx,ny))return fallThrough(nx,ny);
+    if(holeAt(nx,ny)&&!tramOn(nx,ny))return fallThrough(nx,ny);
     if(t.deadly&&!tramOn(nx,ny))return die(t.deadly);
   }
   tutorial(dir);
@@ -1092,13 +1093,16 @@ function useLift(x,y){
 /* Swap the deck under the unit. What it is fitted with crosses with it; the
    deck it left is put away as it stood, and the deck it arrives on is either
    how it left it or freshly built. */
-function travelTo(deck,want,how){
+function travelTo(deck,want,how,square){
   if(!deck||deck===MAP)return;
   const from=MAP.id;
   stashDeck();
   /* a car sets the unit down in the car at the far end; a drop has no car to
-     come out of, so it is put down at whatever the far deck stencils */
-  const land=how==='drop'?ISO.dropLanding(deck,want,from):ISO.liftLanding(deck,want,from);
+     come out of, so it is put down at whatever the far deck stencils — unless
+     the two decks are stacked, in which case the square it went through the
+     floor at is the square it comes down on */
+  const land=square?{x:square.x, y:square.y, spot:true, car:true}
+                   :how==='drop'?ISO.dropLanding(deck,want,from):ISO.liftLanding(deck,want,from);
   MAP=deck;COLS=MAP.w;ROWS=MAP.h;
   const held=decks.get(MAP.id);
   if(held)restoreDeck(held);else buildWorld();
@@ -1131,10 +1135,23 @@ function fallThrough(x,y){
   const f=ISO.partAt(MAP,x,y)||{x,y}, p=ISO.propsAt(MAP,f.x,f.y)||{};
   const t=bodyDef(x,y), tag=p.label?' ['+p.label+']':'';
   const deck=p.dest?ISO.MAPS[p.dest]:null;
-  if(!deck||deck===MAP)return die(t.deadly||'FLOOR ENDS. NO SURFACE BELOW.');
-  say('STRUCTURAL BREACH'+tag+'. THE DECK GIVES WAY.','alert');
-  travelTo(deck,p.arrive||p.label||'','drop');
+  if(deck&&deck!==MAP){
+    say('STRUCTURAL BREACH'+tag+'. THE DECK GIVES WAY.','alert');
+    return travelTo(deck,p.arrive||p.label||'','drop');
+  }
+  /* the hole names no deck of its own: the one this deck is stacked on, at the
+     square the unit went through, because the two are drawn in line. The
+     opening the operator was looking down through is the one it comes out of */
+  const u=ISO.dropAt(MAP,x,y);
+  if(u){
+    say('DECK ENDS'+tag+'. THE UNIT GOES THROUGH IT.','alert');
+    return travelTo(u.map,'','drop',{x:u.x,y:u.y});
+  }
+  die(t.deadly||'FLOOR ENDS. NO SURFACE BELOW.');
 }
+/* An opening the unit is standing in: a breach, which names its own deck, or
+   any hole over the deck this one is stacked on. Either way it goes down. */
+const holeAt=(x,y)=>{const t=bodyDef(x,y);return !!(t.fall||(t.deadly&&t.see))};
 
 /* ---------- modification stations ----------
    One station, one package. Docking with it fits whatever it was stocked with
@@ -1314,7 +1331,7 @@ function checkFooting(){
   if(!game.active||game.dead)return;
   const t=bodyDef(game.px,game.py);
   if(tramOn(game.px,game.py))return;                 // the platform is the floor
-  if(t.fall)return fallThrough(game.px,game.py);
+  if(holeAt(game.px,game.py))return fallThrough(game.px,game.py);
   if(t.deadly)die(t.deadly);
 }
 
@@ -1459,12 +1476,18 @@ function drawFeed(now,dt){
        corner: from overhead that is the only way an operator can tell a
        console that is off from one that is merely quiet */
     const dark=!powered(x,y);
+    /* an opening in this deck — a catwalk's grating, a pit, a breach — is
+       drawn on top of whatever the deck below has at that square, dimmer, so
+       the operator reads a walkway as a walkway rather than as patterned
+       floor. It is what the optics make of a drop, and nothing more: the
+       deck below is scenery until the unit goes down to it. */
+    const below=drawUnder(x,y,px,py,tile,D,a);
     fx.globalAlpha=dark?a*.42:a;
     /* a platform is drawn where it actually is, not where its rows entry sits */
     if(tileDef(x,y).signal!=='move')
       ISO.drawCell(fx,MAP,x,y,px,py,tile,D,
                    {open:world.open.has(K(x,y)), locked:propsOf(x,y).locked,
-                    spent:world.spent.has(K(x,y))});
+                    spent:world.spent.has(K(x,y)), over:below});
     fx.globalAlpha=a;
     if(dark&&tile>=14){
       fx.fillStyle='rgba(255,59,47,.6)';
@@ -1542,6 +1565,28 @@ function drawFeed(now,dt){
     fx.fillText('[R] TO RE-INITIALISE',W/2,H/2+u*.055);
   }
   $('#coords').textContent=`X:${String(game.px).padStart(2,'0')} Y:${String(game.py).padStart(2,'0')}`;
+}
+
+/* ---------- the deck below ----------
+   Cosmetic. Where this deck is open, the square of the deck under it is
+   painted first and darker, and the opening is drawn over the top of it. A
+   deck that has been walked is drawn as the unit left it — the doors it
+   opened stay open down there — and one that has not is drawn as its author
+   wrote it. Returns whether anything was drawn, which is also what tells the
+   opening to show its open look rather than a square of black. */
+const UNDER_DIM=.55;               // how much of the reading a lower deck keeps
+function drawUnder(x,y,px,py,tile,D,a){
+  if(!MAP.under)return false;               // no deck below: nothing to read, and nothing to look up
+  if(!ISO.seeThrough(MAP,x,y))return false;
+  const u=ISO.underAt(MAP,x,y);
+  if(!u||!ISO.bodyAt(u.map,u.x,u.y).fill)return false;   // unmapped down there: nothing to read
+  const k=K(u.x,u.y), p=ISO.propsAt(u.map,u.x,u.y)||{}, held=decks.get(u.map.id);
+  fx.globalAlpha=a*UNDER_DIM;
+  ISO.drawCell(fx,u.map,u.x,u.y,px,py,tile,D,
+               {open:held?held.open.has(k):!!p.open, locked:p.locked,
+                spent:held?held.spent.has(k):false});
+  fx.globalAlpha=a;
+  return true;
 }
 
 /* One beacon, transmitting. Drawn wherever it is, seen or not. */
