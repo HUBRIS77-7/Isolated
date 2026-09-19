@@ -47,7 +47,7 @@ ISO.register({
     "8,44": {"targets":[{"x":8,"y":45}],"label":"","circuit":""},
     "8,45": {"dir":"down","dist":26,"circuit":""},
     "11,45": {"title":"Power Concerns","text":"I want to note this for the technician on the Day. The fuse for this fucking fusebox is gone, and don't know where it went.","desktop":false,"circuit":""},
-    "29,50": {"dest":"WaterTreatment","arrive":"","label":""},
+    "29,50": {"dest":"WaterTreatmentTop","arrive":"","label":""},
     "29,53": {"dir":"right"},
     "32,54": {"title":"Piles and Piles of Tragedy","text":"A thousand of bodies laid asunder...\nSuch such...\nLogistical loss.\nDown into the water they go.\nSoon, everyone will know.\n- Cygnus","desktop":false,"circuit":""},
     "30,55": {"open":false,"circuit":""},
