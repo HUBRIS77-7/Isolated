@@ -124,6 +124,11 @@ canvas{display:block}
 .tiny-body p:last-child{margin-bottom:0}
 .tiny-foot{flex:none;border-top:1px solid var(--gfaint);padding:5px 11px;font-size:12px;color:var(--gdim);
   display:flex;justify-content:space-between;gap:10px}
+/* a note is not a console: paper reads warm, and needs no power to do it */
+#tiny.note .tiny-win{border-color:rgba(255,230,180,.5);box-shadow:0 0 30px rgba(255,230,180,.12)}
+#tiny.note .term-bar{background:#1a1403;color:#ffe6b4}
+#tiny.note .tiny-body{color:#ffe6b4;text-shadow:0 0 6px rgba(255,230,180,.3);font-style:italic}
+#tiny.note .tiny-foot{color:rgba(255,230,180,.55)}
 
 #dpad{display:none;position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:30;grid-template-columns:repeat(3,54px);grid-template-rows:repeat(2,54px);gap:6px}
 #dpad button{font:inherit;font-size:18px;background:#000;color:var(--g);border:1px solid var(--gdim);touch-action:manipulation}
@@ -522,6 +527,7 @@ if(typeof ISO==='undefined'){
     FUSES:{}, ITEMS:{}, CATS:[], CARRY:6,
     circuitOf:()=>'', waysOf:()=>[], boxes:()=>[], circuitFed:()=>false, itemAt:()=>null,
     lifts:()=>[], liftLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), register:m=>m,
+    stencilled:()=>null, dropLanding:m=>({x:m.spawn.x, y:m.spawn.y, spot:false}),
   };
 }
 function loadMap(){
@@ -650,7 +656,11 @@ function deadLine(name,x,y,tag){
 /* What the unit can stand on: the tile, plus whatever the power has changed. */
 function walkableAt(x,y){
   if(tramOn(x,y))return true;                        // the platform is the floor
-  if(ISO.coveredBy(MAP,x,y))return false;            // a big block stands here
+  /* a big block stands here: the whole of it reads the way the tile it was
+     painted on does, so a forklift is solid end to end and a body can be
+     climbed over end to end */
+  const f=ISO.coveredBy(MAP,x,y);
+  if(f)return tileDef(f.x,f.y).walk;
   const t=tileDef(x,y);
   if(t.signal==='toggle')return world.open.has(K(x,y));
   if(t.signal==='move')return false;                 // bare rail; platform is elsewhere
@@ -667,12 +677,27 @@ function vaultAt(x,y){
   if(t.signal==='move')return true;                  // bare rail is an open span
   return ISO.vaultable(MAP,x,y);
 }
-const landAt=(x,y)=>ISO.inside(MAP,x,y)&&walkableAt(x,y)&&!(tileDef(x,y).deadly&&!tramOn(x,y));
+const landAt=(x,y)=>ISO.inside(MAP,x,y)&&walkableAt(x,y)&&!(bodyDef(x,y).deadly&&!tramOn(x,y));
+
+/* ---------- ground that takes longer to cross ----------
+   Most of a deck is plain: one step, one beat. A block that says `slow` is
+   something the chassis has to labour over — sludge underfoot, a body lying
+   across the route — and a step is as slow as the worse of the square it
+   leaves and the square it arrives on, because climbing off is the same work
+   as climbing on. */
+function slowAt(x,y){
+  if(tramOn(x,y))return 1;                           // the platform carries it
+  const s=bodyDef(x,y).slow;
+  return s>1?s:1;
+}
+const stepCost=(nx,ny)=>Math.max(slowAt(game.px,game.py),slowAt(nx,ny));
 
 /* What stops a platform: structure, a closed bulkhead, another platform. */
 function tramBlocked(c){
   if(!ISO.inside(MAP,c.x,c.y)||tramOn(c.x,c.y))return true;
-  if(ISO.coveredBy(MAP,c.x,c.y))return true;
+  /* a big block on the rail stops the platform unless it is one the unit
+     could have walked over anyway — a body lying across a rail is not a wall */
+  if(ISO.coveredBy(MAP,c.x,c.y))return !ISO.bodyAt(MAP,c.x,c.y).walk;
   const ch=ISO.tileAt(MAP,c.x,c.y), t=ISO.def(ch);
   if(ch===' '||t.walk)return false;                  // open span or plain ground
   if(t.signal==='toggle')return !world.open.has(K(c.x,c.y));
@@ -884,8 +909,11 @@ function tryMove(dir){
     const n=performance.now(), line=(t.signal==='move')?t.away:bumpLine(nx,ny,t);
     if(line&&n-game.edgeLog>4000){game.edgeLog=n;say(line,t.alert?'alert':'dim')}
   }else{
-    stepTo(nx,ny,.11);
+    stepTo(nx,ny,.11*stepCost(nx,ny));
     if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
+    /* a hole answers before a drop does: what is under the breach decides
+       whether the unit lands on a deck or on nothing at all */
+    if(t.fall&&!tramOn(nx,ny))return fallThrough(nx,ny);
     if(t.deadly&&!tramOn(nx,ny))return die(t.deadly);
   }
   tutorial(dir);
@@ -935,6 +963,7 @@ function releaseJump(){
   const nx=game.px+dx*d,ny=game.py+dy*d,t=bodyDef(nx,ny);
   stepTo(nx,ny,.16+.05*d,d);
   if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
+  if(t.fall&&!tramOn(nx,ny))return fallThrough(nx,ny);
   if(t.deadly&&!tramOn(nx,ny))die(t.deadly);
 }
 
@@ -960,6 +989,7 @@ function interact(){
     if(t.press==='fusebox')return openFusebox(x,y);
     if(t.press==='button')return pressButton(x,y);
     if(t.press==='terminal')return openTerminal(x,y);
+    if(t.press==='note')return readNote(x,y);
     if(t.press==='gate')return driveGate(x,y);
     if(t.press==='vent')return useVent(x,y);
     if(t.press==='station')return useStation(x,y);
@@ -1032,7 +1062,7 @@ function useVent(x,y){
   game.visited.set(K(d.x,d.y),performance.now());
   world.lit.set(K(d.x,d.y),performance.now());
   say('Crawled the duct'+tag+'. Surfaced at '+d.x+','+d.y+'.','dim');
-  const t=tileDef(d.x,d.y);
+  const t=bodyDef(d.x,d.y);
   if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
   checkFooting();arrived();
 }
@@ -1062,11 +1092,13 @@ function useLift(x,y){
 /* Swap the deck under the unit. What it is fitted with crosses with it; the
    deck it left is put away as it stood, and the deck it arrives on is either
    how it left it or freshly built. */
-function travelTo(deck,want){
+function travelTo(deck,want,how){
   if(!deck||deck===MAP)return;
   const from=MAP.id;
   stashDeck();
-  const land=ISO.liftLanding(deck,want,from);
+  /* a car sets the unit down in the car at the far end; a drop has no car to
+     come out of, so it is put down at whatever the far deck stencils */
+  const land=how==='drop'?ISO.dropLanding(deck,want,from):ISO.liftLanding(deck,want,from);
   MAP=deck;COLS=MAP.w;ROWS=MAP.h;
   const held=decks.get(MAP.id);
   if(held)restoreDeck(held);else buildWorld();
@@ -1076,12 +1108,32 @@ function travelTo(deck,want){
   game.mt=1;game.bt=1;game.arc=0;game.sink=0;
   game.visited.clear();game.visited.set(K(land.x,land.y),performance.now());
   view.ready=false;                        // the camera does not fly between decks
-  say('TRANSIT LINK ENGAGED.','b');
+  say(how==='drop'?'FALL ARRESTED. CHASSIS READS INTACT.':'TRANSIT LINK ENGAGED.','b');
   say('DECK REGISTERED: '+String(MAP.name||MAP.id).toUpperCase(),'b');
-  if(!land.car)say('No carriage answers on that deck. Set down at its landing record.','dim');
+  if(how==='drop'){
+    if(!land.spot)say('Nothing stencilled under the breach. Set down at the deck\'s landing record.','dim');
+    /* a hole over a hole has nothing to stand the unit on, and going round
+       again would be a fall with no bottom to it */
+    if(bodyDef(game.px,game.py).fall)
+      return die('CAME DOWN THROUGH THE DECK BELOW. NOTHING ARRESTS THE FALL.');
+  }else if(!land.car)say('No carriage answers on that deck. Set down at its landing record.','dim');
   /* a beacon picked on the deck behind us means nothing here */
   if(game.step===2)game.beacon=pickBeacon();
   checkFooting();arrived();
+}
+
+/* ---------- falling through the deck ----------
+   A breach is three tiles by three of missing plating with another deck under
+   it. Walking in is a route the unit takes exactly once: it goes down, and
+   nothing down there carries it back up. A breach with no deck registered
+   under it is what it looks like from above — a hole, and the end of the run. */
+function fallThrough(x,y){
+  const f=ISO.partAt(MAP,x,y)||{x,y}, p=ISO.propsAt(MAP,f.x,f.y)||{};
+  const t=bodyDef(x,y), tag=p.label?' ['+p.label+']':'';
+  const deck=p.dest?ISO.MAPS[p.dest]:null;
+  if(!deck||deck===MAP)return die(t.deadly||'FLOOR ENDS. NO SURFACE BELOW.');
+  say('STRUCTURAL BREACH'+tag+'. THE DECK GIVES WAY.','alert');
+  travelTo(deck,p.arrive||p.label||'','drop');
 }
 
 /* ---------- modification stations ----------
@@ -1260,8 +1312,10 @@ function updateTrams(dt){
 /* The ground moved rather than the unit — check what it is standing on now. */
 function checkFooting(){
   if(!game.active||game.dead)return;
-  const t=tileDef(game.px,game.py);
-  if(t.deadly&&!tramOn(game.px,game.py))die(t.deadly);
+  const t=bodyDef(game.px,game.py);
+  if(tramOn(game.px,game.py))return;                 // the platform is the floor
+  if(t.fall)return fallThrough(game.px,game.py);
+  if(t.deadly)die(t.deadly);
 }
 
 /* ---------- terminals ---------- */
@@ -1276,10 +1330,26 @@ function openTerminal(x,y){
   $('#tinyBody').innerHTML=String(p.text||'No readable record.')
     .split(/\n+/).map(l=>'<p>'+esc(l)+'</p>').join('');
   $('#tinyNote').textContent=p.desktop?'DESKTOP PRESENT — INTERFACE NOT YET BUILT':'READ ONLY';
+  $('#tiny').classList.remove('note');
   $('#tiny').classList.add('on');
   if(!term.read.has(K(x,y))){term.read.add(K(x,y));say('Console reads: '+title+'.','dim')}
 }
-function closeTerminal(){term.on=false;$('#tiny').classList.remove('on')}
+/* ---------- notes ----------
+   The same small window a console opens, with nothing behind it: paper carries
+   no circuit, so a note reads the same on a dark deck as on a live one, and
+   what it says is whatever the author wrote on it. */
+function readNote(x,y){
+  const p=propsOf(x,y), title=p.title||'HANDWRITTEN NOTE';
+  world.lit.set(K(x,y),performance.now());
+  term.on=true;
+  $('#tinyTitle').textContent=title.toUpperCase();
+  $('#tinyBody').innerHTML=String(p.text||'The ink has run. Nothing legible.')
+    .split(/\n+/).map(l=>'<p>'+esc(l)+'</p>').join('');
+  $('#tinyNote').textContent='HANDWRITTEN \u00b7 NO POWER DRAW';
+  $('#tiny').classList.add('note','on');
+  if(!term.read.has(K(x,y))){term.read.add(K(x,y));say('Note reads: '+title+'.','dim')}
+}
+function closeTerminal(){term.on=false;$('#tiny').classList.remove('on','note')}
 
 /* ---------- ending the run ---------- */
 function die(reason){

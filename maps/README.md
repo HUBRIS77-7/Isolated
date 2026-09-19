@@ -56,7 +56,7 @@ ISO.register({
 | `+`  | Doorway   | yes  |                                              |
 | `#`  | Wall      | no   |                                              |
 | `%`  | Bulkhead  | no   | Sealed until a button drives it open         |
-| `~`  | Sludge    | yes  | Logs a line the first time it is crossed     |
+| `~`  | Sludge    | yes  | Slower to cross. Logs a line the first time  |
 | `!`  | Hazard    | yes  | Logs a warning the first time                |
 | `o`  | Relay     | no   |                                              |
 | `x`  | Fencing   | no   | Blocks like a wall; you can see through it   |
@@ -78,6 +78,12 @@ ISO.register({
 | `M`  | Modification Station | no | `[E]` fits the unit with an ability, once. Then it is spent |
 | `*`  | Signal beacon | yes | Transmits through walls until the unit gets close, then goes quiet |
 | `f`  | Fuse      | yes  | Small enough to carry off. `[E]` lifts it, `[Q]` sets it down |
+| `;`  | Blood     | yes  | Touching copies pool into one stain                 |
+| `S`  | Skull     | yes  |                                              |
+| `X`  | Bones     | yes  | Touching copies scatter as one                      |
+| `Y`  | Dead body | yes  | Three tiles long; turns with its `dir`. Crossed slowly |
+| `O`  | Hull breach | yes | Three tiles by three. Walk in and the unit drops to the deck below — one way |
+| `n`  | Note      | yes  | `[E]` reads it. Paper: it needs no circuit   |
 
 To add a tile type, add one entry to `TILES` in `tiles.js`. It shows up in the
 editor palette on its own and the game obeys it straight away — walkability,
@@ -113,6 +119,11 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Signal beacon | `armed`     | Starts transmitting rather than dark           |
 | Signal beacon | `objective` | Objective line it puts up while it is lit      |
 | Signal beacon | `label`     | Name shown in the message log                  |
+| Dead body | `dir`         | Which way it lies                              |
+| Hull breach | `dest`       | The deck under the hole — another map's `id`   |
+| Hull breach | `arrive`     | The stencil on that deck it comes down at      |
+| Hull breach | `label`      | Stencilled name — also the stencil `arrive` falls back to |
+| Note     | `title`, `text`| What the scrap says                            |
 | Elevator | `dest`         | The deck this car serves — another map's `id`   |
 | Elevator | `arrive`       | Which car it comes out at over there (blank: one stencilled the same) |
 | Elevator | `label`        | Stencilled name — the shaft's name on both decks |
@@ -123,7 +134,7 @@ costs one line in `tiles.js` and nothing anywhere else.
 | *anything powered* | `circuit` | The circuit it waits on. Blank — the default — means it is live from the start |
 
 The palette is filed under headings — **Ground**, **Structure**, **Controls**,
-**Transit**, **Fixtures**, **Unit & kit** — and each heading folds away with a
+**Transit**, **Fixtures**, **Remains**, **Unit & kit** — and each heading folds away with a
 click, so a room is laid out from the six or seven blocks it actually uses
 rather than from a list of thirty. Which headings are folded is kept between
 visits, like the draft is. The number keys still reach the first ten blocks
@@ -321,6 +332,68 @@ deck under it while you work.
 A car is also a landing beacon spot, the way a signal beacon is, so the opening
 calibration may send the unit to one.
 
+## A hole instead of a car
+
+A **Hull breach** (`O`) is the other way down: three tiles by three of missing
+plating, painted from one anchor the way a desk is. The unit walks into it and
+goes down — and nothing on the deck below carries it back up, so a breach is a
+route an author can send the unit along exactly once. It is a door that only
+opens one way, and it costs no control, no circuit and no fuse to build.
+
+Where it drops to is `dest`, the same as a car's: another map's `id`, and that
+map has to be registered in `index.html`. Where the unit comes down is not a
+coordinate either, but a breach has no car at the bottom of it to aim at, so it
+is stencilled instead. `arrive` names a stencil on the deck below and the unit
+lands on whatever carries it — a signal beacon is the obvious marker, but any
+block with a `Stencilled` field does: a control, a station, a vent, a car.
+Where that block is not something to stand on, the unit comes down beside it
+rather than inside it. With `arrive`
+blank the breach falls back to its own `label`, and failing that to whatever a
+car would have done.
+
+A breach with **no deck registered under it** is what it looks like from
+directly above: a hole. The unit goes in, and the run ends there — so `v` is a
+hole the size of a tile and `O` is a hole three tiles across, until the moment
+an author says what is underneath it.
+
+A jump clears a breach the way it clears a pit: sailed over, never landed in.
+Three squares across means a full wind-up gets over it and nothing shorter
+does. `[R]` re-initialises the unit on the deck it fell to, at the square it
+came down on — the fall is not undone by dying after it.
+
+Survey flags a breach with no deck set, one dropping to a deck that is not
+registered, one dropping to the deck it is cut into, one coming down at a
+stencil the far deck has none of or at a stencil with nothing to stand on, and
+one with no stencil at all, which leaves where the unit lands up to the far
+deck. The canvas writes the deck and the stencil under the hole while you work.
+
+## What the crew left behind
+
+Four blocks that are nothing but what they look like. **Blood** (`;`),
+**Skull** (`S`) and **Bones** (`X`) are read on the way past and stop nothing;
+blood and bone merge, so a stain is as big as it is painted and reads as one
+pool rather than a row of squares.
+
+A **Dead body** (`Y`) is three tiles long, painted from one anchor and turned
+with its `dir` the way a desk is. It is the first block the unit can walk *onto*
+rather than around — and it takes about two and a half times as long to cross
+as plain deck, because the chassis climbs rather than walks. That is one
+setting, `slow` in `tiles.js`: how much longer than an ordinary step a move
+onto or off a block takes, so a step is as slow as the worse of the two squares
+it joins. Sludge carries it too, which is what its log line has always
+promised.
+
+Because the whole of a body walks the way the tile it was painted on does, a
+body lying across a pit is a bridge over it, the way a platform parked there
+would be. That is deliberate: the only thing a walkable big block changes about
+a route is how long the route takes.
+
+A **Note** (`n`) is a scrap of paper on the deck. `[E]` reads it, in the same
+small window a console opens into, dressed as paper rather than as a screen.
+It is the one readable block that is not a console: paper carries no circuit,
+so a note reads the same on a dark deck as on a live one, and Survey asks only
+that something is written on it.
+
 ## Blocks bigger than one tile
 
 A map is still one character per tile. A block that covers more than one works
@@ -328,10 +401,11 @@ two ways, because the two read differently to whoever is drawing:
 
 **It states its own size** (`foot` in `tiles.js`). You paint one tile — the
 anchor — and the block works out the rest from its own `dir`: a forklift is
-always two tiles, a desk always three. Turning it moves the tiles it covers,
-so rotating a desk is a change of setting rather than a redraw. The far half
-is as solid as the tile you painted, and walking into it reads the whole
-block's name.
+always two tiles, a desk always three, a hull breach always three by three.
+Turning it moves the tiles it covers, so rotating a desk is a change of setting
+rather than a redraw. The far half reads exactly the way the tile you painted
+does — as solid for a forklift, as walkable for a body — and meeting any of it
+reads the whole block's name.
 
 **It is as big as you paint it** (`merge`). Tiles of the same kind that touch
 draw as one body, with the seams between them left out and the block's glyph
@@ -369,13 +443,15 @@ space or a pit; the platform is the floor while it is there, and bare rail
 when it is not.
 
 The editor's **Survey** panel flags the things that break a map: a spawn inside
-a wall, a beacon that cannot be reached, ground sealed off from the rest
-(tinted red on the canvas), a button that signals nothing, a terminal with no
-text, a bulkhead no button opens, a tram whose rail runs into a wall, a vent
-with no far end or one that comes out inside a wall, a station stocked with
-nothing, a beacon that spawn already stands inside the range of, a car whose
-deck is not one the game will have, and a forklift or desk with nowhere to
-stand. On power it flags a fusebox that feeds nothing, a way stencilled with no
+a wall — or on a pit or a breach, which is a run that ends or falls through the
+deck the moment it begins — a beacon that cannot be reached, ground sealed off
+from the rest (tinted red on the canvas), a button that signals nothing, a
+terminal with no text, a note with nothing written on it, a bulkhead no button
+opens, a tram whose rail runs into a wall, a vent with no far end or one that
+comes out inside a wall, a station stocked with nothing, a beacon that spawn
+already stands inside the range of, a car whose deck is not one the game will
+have, a breach with nothing registered under it or nothing stencilled to come
+down at, and a forklift, desk or body with nowhere to lie. On power it flags a fusebox that feeds nothing, a way stencilled with no
 circuit, a way that feeds a circuit nothing on the deck is on, a way whose fuse
 is placed on no deck at all, and a block waiting on a circuit no box on its
 deck feeds — the one that would otherwise look exactly like a block that
