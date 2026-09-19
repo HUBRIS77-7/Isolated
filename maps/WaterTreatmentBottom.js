@@ -1226,7 +1226,7 @@ ISO.register({
     "115,88": {"label":""},
     "116,88": {"label":""},
     "117,88": {"label":""},
-    "74,89": {"dest":"WaterTreatmentTop","arrive":"","label":""},
+    "74,89": {"dest":"WaterTreatmentTop","arrive":"","label":"COLLECTION-TANK-STAIR"},
     "109,89": {"label":""},
     "110,89": {"label":""},
     "111,89": {"label":""},
