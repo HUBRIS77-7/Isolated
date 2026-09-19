@@ -661,13 +661,21 @@ function drawWiring(z){
       cx.fillText(circ, aX, sy - 1);
     }
     /* a car's far end is another deck, not another square — so it is written
-       out rather than drawn to */
-    if(t.press === 'lift' && z >= 16){
-      const d = (ISO.propsAt(map,x,y)||{}).dest;
+       out rather than drawn to. A breach says the same thing about the deck
+       under the hole, with the stencil it comes down at beside it. */
+    if((t.press === 'lift' || t.fall) && z >= 16){
+      const q = ISO.propsAt(map,x,y)||{}, d = q.dest;
+      const want = t.fall ? (q.arrive || q.label || '') : '';
       cx.fillStyle = d ? 'rgba(255,59,47,.85)' : 'rgba(255,59,47,.4)';
       cx.font = (8*D)+'px "Courier Prime", monospace';
       cx.textAlign = 'center'; cx.textBaseline = 'top';
-      cx.fillText(d || 'no deck', aX, sy + z + 1);
+      /* a hole is nine tiles, so the writing goes under the whole of it
+         rather than inside it */
+      const cells = ISO.footprint(map,x,y);
+      const lo = Math.min(...cells.map(c=>c.x)), hi = Math.max(...cells.map(c=>c.x));
+      const bot = Math.max(...cells.map(c=>c.y));
+      cx.fillText((d || 'no deck') + (want ? ' \u2193 ' + want : ''),
+                  toScreen(lo,0)[0] + (hi-lo+1)*z/2, toScreen(0,bot)[1] + z + 1);
     }
     if(t.signal === 'move'){
       const path = ISO.tramPath(map,x,y), end = path[path.length-1];

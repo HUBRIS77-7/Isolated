@@ -40,6 +40,11 @@
    ping    — it transmits: the unit reads it through walls, and it goes quiet
              once the unit is within its own `range`
    sized   — its log line reports how big the copy the unit found actually is
+   slow    — the unit labours over it: how much longer than an ordinary step a
+             move onto or off it takes. A body has to be climbed over
+   fall    — walking into it drops the unit to the deck below, one way only:
+             it carries `dest`/`arrive` the way a car does, and with nothing
+             registered under it the drop is simply the end of the run
    powered — it runs on power, so it carries a `circuit` setting: blank and it
              is live from the start, named and it waits on that circuit
    take    — it is holding something small enough for the unit to carry off:
@@ -121,7 +126,8 @@ const TILES = {
         signal:'toggle', powered:true,
         open:{fill:'rgba(191,247,220,.05)', line:'rgba(191,247,220,.3)', glyph:'▘'},
         props:{open:{type:'bool', label:'Starts open', def:false}}},
-  '~': {key:'~', id:'sludge', name:'Sludge',    walk:true,  fill:'rgba(79,133,112,.28)', line:'rgba(79,133,112,.5)', glyph:'~',
+  '~': {key:'~', id:'sludge', name:'Sludge',    walk:true,  slow:1.7,
+        fill:'rgba(79,133,112,.28)', line:'rgba(79,133,112,.5)', glyph:'~',
         enter:'Surface unstable. Traction reduced.'},
   '!': {key:'!', id:'hazard', name:'Hazard',    walk:true,  fill:'rgba(255,59,47,.18)',  line:'rgba(255,59,47,.55)', glyph:'!',
         enter:'WARNING: RADIOLOGICAL SPIKE. DO NOT LINGER.', alert:true},
@@ -221,6 +227,47 @@ const TILES = {
                enter:'Empty clip. Whatever sat in it has been lifted.'},
         props:{rating:{type:'pick', label:'Rating', def:'a15', opts:FUSE_OPTS},
                label:{type:'text', label:'Stencilled', def:''}}},
+
+  /* ---------- remains: what the crew left on the deck ----------
+     None of it stops the unit. Blood and bone are read on the way past; a
+     body is three tiles of obstruction the chassis has to climb, which is
+     what `slow` says and the only thing any of it does to a route. */
+  ';': {key:';', id:'blood',  name:'Blood', walk:true, merge:true,
+        fill:'rgba(150,18,18,.3)', line:'rgba(255,59,47,.34)', glyph:'\u2234',
+        enter:'Dried spray across the plating. Organic. Not hydraulic fluid.'},
+  'S': {key:'S', id:'skull',  name:'Skull', walk:true,
+        fill:'rgba(214,226,220,.14)', line:'rgba(214,226,220,.5)', glyph:'\u2620',
+        enter:'Cranium. Human. The jaw is somewhere else.'},
+  'X': {key:'X', id:'bones',  name:'Bones', walk:true, merge:true,
+        fill:'rgba(214,226,220,.1)', line:'rgba(214,226,220,.4)', glyph:'\u2021',
+        enter:'Scattered bone, long and picked clean. It cracks underfoot.'},
+  'Y': {key:'Y', id:'body',   name:'Dead body', walk:true, slow:2.6,
+        foot:{len:3}, parts:['\u2620','\u2263','\u2261'],
+        fill:'rgba(150,18,18,.22)', line:'rgba(255,59,47,.45)',
+        enter:'Crew remains, full length across the deck. The chassis climbs rather than walks.',
+        props:{dir:{type:'dir', label:'Lies', def:'right'}}},
+
+  /* ---------- a hole with a deck under it ----------
+     Three tiles by three of missing plating. The unit walks in and goes down,
+     and nothing on the deck below carries it back up — so a breach is a route
+     an author can only send the unit through once. */
+  'O': {key:'O', id:'breach', name:'Hull breach', walk:true, alert:true,
+        foot:{len:3, wide:3}, parts:['\u25bd','\u25bd','\u25bd'],
+        fill:'rgba(0,0,0,.92)', line:'rgba(255,59,47,.45)',
+        fall:true, deadly:'FLOOR ENDS. NOTHING REGISTERS BELOW.',
+        enter:'PLATING GIVES WAY.',
+        props:{dest:{type:'map',  label:'Deck it drops to',  def:''},
+               arrive:{type:'text',label:'Comes down at',    def:''},
+               label:{type:'text', label:'Stencilled',       def:''}}},
+
+  /* ---------- paper ----------
+     A console needs a circuit; a note needs nothing at all, and reads the
+     same on a dead deck as on a live one. */
+  'n': {key:'n', id:'note',   name:'Note', walk:true,
+        fill:'rgba(255,230,180,.13)', line:'rgba(255,230,180,.55)', glyph:'\u00b6',
+        press:'note', enter:'A scrap of paper on the deck. [E] reads it.',
+        props:{title:{type:'text', label:'Header', def:'HANDWRITTEN NOTE'},
+               text:{type:'lines', label:'Text',   def:'The ink has run. Nothing legible.'}}},
 };
 
 /* ---------- palette categories ----------
@@ -230,9 +277,10 @@ const TILES = {
 const CATS = [
   {id:'ground',    name:'Ground',     keys:' .,=+~!v/'},
   {id:'structure', name:'Structure',  keys:'#%oxG'},
-  {id:'controls',  name:'Controls',   keys:'bcu'},
-  {id:'transit',   name:'Transit',    keys:'T^V'},
+  {id:'controls',  name:'Controls',   keys:'bcun'},
+  {id:'transit',   name:'Transit',    keys:'T^VO'},
   {id:'fixtures',  name:'Fixtures',   keys:'LBACFD'},
+  {id:'remains',   name:'Remains',    keys:';SXY'},
   {id:'kit',       name:'Unit & kit', keys:'M*f'},
 ];
 /* One setting, fitted to every block that runs on power. */
@@ -541,15 +589,52 @@ function liftLanding(map, want, from){
              : {x:map.spawn.x, y:map.spawn.y, car:false};
 }
 
+/* ---------- a drop, rather than a ride ----------
+   A breach has no car at the bottom of it, so where the unit comes down is
+   worked out from a name instead: the block on the far deck stencilled with
+   whatever the breach `arrive`s at. Any block that carries a stencil will do —
+   a beacon is the obvious marker, but a control or a station does as well, and
+   then the unit comes down beside it rather than inside it. Failing all of
+   that it falls back to what a car would do, so a breach always sets the unit
+   down somewhere.                                                           */
+function stencilled(map, want){
+  if(!want) return null;
+  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
+    const p = propsAt(map,x,y);
+    if(p && String(p.label || '') === want) return {x, y};
+  }
+  return null;
+}
+/* Somewhere the unit can stand that is not another hole: the square itself,
+   else the first of its neighbours that reads solid. */
+function footing(map, x, y){
+  const ok = (cx,cy) => inside(map,cx,cy) && walkable(map,cx,cy) &&
+                        !bodyAt(map,cx,cy).fall && !bodyAt(map,cx,cy).deadly;
+  if(ok(x,y)) return {x, y};
+  for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]])
+    if(ok(x+dx, y+dy)) return {x:x+dx, y:y+dy};
+  return null;
+}
+function dropLanding(map, want, from){
+  const mark = stencilled(map, want);
+  const spot = mark && footing(map, mark.x, mark.y);
+  if(spot) return {x:spot.x, y:spot.y, spot:true};
+  const land = liftLanding(map, want, from);
+  const safe = footing(map, land.x, land.y) || land;
+  return {x:safe.x, y:safe.y, spot:false};
+}
+
 const inside = (map,x,y) => x>=0 && y>=0 && x<map.w && y<map.h;
 const tileAt = (map,x,y) => inside(map,x,y) ? map.rows[y][x] : ' ';
 const at     = (map,x,y) => def(tileAt(map,x,y));
-/* The floor a forklift is parked on is still floor in the rows; what makes it
-   solid is the block standing over it. */
-const walkable = (map,x,y) => at(map,x,y).walk && !coveredBy(map,x,y);
-/* What the unit actually runs into here — the block covering the cell if one
+/* What the unit actually meets here — the block covering the cell if one
    does, otherwise the tile itself. Bump lines and looks both come from it. */
 const bodyAt = (map,x,y) => { const f = coveredBy(map,x,y); return f ? at(map,f.x,f.y) : at(map,x,y) };
+/* The floor a forklift is parked on is still floor in the rows; what makes it
+   solid is the block standing over it — and what makes the far end of a body
+   something the unit can climb is that the body itself can be climbed. So the
+   whole of a big block walks the way the tile it was painted on does. */
+const walkable = (map,x,y) => bodyAt(map,x,y).walk;
 /* What a jump passes over without coming down on it: ground of any kind, the
    empty space the record does not reach into, and anything low enough to see
    across — mesh, a console flush to the wall, a desk. A wall, a sealed
@@ -616,8 +701,8 @@ function reachable(map, from, opts){
   const jump = !!(opts && opts.jump);
   const pass  = (x,y) => walkable(map,x,y) ||
                          (powered && !!at(map,x,y).signal && !lockedShut(map,x,y));
-  /* a jump comes down on ground, never on a pit: it sails over one */
-  const land  = (x,y) => pass(x,y) && !at(map,x,y).deadly;
+  /* a jump comes down on ground, never on a pit or a breach: it sails over one */
+  const land  = (x,y) => pass(x,y) && !bodyAt(map,x,y).deadly;
   const over  = (x,y) => vaultable(map,x,y) ||
                          (powered && !!at(map,x,y).signal && !lockedShut(map,x,y));
   const seen = new Set();
@@ -648,8 +733,13 @@ function reachable(map, from, opts){
 function audit(map){
   const out = {walkable:0, unreachable:0, issues:[]};
   for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++) if(walkable(map,x,y)) out.walkable++;
+  const under = bodyAt(map, map.spawn.x, map.spawn.y);
   if(!walkable(map, map.spawn.x, map.spawn.y))
-    out.issues.push('Spawn sits on '+at(map,map.spawn.x,map.spawn.y).name+' — the unit cannot stand there.');
+    out.issues.push('Spawn sits on '+under.name+' — the unit cannot stand there.');
+  else if(under.fall)
+    out.issues.push('Spawn sits on '+under.name+' — the run begins by falling through it.');
+  else if(under.deadly)
+    out.issues.push('Spawn sits on '+under.name+' — the run ends the moment it begins.');
   const seen = reachable(map, map.spawn, {powered:true});
   /* the same again for a unit that has been fitted with vault servos, so that
      ground an author gated behind a jump reads as gated rather than sealed */
@@ -716,6 +806,33 @@ function audit(map){
         out.issues.push(t.name+where+' comes out at a car stencilled "'+p.arrive+
                         '", which deck "'+p.dest+'" has none of.');
     }
+    /* a breach is a car with no car in it: it still has to say which deck is
+       under the hole, and where on that deck the unit comes down */
+    if(t.fall){
+      const known = Object.keys(MAPS).length;
+      if(!p.dest)
+        out.issues.push(t.name+where+' drops to no deck. The fall ends the run.');
+      else if(p.dest === map.id)
+        out.issues.push(t.name+where+' drops to the deck it is cut into.');
+      else if(known && !MAPS[p.dest])
+        out.issues.push(t.name+where+' drops to deck "'+p.dest+'", which is not in the record. '+
+                        'Add its script tag to index.html, or correct the id.');
+      else if(known && MAPS[p.dest]){
+        const want = p.arrive || p.label || '';
+        const mark = want ? stencilled(MAPS[p.dest], want) : null;
+        if(want && !mark)
+          out.issues.push(t.name+where+' comes down at "'+want+
+                          '", which nothing on deck "'+p.dest+'" is stencilled.');
+        else if(mark && !footing(MAPS[p.dest], mark.x, mark.y))
+          out.issues.push(t.name+where+' comes down at "'+want+'" on deck "'+p.dest+
+                          '", where there is nothing to stand on.');
+        else if(!want)
+          out.issues.push(t.name+where+' comes down at no stencil, so the unit is '+
+                          'set down wherever that deck happens to land it.');
+      }
+    }
+    if(t.press === 'note' && !String(p.text||'').trim())
+      out.issues.push('Note'+where+' has nothing written on it.');
     if(t.press === 'fusebox'){
       const ways = waysOf(map,x,y);
       if(!ways.length) out.issues.push('Fusebox'+where+' feeds nothing. Give it a way.');
@@ -911,7 +1028,7 @@ global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FUSES, ITEMS, CAR
                def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
                schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,
-               lifts, liftLanding,
+               lifts, liftLanding, stencilled, dropLanding,
                footprint, partAt, coveredBy, cluster, lockedShut,
                toJSON, toModule, parse, drawTile, drawCell};
 })(typeof globalThis!=='undefined'?globalThis:this);
