@@ -146,6 +146,15 @@ const TILES = {
         bump:'Fixed structure. Origin unknown.'},
   'x': {key:'x', id:'fence',  name:'Fencing',   walk:false, fill:'rgba(28,240,28,.03)',  line:'rgba(28,240,28,.4)',  glyph:'╳',
         clear:true, bump:'Fencing. Mesh reads clear but holds.'},
+  /* A wall that is not a wall of a room: it is the side of a vessel, and what
+     it holds back is on the other side of it. Touching copies read as one
+     body the way crating does, so a tank is as big as it is painted rather
+     than a fixed size — which is the only way to draw a settling tank that
+     takes up half a deck. */
+  'W': {key:'W', id:'tank',   name:'Tank wall',  walk:false, fill:'rgba(79,133,112,.4)',  line:'rgba(140,214,182,.7)', glyph:'▨',
+        merge:true, sized:true,
+        bump:'Tank wall. Welded plate, seams weeping. Nothing reads through the volume behind it.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
   'v': {key:'v', id:'pit',    name:'Pit',       walk:true,  fill:'rgba(0,0,0,.92)',      line:'rgba(255,59,47,.35)', glyph:'▽',
         see:true, deadly:'FLOOR ENDS. NO SURFACE BELOW.', alert:true,
         over:{fill:'rgba(0,0,0,.3)', line:'rgba(255,59,47,.45)'}},
@@ -304,7 +313,7 @@ const TILES = {
    shows up, under "Other", so adding a tile can never lose it. */
 const CATS = [
   {id:'ground',    name:'Ground',     keys:' .,=+~!v/:'},
-  {id:'structure', name:'Structure',  keys:'#%oxG'},
+  {id:'structure', name:'Structure',  keys:'#%oxWG'},
   {id:'controls',  name:'Controls',   keys:'bcun'},
   {id:'transit',   name:'Transit',    keys:'T^sVO'},
   {id:'fixtures',  name:'Fixtures',   keys:'LBACFD'},
@@ -965,6 +974,18 @@ function audit(map){
       if(head.x===x && head.y===y && new Set(body.cells.map(setting)).size > 1)
         out.issues.push(t.name+where+' is one body, but its tiles are set differently. '+
                         'It answers as a whole: locked anywhere means locked.');
+    }
+    /* one body, one name: a tank is painted from forty tiles and stencilled on
+       whichever of them the author clicked, so two names on one body is an
+       author expecting two tanks and having drawn one */
+    if(t.merge && t.props && t.props.label){
+      const body = cluster(map,x,y);
+      const head = body.cells.reduce((a,b)=>(b.y<a.y || (b.y===a.y && b.x<a.x)) ? b : a);
+      const names = new Set(body.cells.map(c=>String((propsAt(map,c.x,c.y)||{}).label || ''))
+                                      .filter(n=>n));
+      if(head.x===x && head.y===y && names.size > 1)
+        out.issues.push(t.name+where+' is one body stencilled '+names.size+' different ways ('+
+                        [...names].join(', ')+'). It reads as one, and answers to the first name on it.');
     }
     if(t.foot) for(const c of footprint(map,x,y)){
       if(!c.i && !c.j) continue;                       // the tile it is painted on

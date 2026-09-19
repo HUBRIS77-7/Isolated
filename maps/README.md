@@ -65,6 +65,7 @@ ISO.register({
 | `!`  | Hazard    | yes  | Logs a warning the first time                |
 | `o`  | Relay     | no   |                                              |
 | `x`  | Fencing   | no   | Blocks like a wall; you can see through it   |
+| `W`  | Tank wall | no   | The side of a vessel, not of a room. Touching copies become one tank — as big as you paint it |
 | `v`  | Pit       | yes  | Walk in and the run ends — or drops to the deck below, if the map is stacked on one |
 | `T`  | Tram      | yes  | Platform that a button calls along a rail    |
 | `b`  | Button    | no   | `[E]` from an adjacent tile signals its targets |
@@ -118,6 +119,7 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Desk     | `dir`          | Which way it runs                              |
 | Cargo gate | `open`       | Starts open rather than sealed                 |
 | Cargo gate | `locked`     | Nothing drives it — no control, no `[E]`       |
+| Tank wall | `label`        | Stencilled name — read from anywhere on the one tank |
 | Vent     | `dest`         | The square it comes out at                     |
 | Vent     | `label`        | Name shown in the message log                  |
 | Modification Station | `ability` | Which package this one is stocked with |
@@ -508,10 +510,46 @@ repeated across every tile of it — so a container reads as crating and a gate
 as slats at any size. A cargo container is however many tiles you gave it, and
 the log says what size the unit found — *Cargo container. Hull seals read
 intact. 3 × 2 units.* A cargo gate works the same way, so a gate four tiles
-tall opens as one door, whether the unit drives it or a button does.
+tall opens as one door, whether the unit drives it or a button does. So does a
+tank wall, which is what makes a vessel taking up half a deck drawable at all.
 
 Survey flags a big block that reaches past the edge of the record, stands in a
 wall, or overlaps another one.
+
+## A tank, drawn as the wall round it
+
+A **Tank wall** (`W`) is a wall that is not the wall of a room: it is the side
+of a vessel, and what it holds back is on the other side of it. It stops the
+unit and it stops the optics — welded plate reads as solid as it looks. What
+makes it worth having rather than painting a settling tank out of `#` is that
+it merges: draw the ring and the whole of it is one body, seams left out, so a
+clarifier reads as a clarifier at any size instead of as a rectangle of
+corridor wall. Meeting it says how big the copy is, the way crating does —
+*Tank wall. Welded plate, seams weeping. Nothing reads through the volume
+behind it. 8 × 6 units.*
+
+Give it a `label` and the tank has a name. The stencil belongs to the **body**,
+not to the tile it was clicked on, so a tank painted from forty tiles and named
+on one of them answers to that name wherever the unit meets it — *…Stencilled
+CLARIFIER 3.* A named tank is also somewhere a hull breach can `arrive` at,
+like any other stencilled block; the unit comes down beside the wall rather
+than inside it, plating being plating.
+
+What goes **inside** the ring is a decision, and all three answers are
+reasonable:
+
+| Inside | Reads as | Survey |
+|--------|----------|--------|
+| Unmapped (` `) | A sealed vessel — nothing in there is part of the deck | Quiet |
+| Floor, ring closed | A room the author forgot to give a door | *N walkable tile(s) are sealed off from spawn* |
+| Floor, with a `+` in the wall | A tank drained and opened up, that the unit can walk into | Quiet |
+
+So an author who wants a tank that is simply *there* paints its inside out, and
+an author who wants the unit to climb down into an empty one leaves a way in.
+The middle row is the mistake, and Survey already names it.
+
+One body, one name: Survey flags a tank stencilled two different ways, because
+that is an author who meant to draw two tanks and drew one.
 
 ## Two ways into the same block
 

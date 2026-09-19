@@ -554,13 +554,22 @@ const tileDef=(x,y)=>ISO.at(MAP,x,y);
 const bodyDef=(x,y)=>ISO.bodyAt(MAP,x,y);
 const propsOf=(x,y)=>ISO.propsAt(MAP,x,y)||{};
 /* A block built out of however many tiles the author used says how big the
-   copy in front of the unit turned out to be. */
+   copy in front of the unit turned out to be, and answers to the name
+   stencilled anywhere on it — a tank is painted from forty tiles and named on
+   one of them, so reading it off the tile the unit happens to be facing would
+   leave most of the wall anonymous. */
 function bumpLine(x,y,t){
   if(t.spent&&t.spent.bump&&world.spent.has(K(x,y)))return t.spent.bump;
   if(t.lock&&t.lock.bump&&propsOf(x,y).locked)return t.lock.bump;
-  if(!t.bump||!t.sized)return t.bump;
+  if(!t.bump||(!t.sized&&!t.merge))return t.bump;
   const b=ISO.cluster(MAP,x,y);
-  return b.cells.length>1 ? t.bump+' '+b.w+' \u00d7 '+b.h+' units.' : t.bump;
+  let line=t.bump;
+  if(t.sized&&b.cells.length>1)line+=' '+b.w+' \u00d7 '+b.h+' units.';
+  if(t.merge){
+    const named=b.cells.map(c=>propsOf(c.x,c.y).label).find(l=>l);
+    if(named)line+=' Stencilled '+named+'.';
+  }
+  return line;
 }
 
 /* ---------- powered blocks ----------
