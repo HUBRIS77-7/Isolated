@@ -92,6 +92,8 @@ ISO.register({
 | `Y`  | Dead body | yes  | Three tiles long; turns with its `dir`. Crossed slowly |
 | `O`  | Hull breach | yes | Three tiles by three. Walk in and the unit drops to the deck below — one way |
 | `n`  | Note      | yes  | `[E]` reads it. Paper: it needs no circuit   |
+| `E`  | Stalker   | yes  | Where a contact starts, not a block. It paces the unit and never closes |
+| `e`  | Hunter    | yes  | Where a contact starts. It moves only when the unit moves, and it closes |
 
 To add a tile type, add one entry to `TILES` in `tiles.js`. It shows up in the
 editor palette on its own and the game obeys it straight away — walkability,
@@ -143,10 +145,15 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Fusebox  | `label`        | Name shown in the message log and on the screen |
 | Fuse     | `rating`       | Which fuse this one is — a way only wakes for its own |
 | Fuse     | `label`        | Name shown in the message log                  |
+| Stalker  | `wake`         | Squares of route at which it takes an interest |
+| Stalker  | `label`        | Name shown in the message log                  |
+| Hunter   | `wake`         | Squares of route at which it takes an interest |
+| Hunter   | `label`        | Name shown in the message log                  |
+| Elevator, Stairway, Hull breach | `fade` | The screen goes black across the crossing rather than cutting |
 | *anything powered* | `circuit` | The circuit it waits on. Blank — the default — means it is live from the start |
 
 The palette is filed under headings — **Ground**, **Structure**, **Controls**,
-**Transit**, **Fixtures**, **Remains**, **Unit & kit** — and each heading folds away with a
+**Transit**, **Fixtures**, **Remains**, **Unit & kit**, **Contacts** — and each heading folds away with a
 click, so a room is laid out from the six or seven blocks it actually uses
 rather than from a list of thirty. Which headings are folded is kept between
 visits, like the draft is. The number keys still reach the first ten blocks
@@ -291,11 +298,12 @@ station hands over whatever it was stocked with and is spent from then on. An
 ability outlives a re-initialise — the chassis is rebuilt, the package is not —
 so `[R]` after a fall costs progress on the map and nothing else.
 
-There is one package so far:
+There are two packages so far:
 
 | Ability | Stocked as | What it does |
 |---------|------------|--------------|
 | `jump`  | Vault servos | Hold `[SPACE]` to wind up, release to leap |
+| `motion`| Motion tracker | `[M]` raises a screen that reads movement through structure |
 
 The jump is held, not tapped. The longer the wind-up, the further it carries —
 one square, two, three, or the four the servos are rated for — and the movement
@@ -313,10 +321,79 @@ jump will cross is three squares. If the wind-up is longer than the ground will
 take, the unit lands on the last square that reads solid; if there is nothing
 to come down on at all, it holds its ground and says so.
 
+The **motion tracker** is the other kind of package: it changes what the
+operator can read rather than what the chassis can do. `[M]` raises it into
+the right-hand column, under the message log, and `[M]` stows it again — or a
+tap on the `M` chip in the key row, and on the tracker's own footer, for a
+screen with no keyboard behind it. It stays up while the unit walks: it is
+meant to be read on the move, not consulted like a console.
+
+What it reads is movement, and only movement. Every contact that has taken a
+step in the last few seconds draws as a return, at its true range and bearing,
+through as much structure as stands between — and a contact standing perfectly
+still draws as nothing at all. It cannot say what any return is, only how far
+off and which way, so a screen with two returns on it is not a screen that
+knows which of them is the dangerous one. The footer counts what is showing
+and gives the nearest range; `NO MOTION` means nothing has moved, which is not
+the same as nothing being there.
+
 To add an ability, add one entry to `ABILITIES` in `tiles.js`. Every station's
 picker in the editor is built from that list. `index.html?abilities=jump` fits
 one before the run starts, which is how a map built around a jump is playtested
-without walking to the station that hands it over.
+without walking to the station that hands it over. More than one is a list:
+`?abilities=jump,motion`.
+
+## What else is walking about
+
+A **contact** is the one thing on a deck the record will not hold still for.
+It is placed like a block and is not one: the square is a starting mark, the
+run builds the creature on it, and the mark is plain ground from then on — so
+putting one down never changes what a route is. It walks over ground the unit
+could stand on and is no better over a pit than the chassis is, and it keeps
+whatever it changed about a deck when the unit rides away and comes back.
+`[R]` puts them back on their marks along with everything else.
+
+Nothing about a contact is square. The unit stands in one square at a time and
+a contact does not: it holds a real position on the deck, in tiles, and
+crosses the ground at its own `speed` in tiles a second, choosing the next
+square to steer for the moment it reaches the last one. So it is as often
+across the line between two squares as inside one, and it is drawn round
+rather than as a plate — everything the deck is built out of is square, and
+none of this was built. It is also why one that is stopped can be stopped
+halfway.
+
+| Char | Kind    | Moves | Closes | What it is |
+|------|---------|-------|--------|------------|
+| `E`  | Stalker | At a pace of its own, whenever the range is wrong | Never | It closes to three squares, holds there, gives ground rather than be touched, and follows for as long as the unit is inside its range. It cannot hurt the unit at all |
+| `e`  | Hunter  | It is handed a tile of ground to cover for every tile the unit covers | Onto the unit, which ends the run | It is still while the unit is still — and stops where it stands, between squares as readily as on one. Holding still is the whole of the defence against one; a jump buys three squares, because it is handed one for the four the servos cover |
+
+Both of them take an interest once the unit is within `wake` squares of
+walkable route — not of open air, so a contact on the far side of a sealed
+bulkhead is a contact that has not noticed anything — and hold that interest a
+good way past the same number, so one does not switch on and off while the
+unit paces the edge of its range. The log writes one line the first time each
+takes an interest, and the feed draws one only where the optics actually reach
+it: a contact is never held on the record the way ground is, because it has
+moved by the time the reading would be redrawn. Reading one through a wall is
+what the tracker is for.
+
+What either of them can reach is worked out square by square even though it
+does not move square by square: a hunter reaches the unit when the unit's own
+move leaves it one square away along the deck — orthogonally, the way the
+route is counted — so stepping diagonally clear of one that is beside the unit
+is a step it cannot answer. The lunge that follows is drawn as a lunge, but
+what it can cross was settled the moment the unit moved.
+
+The two of them are a pair on purpose. The stalker is harmless and always
+moving, so it is never off the tracker while the unit walks; the hunter is
+lethal and moves only when the unit does, so it is never on the tracker while
+the unit is still. An operator who has learned to tell one return from the
+other has learned the whole of the instrument.
+
+To add a creature, add one entry to `FOES` in `tiles.js` and one tile that
+names it in `foe`. Everything else — how fast it crosses the deck, how far it
+notices, how close it comes, whether it kills, how it draws — is read from
+that entry.
 
 ## Beacons that steer
 
@@ -368,6 +445,16 @@ deck under it while you work.
 
 A car is also a landing beacon spot, the way a signal beacon is, so the opening
 calibration may send the unit to one.
+
+### The screen going black between them
+
+A car, a flight of steps and a breach all carry a `fade`. Left off — the
+default — a crossing cuts: the log writes `TRANSIT LINK ENGAGED` and the far
+deck is simply there. Turned on, the screen goes to black across the crossing,
+the deck is swapped behind it, and it comes back up on the other side. Nothing
+answers the keys while the black is up, so it is also the way to give a
+crossing weight: an ordinary shaft between two rooms should cut, and the one
+that takes the unit off a deck for good should not.
 
 ## A flight of steps instead of a car
 

@@ -39,6 +39,9 @@ canvas{display:block}
 .crt{pointer-events:none;position:fixed;inset:0;z-index:50;
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,.7) 100%)}
 #flash{position:fixed;inset:0;background:#e9fff4;opacity:0;pointer-events:none;z-index:40;transition:opacity .12s}
+/* what a link marked `fade` puts between two decks: the screen out, the deck swapped behind it, the screen back */
+#fade{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:45;transition:opacity .85s linear}
+#fade.on{opacity:1}
 
 /* ---------- UESC-STYLE TERMINAL SHELL ---------- */
 .screen.term-screen{align-items:center;justify-content:center;padding:clamp(6px,2vw,24px)}
@@ -112,6 +115,12 @@ canvas{display:block}
   color:var(--gdim);display:flex;justify-content:space-between;gap:10px}
 #fuseNote{color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #carry{padding:0 8px 8px;font-size:12px;color:var(--gdim);display:none}
+
+/* the motion tracker: its own pane under the log, up only while it is raised */
+#motion{flex:1;width:100%;min-height:0}
+#motionFoot{flex:none;border-top:1px solid var(--gfaint);padding:4px 8px;font-size:12px;
+  color:var(--gdim);display:flex;justify-content:space-between;gap:10px}
+#motionNote{color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* the tiny window a terminal opens into */
 #tiny{position:fixed;inset:0;z-index:35;display:none;place-items:center;background:rgba(0,0,0,.55);padding:16px}
@@ -195,10 +204,14 @@ canvas{display:block}
           </div>
           <div id="fuseFoot"><span id="fuseNote"></span><span>[E]/[ESC] CLOSE</span></div>
         </div>
+        <div class="box" id="motionWin" style="flex:1;display:none"><h4>&lt;Motion Tracker&gt;</h4>
+          <canvas id="motion"></canvas>
+          <div id="motionFoot"><span id="motionNote"></span><span>[M] STOW</span></div>
+        </div>
         <div class="box" id="objWrap"><h4>&lt;Objective&gt;</h4>
           <div id="obj" class="dim">—</div>
           <div id="carry"></div>
-          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div></div>
+          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div><div class="key" id="keyTrack" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">M</div></div>
         </div>
       </div>
     </div>
@@ -217,6 +230,7 @@ canvas{display:block}
 </div>
 
 <div id="flash"></div>
+<div id="fade"></div>
 <div class="crt"></div>
 
 <!-- the world: shared tile vocabulary, then one file per map (authored in editor.html) -->
@@ -226,6 +240,7 @@ canvas{display:block}
 <script src="maps/EngCom.js"></script>
 <script src="maps/WaterTreatmentTop.js"></script>
 <script src="maps/WaterTreatmentBottom.js"></script>
+<script src="maps/Intermission.js"></script>
 
 <script>
 /* =========================================================
@@ -525,7 +540,7 @@ if(typeof ISO==='undefined'){
     footprint:(m,x,y)=>[{x,y,i:0,j:0}], partAt:()=>null, coveredBy:()=>null,
     cluster:(m,x,y)=>({cells:[{x,y}],x0:x,y0:y,x1:x,y1:y,w:1,h:1}),
     tramPath:(m,x,y)=>[{x,y}], key:(x,y)=>x+','+y,
-    vaultable:(m,x,y)=>ISO.at(m,x,y).walk, ABILITIES:{}, JUMP:4,
+    vaultable:(m,x,y)=>ISO.at(m,x,y).walk, ABILITIES:{}, JUMP:4, FOES:{},
     FUSES:{}, ITEMS:{}, CATS:[], CARRY:6,
     circuitOf:()=>'', waysOf:()=>[], boxes:()=>[], circuitFed:()=>false, itemAt:()=>null,
     lifts:()=>[], liftLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), register:m=>m,
@@ -584,12 +599,16 @@ const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
                  is live because a way here holds the fuse it takes. */
               ways:new Map(),
               /* small objects the unit has set down, by the square they lie on */
-              drops:new Map()};
+              drops:new Map(),
+              /* whatever else is walking about on this deck. Each one started
+                 on the square its mark was painted on and has not been there
+                 since. */
+              foes:[]};
 const TRAM_STEP=.34;                       // seconds the platform takes per tile
 function buildWorld(){
   world.open.clear(); world.trams.length=0; world.lit.clear();
   world.spent.clear(); world.beacons.clear();
-  world.ways.clear(); world.drops.clear();
+  world.ways.clear(); world.drops.clear(); world.foes.length=0;
   sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
     const t=tileDef(x,y), p=propsOf(x,y);
@@ -604,6 +623,9 @@ function buildWorld(){
        re-initialise arms them all again */
     if(t.ping&&p.armed) world.beacons.set(K(x,y),{x, y, range:p.range|0,
                                                   label:p.label||'', objective:p.objective||''});
+    /* the mark is where a contact starts, not a block standing there: it is
+       built once, walks off, and the square it came from is plain ground */
+    if(t.foe&&ISO.FOES[t.foe]) world.foes.push(makeFoe(t.foe,x,y,p));
   }
   indexTrams();
 }
@@ -628,6 +650,7 @@ function stashDeck(){
                     ways:new Map([...world.ways].map(([k,w])=>[k,w.map(o=>Object.assign({},o))])),
                     drops:new Map(world.drops),
                     trams:world.trams.map(t=>Object.assign({},t)),
+                    foes:world.foes.map(f=>Object.assign({},f)),
                     entry:{x:level.entry.x, y:level.entry.y}});
 }
 function restoreDeck(d){
@@ -637,6 +660,9 @@ function restoreDeck(d){
   world.ways=new Map([...d.ways].map(([k,w])=>[k,w.map(o=>Object.assign({},o))]));
   world.drops=new Map(d.drops);
   world.trams=d.trams.map(t=>Object.assign({},t));
+  /* a deck is left standing as it was, and whatever was following the unit
+     across it is still standing where it stopped */
+  world.foes=d.foes.map(f=>Object.assign({},f));
   world.lit.clear();
   sight.live.clear(); sight.seen.clear();     // optical memory does not ride the car
   level.entry={x:d.entry.x, y:d.entry.y};
@@ -863,10 +889,12 @@ function grantAbility(id,tag){
   return true;
 }
 function syncAbilities(){
-  const j=game.abilities.has('jump');
+  const j=game.abilities.has('jump'), m=game.abilities.has('motion');
   $('#keyJump').style.display=j?'':'none';
+  $('#keyTrack').style.display=m?'':'none';
   $('#dpad').classList.toggle('canjump',j);
-  $('#footHint').textContent='WASD/Arrows to Move · [E] to Interact'+(j?' · [SPACE] to Jump':'');
+  $('#footHint').textContent='WASD/Arrows to Move · [E] to Interact'+
+    (j?' · [SPACE] to Jump':'')+(m?' · [M] for the Tracker':'');
 }
 
 function startConsole(){
@@ -897,6 +925,7 @@ function stepTo(nx,ny,dur,arc){
 function arrived(){
   checkBeacons();
   refreshObjective();
+  foesOnMove();
 }
 /* A beacon transmits until the unit is close enough to read it directly, and
    then there is nothing left to say. */
@@ -917,12 +946,14 @@ function tryMove(dir){
   if(!game.active||game.dead||uiOpen()||game.mt<1)return;
   game.face=dir;
   const [dx,dy]=DIRV[dir],nx=game.px+dx,ny=game.py+dy,t=bodyDef(nx,ny);
+  if(contactInWay(nx,ny,dx,dy))return;
   if(!walkableAt(nx,ny)){
     game.bx=dx;game.by=dy;game.bt=0;
     const n=performance.now(), line=(t.signal==='move')?t.away:bumpLine(nx,ny,t);
     if(line&&n-game.edgeLog>4000){game.edgeLog=n;say(line,t.alert?'alert':'dim')}
   }else{
     stepTo(nx,ny,.11*stepCost(nx,ny));
+    if(game.dead)return;                       // something was waiting on that square
     if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
     /* a hole answers before a drop does: what is under the breach decides
        whether the unit lands on a deck or on nothing at all */
@@ -974,7 +1005,9 @@ function releaseJump(){
   }
   if(d<dist&&n-game.edgeLog>2500){game.edgeLog=n;say('Short of the wind-up. Only '+d+' square(s) read solid.','dim')}
   const nx=game.px+dx*d,ny=game.py+dy*d,t=bodyDef(nx,ny);
+  if(contactInWay(nx,ny,dx,dy))return;
   stepTo(nx,ny,.16+.05*d,d);
+  if(game.dead)return;
   if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
   if(t.fall&&!tramOn(nx,ny))return fallThrough(nx,ny);
   if(t.deadly&&!tramOn(nx,ny))die(t.deadly);
@@ -1033,7 +1066,7 @@ function pressButton(x,y){
   for(const l of lines)say(l.text,l.cls);
   /* the car goes last, so the log reads the press before the deck changes */
   const go=lines.find(l=>l.go);
-  if(go)travelTo(go.go.deck,go.go.want);
+  if(go)transit(go.go.fade,()=>travelTo(go.go.deck,go.go.want));
 }
 /* A bulkhead is one tile. A cargo gate is as wide as the author painted it,
    so every tile of the one body answers together — and a gate the unit can
@@ -1095,13 +1128,13 @@ function rideLift(x,y,tag,called){
   if(called&&!aboard)
                   return {text:'Carriage'+tag+' called. The unit is not aboard.',cls:'dim'};
   return {text:'Carriage'+tag+(aboard?' answers. Doors close.':' answers. The unit steps aboard.'),
-          go:{deck, want:p.arrive||p.label||''}};
+          go:{deck, want:p.arrive||p.label||'', fade:!!p.fade}};
 }
 function useLift(x,y){
   world.lit.set(K(x,y),performance.now());
   const p=propsOf(x,y), r=rideLift(x,y,p.label?' ['+p.label+']':'');
   say(r.text,r.cls);
-  if(r.go)travelTo(r.go.deck,r.go.want);
+  if(r.go)transit(r.go.fade,()=>travelTo(r.go.deck,r.go.want));
 }
 /* ---------- stairways ----------
    The other way off a deck, and the one that asks nothing of it: no carriage,
@@ -1116,7 +1149,7 @@ function useStair(x,y){
   if(!deck)      return say('Companionway'+tag+'. Deck '+p.dest+' is not in the record.','dim');
   if(deck===MAP) return say('Companionway'+tag+' comes back out on this deck.','dim');
   say('Companionway'+tag+'. The chassis takes the steps.','dim');
-  travelTo(deck,p.arrive||p.label||'','stair');
+  transit(p.fade,()=>travelTo(deck,p.arrive||p.label||'','stair'));
 }
 /* Swap the deck under the unit. What it is fitted with crosses with it; the
    deck it left is put away as it stood, and the deck it arrives on is either
@@ -1167,7 +1200,7 @@ function fallThrough(x,y){
   const deck=p.dest?ISO.MAPS[p.dest]:null;
   if(deck&&deck!==MAP){
     say('STRUCTURAL BREACH'+tag+'. THE DECK GIVES WAY.','alert');
-    return travelTo(deck,p.arrive||p.label||'','drop');
+    return transit(p.fade,()=>travelTo(deck,p.arrive||p.label||'','drop'));
   }
   /* the hole names no deck of its own: the one this deck is stacked on, at the
      square the unit went through, because the two are drawn in line. The
@@ -1210,6 +1243,11 @@ function syncCarry(){
   el.textContent='CARRYING: '+game.carry.map(i=>i.name).join(' \u00b7 ')+' \u00b7 [Q] or tap here sets one down';
 }
 $('#carry').addEventListener('pointerdown',e=>{e.preventDefault();dropItem()});
+/* the tracker is raised and stowed by tapping as well as by [M] — the chip
+   in the key row while it is down, its own footer while it is up */
+$('#keyTrack').addEventListener('pointerdown',e=>{e.preventDefault();toggleTracker()});
+$('#motionFoot').addEventListener('pointerdown',e=>{e.preventDefault();toggleTracker()});
+$('#motionFoot').style.cursor='pointer';
 function takeItem(x,y){
   const k=K(x,y);
   world.lit.set(k,performance.now());
@@ -1365,6 +1403,281 @@ function checkFooting(){
   if(t.deadly)die(t.deadly);
 }
 
+/* ---------- contacts ----------
+   A contact is the one thing on a deck the record will not hold still for.
+   Where it starts is a mark on the map; everything it does after that is
+   worked out here, out of the entry in ISO.FOES its mark named. There are two
+   kinds so far and the difference between them is the whole of what each is
+   for: one paces the unit and never closes, and one is keyed to movement —
+   it is given exactly as much ground to cover as the unit covers, and is
+   still while the unit is still.
+
+   Neither of them lives on the grid the way the unit does. A contact holds a
+   real position — `rx`, `ry`, in tiles — and crosses the deck at its own
+   speed; the grid is only what it steers by. `x`, `y` is the square it is
+   making for, and it chooses the next one the moment it arrives, so what the
+   feed draws is something walking rather than something jumping from square
+   to square. */
+function makeFoe(kind,x,y,p){
+  const d=ISO.FOES[kind];
+  return {kind, x, y, rx:x, ry:y, credit:0, vis:0, awake:false, met:false,
+          moved:-1e9, wake:((p&&p.wake)|0)||d.wake, label:(p&&p.label)||''};
+}
+const foeDef=f=>ISO.FOES[f.kind]||{};
+/* The square a contact counts as being in: the one it is making for, and the
+   one it is actually standing over. It holds both while it is between them,
+   so nothing else walks through it on the way past. */
+const foeIn=(f,x,y)=>(f.x===x&&f.y===y)||
+                     (Math.round(f.rx)===x&&Math.round(f.ry)===y);
+const foeAt=(x,y)=>world.foes.find(f=>foeIn(f,x,y))||null;
+/* Ground a contact will put a foot on: whatever the unit could stand on, less
+   anything that would end it there. A contact is no better over a pit than
+   the chassis is. */
+function foeGround(x,y){
+  if(!ISO.inside(MAP,x,y)||!walkableAt(x,y))return false;
+  if(tramOn(x,y))return true;                          // the platform is floor
+  const t=bodyDef(x,y);
+  return !t.deadly&&!t.fall;
+}
+/* One breadth-first sweep out from the unit, shared by every contact on the
+   deck: each of them reads its own square off it and steps to whichever
+   neighbour reads one lower — or one higher, for the one that will not be
+   crowded. It is rebuilt when the unit moves or the ground changes under it,
+   which is also the only time any of them has anything new to go on. */
+const FOE_REACH=30;                        // squares the sweep runs out to
+let flow={key:'', d:new Map()};
+function foeFlow(){
+  const key=MAP.id+'|'+K(game.px,game.py)+'|'+world.open.size+'|'+
+            world.trams.map(t=>t.i).join(',');
+  if(flow.key===key)return flow.d;
+  const d=new Map(); let edge=[[game.px,game.py]];
+  d.set(K(game.px,game.py),0);
+  for(let r=1;r<=FOE_REACH&&edge.length;r++){
+    const next=[];
+    for(const [x,y] of edge)for(const dir in DIRV){
+      const nx=x+DIRV[dir][0], ny=y+DIRV[dir][1], k=K(nx,ny);
+      if(d.has(k)||!foeGround(nx,ny))continue;
+      d.set(k,r); next.push([nx,ny]);
+    }
+    edge=next;
+  }
+  flow={key, d};
+  return d;
+}
+/* Whether it is following at all. It takes an interest inside its own range
+   and holds it well past the same number, so one does not switch on and off
+   while the unit paces the edge of the reading. */
+function foeAwake(f){
+  const here=foeFlow().get(K(f.x,f.y));
+  if(here!==undefined&&here<=f.wake){
+    if(!f.awake){
+      f.awake=true;
+      if(!f.met){f.met=true;say(foeDef(f).notice,'alert')}
+    }
+  }else if(here===undefined||here>f.wake*1.6)f.awake=false;
+  return f.awake;
+}
+/* Where it goes next, chosen when it arrives and not before. Down the sweep
+   to close, up it to back off, and across it where the ground allows, which
+   is how one that keeps its distance works its way round a corner rather than
+   standing at it. A contact already at the distance it keeps has nowhere it
+   wants to be: it comes to rest and stays there until the unit moves and the
+   reading changes, which is also why a tracker reads an empty screen for as
+   long as the unit stands still. Answers whether it found anywhere to go. */
+function foeAim(f){
+  const d=foeDef(f), reach=foeFlow(), here=reach.get(K(f.x,f.y));
+  if(here===undefined)return false;                    // nothing joins it to the unit
+  const keep=d.keep|0, want=here>keep?-1:here<keep?1:0, opts=[];
+  for(const dir in DIRV){
+    const nx=f.x+DIRV[dir][0], ny=f.y+DIRV[dir][1], v=reach.get(K(nx,ny));
+    if(v===undefined||!foeGround(nx,ny)||foeAt(nx,ny))continue;
+    if(v===0&&!d.kills)continue;                       // one that never closes never arrives
+    if(want<0?v<here:want>0?v>here:v===here)opts.push([nx,ny]);
+  }
+  if(!opts.length)return false;                        // hemmed in: it stands where it is
+  const [nx,ny]=opts[Math.random()*opts.length|0];
+  f.x=nx;f.y=ny;
+  return true;
+}
+/* Ground crossed, rather than squares taken. A contact walks towards the
+   square it is making for at its own speed and picks the next one the instant
+   it gets there, so it keeps going in one motion for as long as it has
+   somewhere to be. One keyed to the unit's movement spends a ration instead:
+   it is handed a tile of it for every tile the unit covers, and when that runs
+   out it stops wherever it happens to be — between squares as readily as on
+   one. */
+function foeAdvance(f,dt,awake){
+  const d=foeDef(f), motion=d.moves==='motion';
+  let budget=(d.speed||5)*dt;
+  if(motion)budget=Math.min(budget,f.credit);
+  for(let guard=0;budget>1e-5&&guard<8;guard++){
+    const dx=f.x-f.rx, dy=f.y-f.ry, gap=Math.hypot(dx,dy);
+    if(gap<1e-4){                                      // arrived, so choose again
+      f.rx=f.x;f.ry=f.y;
+      if(!awake||!foeAim(f))break;
+      continue;
+    }
+    const go=Math.min(budget,gap);
+    f.rx+=dx/gap*go; f.ry+=dy/gap*go;
+    budget-=go;
+    if(motion)f.credit=Math.max(0,f.credit-go);
+    f.moved=performance.now();                         // in motion: the tracker has it
+  }
+}
+/* Close enough to have reached it. Real positions, not squares — a contact
+   that never quite steps onto the unit still gets there. */
+const foeOnUnit=f=>Math.abs(f.rx-game.px)<.55&&Math.abs(f.ry-game.py)<.55;
+/* Asked to give ground: it takes whichever square it can reach that is
+   furthest from the unit. A contact that never closes would rather be
+   anywhere than touched, and one with nowhere left to go stands its ground. */
+function foeShove(f){
+  const reach=foeFlow(), far=k=>{const v=reach.get(k);return v===undefined?99:v}, opts=[];
+  for(const dir in DIRV){
+    const nx=f.x+DIRV[dir][0], ny=f.y+DIRV[dir][1];
+    if(!foeGround(nx,ny)||foeAt(nx,ny))continue;
+    if(nx===game.px&&ny===game.py)continue;
+    opts.push([nx,ny,far(K(nx,ny))]);
+  }
+  if(!opts.length)return false;
+  opts.sort((a,b)=>b[2]-a[2]);
+  const [nx,ny]=opts[0];
+  f.x=nx;f.y=ny;
+  /* it flinches out of the square rather than waiting to be walked through */
+  f.rx+=(nx-f.rx)*.4; f.ry+=(ny-f.ry)*.4;
+  f.credit=Math.max(f.credit,1);                       // enough to finish giving ground
+  f.moved=performance.now();
+  return true;
+}
+/* A contact standing in the square the unit is moving into. One that never
+   closes gives ground rather than be touched; one that does needs no help
+   finishing what it was going to do anyway. True means the move is off. */
+function contactInWay(nx,ny,dx,dy){
+  const f=foeAt(nx,ny);
+  if(!f)return false;
+  const d=foeDef(f);
+  if(d.kills){die(d.kills);return true}
+  if(foeShove(f))return false;
+  game.bx=dx;game.by=dy;game.bt=0;
+  const n=performance.now();
+  if(n-game.edgeLog>2500){game.edgeLog=n;say('Something is standing in the square. It does not give ground.','alert')}
+  return true;
+}
+/* Every contact on the deck, advanced with everything else that moves on it.
+   One that is keyed to the unit's movement is advanced here too — it simply
+   has nothing to spend until the unit hands it something. `vis` is how much
+   of it the optics currently have, eased rather than switched, so one crossing
+   the edge of what the unit can see fades instead of blinking. */
+const FOE_FADE=.16;                        // seconds a contact takes to come up or go
+function updateFoes(dt){
+  const stopped=!game.active||game.dead, k=Math.min(1,dt/FOE_FADE);
+  for(const f of world.foes){
+    f.vis=lerp(f.vis, sight.live.has(K(Math.round(f.rx),Math.round(f.ry)))?1:0, k);
+    if(stopped)continue;
+    foeAdvance(f,dt,foeAwake(f));
+    if(foeDef(f).kills&&foeOnUnit(f)){die(foeDef(f).kills);return}
+  }
+}
+/* The unit covered a tile of deck. Whatever is keyed to that is handed the
+   same tile to cover — one for one, which is why holding still is the only
+   thing that works on one. It spends it in its own time, which is what makes
+   the thing read as a lunge rather than a hop. */
+function foesOnMove(){
+  if(game.dead)return;
+  for(const f of world.foes)
+    if(foeDef(f).moves==='motion'&&foeAwake(f))f.credit+=1;
+}
+
+/* ---------- the motion tracker ----------
+   A sensor package rather than a camera. It reads movement through structure
+   and it reads nothing else at all: a contact that is walking is a return,
+   and a contact standing still is an empty screen. It cannot say what any of
+   them is — only how far off it is, and which way. */
+const TRACK_RANGE=20;                      // squares the tracker resolves
+const TRACK_HOLD=1.8;                      // seconds a return is held after the movement that made it
+const tracker={on:false, told:false};
+const mo=$('#motion'), mox=mo.getContext('2d');
+function toggleTracker(){
+  if(!game.abilities.has('motion')){
+    const n=performance.now();
+    if(n-game.useLog>2500){game.useLog=n;say('No sensor package fitted. There is nothing to raise.','dim')}
+    return;
+  }
+  tracker.on=!tracker.on;
+  $('#motionWin').style.display=tracker.on?'':'none';
+  if(tracker.on&&!tracker.told){
+    tracker.told=true;
+    say('Motion tracker up. Returns are movement and nothing else.','dim');
+  }
+}
+function drawTracker(now){
+  const [W,H,D]=fitCanvas(mo);
+  mox.clearRect(0,0,W,H);
+  const cx=W/2, cy=H/2, rad=Math.max(12,Math.min(W,H)/2-6*D), px=rad/TRACK_RANGE;
+
+  /* the screen itself: a ring every five squares, and the two axes */
+  mox.strokeStyle='rgba(28,240,28,.16)';mox.lineWidth=Math.max(1,D);
+  for(let r=5;r<=TRACK_RANGE;r+=5){
+    mox.beginPath();mox.arc(cx,cy,r*px,0,6.283);mox.stroke();
+  }
+  mox.beginPath();
+  mox.moveTo(cx-rad,cy);mox.lineTo(cx+rad,cy);
+  mox.moveTo(cx,cy-rad);mox.lineTo(cx,cy+rad);
+  mox.stroke();
+
+  /* the sweep reads nothing — it is there so a quiet screen still looks
+     like a live one */
+  const a=(now/1000%2.4)/2.4*6.283;
+  const g=mox.createLinearGradient(cx,cy,cx+Math.cos(a)*rad,cy+Math.sin(a)*rad);
+  g.addColorStop(0,'rgba(28,240,28,.32)');g.addColorStop(1,'rgba(28,240,28,0)');
+  mox.strokeStyle=g;mox.lineWidth=2*D;
+  mox.beginPath();mox.moveTo(cx,cy);mox.lineTo(cx+Math.cos(a)*rad,cy+Math.sin(a)*rad);mox.stroke();
+
+  /* the unit, in the middle of its own reading */
+  mox.fillStyle='rgba(28,240,28,.9)';
+  mox.fillRect(cx-2*D,cy-2*D,4*D,4*D);
+
+  /* every contact that has moved lately, and none that has not. They all draw
+     the same: the tracker has no opinion about which of them is which. */
+  let nd=Infinity, live=0;
+  for(const f of world.foes){
+    const age=(now-f.moved)/1000;
+    if(age>TRACK_HOLD)continue;
+    const dx=f.rx-game.px, dy=f.ry-game.py, d=Math.hypot(dx,dy);
+    if(d>TRACK_RANGE)continue;
+    live++; if(d<nd)nd=d;
+    const al=Math.max(0,1-age/TRACK_HOLD), bx=cx+dx*px, by=cy+dy*px;
+    mox.fillStyle='rgba(255,59,47,'+(.22*al)+')';
+    mox.beginPath();mox.arc(bx,by,9*D*(1-al*.35),0,6.283);mox.fill();
+    mox.fillStyle='rgba(255,59,47,'+al+')';
+    mox.beginPath();mox.arc(bx,by,3*D,0,6.283);mox.fill();
+  }
+  $('#motionNote').textContent=live
+    ? live+' RETURN'+(live>1?'S':'')+' · NEAREST '+String(Math.round(nd)).padStart(2,'0')
+    : 'NO MOTION';
+}
+
+/* ---------- the screen going out ----------
+   A link an author marked `fade` does not cut between decks: the feed goes to
+   black, the deck is swapped behind it, and it comes back up on the other
+   side. Nothing answers the keys while the black is up. */
+const fade={on:false};
+function fadeThrough(run){
+  if(fade.on)return;
+  const el=$('#fade'), was=game.active;
+  fade.on=true; game.active=false; held=[]; cancelJump();
+  el.classList.add('on');
+  setTimeout(()=>{
+    run();
+    /* the far deck gets a moment to draw behind the black before it lifts */
+    setTimeout(()=>{
+      el.classList.remove('on'); fade.on=false;
+      game.active=was&&!game.dead;
+    },450);
+  },900);
+}
+/* Cross to a deck the way the block that carries the unit there says to. */
+const transit=(slow,run)=>slow?fadeThrough(run):run();
+
 /* ---------- terminals ---------- */
 const term={on:false, read:new Set()};
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -1513,8 +1826,12 @@ function drawFeed(now,dt){
        deck below is scenery until the unit goes down to it. */
     const below=drawUnder(x,y,px,py,tile,D,a);
     fx.globalAlpha=dark?a*.42:a;
-    /* a platform is drawn where it actually is, not where its rows entry sits */
-    if(tileDef(x,y).signal!=='move')
+    /* a platform is drawn where it actually is, not where its rows entry sits;
+       a contact's starting mark is not drawn at all, because by the time the
+       unit could be looking at it there is nothing standing there */
+    if(tileDef(x,y).foe)
+      ISO.drawTile(fx,'.',px,py,tile,D);
+    else if(tileDef(x,y).signal!=='move')
       ISO.drawCell(fx,MAP,x,y,px,py,tile,D,
                    {open:world.open.has(K(x,y)), locked:propsOf(x,y).locked,
                     spent:world.spent.has(K(x,y)), over:below});
@@ -1551,6 +1868,7 @@ function drawFeed(now,dt){
 
   drawRails(ox,oy,tile,D,now);
   drawTrams(ox,oy,tile,D,now);
+  drawFoes(ox,oy,tile,D,now);
   world.lit.forEach((when,k)=>{                       // a control answering a press
     const age=(now-when)/450;
     if(age>1)return void world.lit.delete(k);
@@ -1654,6 +1972,48 @@ function drawAim(ox,oy,tile,D){
   }
 }
 
+/* What else is on the deck, drawn only where the optics actually reach it. A
+   contact is never held on the record the way ground is: it has moved by the
+   time the reading would be redrawn, so a remembered one would be a lie. The
+   tracker is the instrument that reads through structure, and what it reads
+   is movement rather than shapes.
+
+   Nothing here is drawn on the grid. A contact sits wherever its real
+   position puts it — as often across the line between two squares as inside
+   one — and it is drawn round, because everything the deck is built out of
+   is square and none of this was built. */
+function drawFoes(ox,oy,tile,D,now){
+  for(const f of world.foes){
+    if(f.vis<=.01)continue;
+    const d=foeDef(f), a=Math.min(1,f.vis);
+    const cx=ox+(f.rx+.5)*tile, cy=oy+(f.ry+.5)*tile, r=tile*.3;
+    const ring=()=>fx.beginPath();
+    /* a soft edge first: a body under the optics rather than a plate */
+    fx.globalAlpha=a*.45;
+    fx.fillStyle=d.fill||'rgba(255,59,47,.2)';
+    ring();fx.arc(cx,cy,r*1.55,0,6.283);fx.fill();
+    fx.globalAlpha=a;
+    fx.fillStyle='#050103';
+    ring();fx.arc(cx,cy,r,0,6.283);fx.fill();
+    fx.fillStyle=d.fill||'rgba(255,59,47,.2)';
+    ring();fx.arc(cx,cy,r,0,6.283);fx.fill();
+    fx.strokeStyle=d.line||'rgba(255,59,47,.9)';fx.lineWidth=Math.max(1.5,1.5*D);
+    ring();fx.arc(cx,cy,r,0,6.283);fx.stroke();
+    /* and a ring going off it, so something that is walking still reads as
+       something walking in the moment it happens to be standing still */
+    const p=((now/1000)*.55+(f.rx+f.ry)*.11)%1;
+    fx.globalAlpha=a*(1-p)*.45;
+    ring();fx.arc(cx,cy,r*(1+p),0,6.283);fx.stroke();
+    fx.globalAlpha=a;
+    if(tile>=16&&d.glyph){
+      fx.fillStyle=d.line;fx.font=Math.round(tile*.42)+'px "Courier Prime", monospace';
+      fx.textAlign='center';fx.textBaseline='middle';
+      fx.fillText(d.glyph,cx,cy+tile*.02);
+    }
+    fx.globalAlpha=1;
+  }
+}
+
 /* The rail a platform runs on: visible even where the platform is not — but
    only along the stretch the unit has actually looked down. */
 function drawRails(ox,oy,tile,D,now){
@@ -1742,6 +2102,7 @@ addEventListener('keydown',e=>{
       return;
     }
     if(e.code==='KeyE'){e.preventDefault();if(!e.repeat)interact();return}
+    if(e.code==='KeyM'){e.preventDefault();if(!e.repeat)toggleTracker();return}
     if(e.code==='KeyQ'){e.preventDefault();if(!e.repeat)dropItem();return}
     if(e.code==='Escape'&&term.on){e.preventDefault();closeTerminal();return}
     if(e.code==='KeyR'&&game.dead){e.preventDefault();if(!e.repeat)respawn();return}
@@ -1782,9 +2143,10 @@ function loop(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;
   if((state==='menu'||state==='dive')&&!usingVideo)drawMenu(now,dt);
   if(state==='console'){
-    updateTrams(dt);checkFooting();
+    updateTrams(dt);checkFooting();updateFoes(dt);
     if(held.length&&now>=repeatAt&&game.mt>=1&&!jump.on){tryMove(held[held.length-1]);repeatAt=now+125}
     drawFeed(now,dt);
+    if(tracker.on)drawTracker(now);
   }
   requestAnimationFrame(loop);
 }

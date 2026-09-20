@@ -61,6 +61,9 @@
    take    — it is holding something small enough for the unit to carry off:
              {kind, from} — which kind of object, and which of this block's own
              settings names the variant
+   foe     — the square is where a contact starts rather than a block that
+             stands there: the name of the entry in FOES that says what walks
+             off it. The tile itself is plain ground from then on
    props   — per-instance settings (see below)                      */
 
 /* ---------- per-instance settings ----------
@@ -84,12 +87,55 @@ const ABILITIES = {
   jump: {id:'jump', name:'Vault servos',
          fitted:'MOBILITY PACKAGE FITTED: VAULT SERVOS.',
          hint:'Hold [SPACE] to wind up, aim with the movement keys, release to clear up to four squares.'},
+  motion: {id:'motion', name:'Motion tracker',
+         fitted:'SENSOR PACKAGE FITTED: DOPPLER MOTION TRACKER.',
+         hint:'[M] raises the tracker. It reads movement through structure \u2014 and only movement. Anything holding still reads as nothing at all.'},
 };
 const ABILITY_OPTS = Object.keys(ABILITIES).map(k=>({value:k, label:ABILITIES[k].name}));
 /* Squares a fully wound-up jump clears. The game and the survey both read it
    from here, so the reach the unit has and the reach a map is checked against
    are the same number. */
 const JUMP = 4;
+
+/* ---------- contacts ----------
+   Whatever else is moving about on a deck. A contact is not a tile: the square
+   it was painted on is only where it starts, and from the moment the run
+   begins it is somewhere else. Nor does it live on the grid the way a block
+   does — it holds a real position, in tiles rather than in squares, and
+   crosses the ground at its own speed. The grid is only what it steers by.
+   The tile says which kind it is and everything about how that kind behaves
+   is read from here, so a second creature costs one entry here and one tile
+   below.
+     moves  — what sets it going. 'clock': a pace of its own, so it walks
+              whether the unit does or not. 'motion': it is given exactly as
+              much ground to cover as the unit covers, and is still while the
+              unit is still — which is the whole of the defence against one
+     speed  — tiles a second it crosses the deck at. For a motion-keyed one
+              this is only how quickly it spends what the unit's own movement
+              has given it, never how far it gets
+     wake   — squares of walkable route at which it takes an interest. It
+              holds that interest a good way past the same number before
+              losing it again, so a contact does not switch on and off while
+              the unit paces the edge of its range
+     keep   — how close it will come. 0 reaches the unit; 3 paces it three
+              squares back and will not be crowded closer than that
+     kills  — what the log says when it reaches the unit, or false for one
+              that never does — a contact that only ever follows
+     notice — the line the first reading of one writes
+     fill, line, glyph — how it draws: a body, its edge, and the mark it
+              carries. Neither of them is drawn as a square, because neither
+              of them stands on one */
+const FOES = {
+  stalker: {id:'stalker', name:'Stalker', moves:'clock', speed:5,
+            wake:18, keep:3, kills:false, glyph:'\u03a8',
+            fill:'rgba(255,180,74,.18)', line:'rgba(255,180,74,.85)',
+            notice:'CONTACT. Something is keeping pace with the unit. It comes no closer.'},
+  hunter:  {id:'hunter',  name:'Hunter',  moves:'motion', speed:9,
+            wake:14, keep:0, glyph:'\u039b',
+            kills:'CONTACT CLOSED THE LAST SQUARE. CHASSIS OPENED.',
+            fill:'rgba(255,59,47,.2)', line:'rgba(255,59,47,.9)',
+            notice:'CONTACT. It reads still. It was not still a moment ago.'},
+};
 
 /* ---------- fuses ----------
    A fuse is a small object the unit carries. Its rating is what a fusebox way
@@ -186,6 +232,7 @@ const TILES = {
         enter:'Transit link. Carrier plate reads live. [E] rides it.',
         props:{dest:{type:'map',  label:'Deck it serves',    def:''},
                arrive:{type:'text',label:'Comes out at car', def:''},
+               fade:{type:'bool',  label:'Screen goes black across it', def:false},
                label:{type:'text', label:'Stencilled',       def:''}}},
   /* The other way between decks, and the plain one: no carriage, no control
      and no circuit — a flight of steps works on a deck with nothing left
@@ -197,6 +244,7 @@ const TILES = {
         enter:'Companionway. The steps run off this deck. [E] climbs them.',
         props:{dest:{type:'map',  label:'Deck it climbs to',     def:''},
                arrive:{type:'text',label:'Comes out at flight',  def:''},
+               fade:{type:'bool',  label:'Screen goes black across it', def:false},
                label:{type:'text', label:'Stencilled',           def:''}}},
 
   /* ---------- fixtures: they furnish a room and stop the unit ---------- */
@@ -295,6 +343,7 @@ const TILES = {
         enter:'PLATING GIVES WAY.',
         props:{dest:{type:'map',  label:'Deck it drops to',  def:''},
                arrive:{type:'text',label:'Comes down at',    def:''},
+               fade:{type:'bool',  label:'Screen goes black across it', def:false},
                label:{type:'text', label:'Stencilled',       def:''}}},
 
   /* ---------- paper ----------
@@ -305,6 +354,22 @@ const TILES = {
         press:'note', enter:'A scrap of paper on the deck. [E] reads it.',
         props:{title:{type:'text', label:'Header', def:'HANDWRITTEN NOTE'},
                text:{type:'lines', label:'Text',   def:'The ink has run. Nothing legible.'}}},
+
+  /* ---------- contacts: what the deck was not left empty of ----------
+     Neither of these is a block. The square is a starting mark: the run
+     builds a contact on it and the mark is plain ground from then on, so
+     nothing about a route changes by putting one down. What each of them
+     does is read from FOES above. */
+  'E': {key:'E', id:'stalker', name:'Stalker', walk:true, foe:'stalker',
+        fill:'rgba(255,180,74,.09)', line:'rgba(255,180,74,.4)', glyph:'\u03a8',
+        enter:'Plating scuffed in a circle. Something stood here a long while.',
+        props:{wake:{type:'int',  label:'Takes an interest within', def:18, min:2, max:40},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  'e': {key:'e', id:'hunter',  name:'Hunter',  walk:true, foe:'hunter',
+        fill:'rgba(255,59,47,.09)', line:'rgba(255,59,47,.4)', glyph:'\u039b',
+        enter:'Deep scoring across the plate, in fours. Nothing on the manifest scores plate.',
+        props:{wake:{type:'int',  label:'Takes an interest within', def:14, min:2, max:40},
+               label:{type:'text', label:'Stencilled', def:''}}},
 };
 
 /* ---------- palette categories ----------
@@ -319,6 +384,7 @@ const CATS = [
   {id:'fixtures',  name:'Fixtures',   keys:'LBACFD'},
   {id:'remains',   name:'Remains',    keys:';SXY'},
   {id:'kit',       name:'Unit & kit', keys:'M*f'},
+  {id:'contacts',  name:'Contacts',  keys:'Ee'},
 ];
 /* One setting, fitted to every block that runs on power. */
 for(const ch in TILES) if(TILES[ch].powered)
@@ -1162,7 +1228,7 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
   paintCell(ctx, lookOf(t, state), px, py, size, scale, null, t.glyph);
 }
 
-global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FUSES, ITEMS, CARRY,
+global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, ITEMS, CARRY,
                circuitOf, waysOf, boxes, circuitFed, itemAt,
                def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
