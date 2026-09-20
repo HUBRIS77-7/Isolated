@@ -146,8 +146,10 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Fuse     | `rating`       | Which fuse this one is — a way only wakes for its own |
 | Fuse     | `label`        | Name shown in the message log                  |
 | Stalker  | `wake`         | Squares of route at which it takes an interest |
+| Stalker  | `range`        | Squares from its mark it will wander. `0` — the default — turns it loose on the whole deck |
 | Stalker  | `label`        | Name shown in the message log                  |
 | Hunter   | `wake`         | Squares of route at which it takes an interest |
+| Hunter   | `range`        | Squares from its mark it will wander. `0` — the default — turns it loose on the whole deck |
 | Hunter   | `label`        | Name shown in the message log                  |
 | Elevator, Stairway, Hull breach | `fade` | The screen goes black across the crossing rather than cutting |
 | *anything powered* | `circuit` | The circuit it waits on. Blank — the default — means it is live from the start |
@@ -337,6 +339,11 @@ knows which of them is the dangerous one. The footer counts what is showing
 and gives the nearest range; `NO MOTION` means nothing has moved, which is not
 the same as nothing being there.
 
+Because a contact that has noticed nothing is out walking the deck anyway,
+the tracker is usually reading something. That is the point of it: the
+operator learns the difference between a return that wanders and a return
+that stops when they stop.
+
 To add an ability, add one entry to `ABILITIES` in `tiles.js`. Every station's
 picker in the editor is built from that list. `index.html?abilities=jump` fits
 one before the run starts, which is how a map built around a jump is playtested
@@ -353,6 +360,20 @@ could stand on and is no better over a pit than the chassis is, and it keeps
 whatever it changed about a deck when the unit rides away and comes back.
 `[R]` puts them back on their marks along with everything else.
 
+Neither of them waits on the unit to exist. A contact that has not noticed
+anything goes looking: it picks somewhere on the deck it can get to, walks
+there, stands a moment, and picks somewhere else. It does that whether the
+unit is moving, standing still, or on another deck entirely — so a deck with
+something on it is never a deck holding its breath. Give one a `range` and it
+wanders only that far from the mark it was painted on, which is how a contact
+is made to hold a stretch of corridor rather than the whole ship; one that
+finds itself outside its range heads back towards the mark. Leave `range` at
+`0` and it has the run of the deck.
+
+It will not step onto a platform, or onto the rail one runs along. A tram is
+ground only the unit trusts, which makes riding one a way off a deck that
+nothing follows it onto.
+
 Nothing about a contact is square. The unit stands in one square at a time and
 a contact does not: it holds a real position on the deck, in tiles, and
 crosses the ground at its own `speed` in tiles a second, choosing the next
@@ -364,8 +385,16 @@ halfway.
 
 | Char | Kind    | Moves | Closes | What it is |
 |------|---------|-------|--------|------------|
-| `E`  | Stalker | At a pace of its own, whenever the range is wrong | Never | It closes to three squares, holds there, gives ground rather than be touched, and follows for as long as the unit is inside its range. It cannot hurt the unit at all |
-| `e`  | Hunter  | It is handed a tile of ground to cover for every tile the unit covers | Onto the unit, which ends the run | It is still while the unit is still — and stops where it stands, between squares as readily as on one. Holding still is the whole of the defence against one; a jump buys three squares, because it is handed one for the four the servos cover |
+| `E`  | Stalker | At a pace of its own, whenever the range is wrong | Never | It closes to three squares, holds there, and follows for as long as the unit is inside its range. It cannot hurt the unit at all — and it is shy: walk up on it, or walk into it, and it breaks and runs |
+| `e`  | Hunter  | Wandering, at a pace of its own. Following, it is handed a tile of ground to cover for every tile the unit covers | Onto the unit, which ends the run | Once it has noticed the unit it is still while the unit is still — and stops where it stands, between squares as readily as on one. Holding still is the whole of the defence against one; a jump buys three squares, because it is handed one for the four the servos cover |
+
+A shy contact — one with a `shy` distance in `FOES` — will not be walked up
+to. Come inside that distance and it drops whatever it was doing and runs, at
+`bolt` times its ordinary speed, until it has `calm` squares of route between
+itself and the unit. Then it holds that ground for several seconds before it
+will come back in to the distance it ordinarily paces at, because something
+that bolts and returns in the same breath never bolted. Walking into one
+counts as walking up to it. Only the stalker is shy; nothing rattles a hunter.
 
 Both of them take an interest once the unit is within `wake` squares of
 walkable route — not of open air, so a contact on the far side of a sealed
@@ -384,11 +413,12 @@ route is counted — so stepping diagonally clear of one that is beside the unit
 is a step it cannot answer. The lunge that follows is drawn as a lunge, but
 what it can cross was settled the moment the unit moved.
 
-The two of them are a pair on purpose. The stalker is harmless and always
-moving, so it is never off the tracker while the unit walks; the hunter is
-lethal and moves only when the unit does, so it is never on the tracker while
-the unit is still. An operator who has learned to tell one return from the
-other has learned the whole of the instrument.
+The two of them are a pair on purpose, and the tracker is where the pair pays
+off. Everything on a deck is wandering, so the screen is rarely empty — but a
+hunter that has noticed the unit stops dead the moment the unit does, and a
+return that goes still exactly when the operator goes still is a return that
+has seen them. Nothing else on the screen behaves that way. An operator who
+has learned to read that has learned the whole of the instrument.
 
 To add a creature, add one entry to `FOES` in `tiles.js` and one tile that
 names it in `foe`. Everything else — how fast it crosses the deck, how far it

@@ -106,31 +106,49 @@ const JUMP = 4;
    The tile says which kind it is and everything about how that kind behaves
    is read from here, so a second creature costs one entry here and one tile
    below.
-     moves  — what sets it going. 'clock': a pace of its own, so it walks
-              whether the unit does or not. 'motion': it is given exactly as
-              much ground to cover as the unit covers, and is still while the
-              unit is still — which is the whole of the defence against one
-     speed  — tiles a second it crosses the deck at. For a motion-keyed one
-              this is only how quickly it spends what the unit's own movement
-              has given it, never how far it gets
+   None of this waits on the unit. A contact with nothing to follow goes
+   looking: it picks somewhere on the deck it can get to, walks there, stands
+   a moment, and picks somewhere else. Whether the unit has ever moved does
+   not come into it.
+
+     moves  — what drives it once it is following. 'clock': a pace of its
+              own, so it closes whether the unit moves or not. 'motion': it
+              is given exactly as much ground to cover as the unit covers, so
+              it is still while the unit is still — which is the whole of
+              the defence against one. Neither setting touches how it
+              wanders; a contact always prowls on its own time
+     speed  — tiles a second it crosses the deck at while it is following.
+              For a motion-keyed one this is only how quickly it spends what
+              the unit's own movement has given it, never how far it gets
+     prowl  — tiles a second while it is only wandering. Slower than the
+              other, because looking for something is not the same as having
+              found it
      wake   — squares of walkable route at which it takes an interest. It
               holds that interest a good way past the same number before
               losing it again, so a contact does not switch on and off while
               the unit paces the edge of its range
      keep   — how close it will come. 0 reaches the unit; 3 paces it three
               squares back and will not be crowded closer than that
+     shy    — squares at which being approached is too much for it: it
+              breaks and runs. Leave it out and nothing rattles it
+     bolt   — how much faster than its following speed it runs when it does
+     calm   — squares it wants between itself and the unit before it will
+              stop running, and the ground it holds for a while afterwards
+              rather than wandering straight back in
      kills  — what the log says when it reaches the unit, or false for one
               that never does — a contact that only ever follows
      notice — the line the first reading of one writes
+     spooked— the line it writes when it breaks and runs
      fill, line, glyph — how it draws: a body, its edge, and the mark it
               carries. Neither of them is drawn as a square, because neither
               of them stands on one */
 const FOES = {
-  stalker: {id:'stalker', name:'Stalker', moves:'clock', speed:5,
-            wake:18, keep:3, kills:false, glyph:'\u03a8',
+  stalker: {id:'stalker', name:'Stalker', moves:'clock', speed:5, prowl:2.8,
+            wake:18, keep:3, shy:2, bolt:2.1, calm:9, kills:false, glyph:'\u03a8',
             fill:'rgba(255,180,74,.18)', line:'rgba(255,180,74,.85)',
-            notice:'CONTACT. Something is keeping pace with the unit. It comes no closer.'},
-  hunter:  {id:'hunter',  name:'Hunter',  moves:'motion', speed:9,
+            notice:'CONTACT. Something is keeping pace with the unit. It comes no closer.',
+            spooked:'CONTACT BREAKS AND RUNS. It will not be walked up to.'},
+  hunter:  {id:'hunter',  name:'Hunter',  moves:'motion', speed:9, prowl:2.2,
             wake:14, keep:0, glyph:'\u039b',
             kills:'CONTACT CLOSED THE LAST SQUARE. CHASSIS OPENED.',
             fill:'rgba(255,59,47,.2)', line:'rgba(255,59,47,.9)',
@@ -364,11 +382,13 @@ const TILES = {
         fill:'rgba(255,180,74,.09)', line:'rgba(255,180,74,.4)', glyph:'\u03a8',
         enter:'Plating scuffed in a circle. Something stood here a long while.',
         props:{wake:{type:'int',  label:'Takes an interest within', def:18, min:2, max:40},
+               range:{type:'int', label:'Wanders within (0: the whole deck)', def:0, min:0, max:60},
                label:{type:'text', label:'Stencilled', def:''}}},
   'e': {key:'e', id:'hunter',  name:'Hunter',  walk:true, foe:'hunter',
         fill:'rgba(255,59,47,.09)', line:'rgba(255,59,47,.4)', glyph:'\u039b',
         enter:'Deep scoring across the plate, in fours. Nothing on the manifest scores plate.',
         props:{wake:{type:'int',  label:'Takes an interest within', def:14, min:2, max:40},
+               range:{type:'int', label:'Wanders within (0: the whole deck)', def:0, min:0, max:60},
                label:{type:'text', label:'Stencilled', def:''}}},
 };
 

@@ -464,7 +464,7 @@ ISO.register({
     "25,27": {"dir":"left","dist":17,"circuit":""},
     "25,26": {"targets":[{"x":25,"y":27}],"label":"PLATFORM CALL","circuit":""},
     "25,62": {"ability":"motion","label":"SENSOR RACK","circuit":""},
-    "32,48": {"wake":14,"label":""},
+    "32,48": {"wake":14,"range":14,"label":""},
     "32,72": {"wake":18,"label":""},
     "34,27": {"title":"UNLABELLED CONSOLE","text":"No readable record.","desktop":false,"circuit":""},
     "39,27": {"label":""},
