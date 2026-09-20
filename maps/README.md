@@ -42,6 +42,9 @@ ISO.register({
                                      // reachable tile ≥6 steps away. A car
                                      // or a flight of steps counts as a
                                      // beacon spot too.
+  "os": {"card": "", "cardsub": "",  // the unit's own store on this deck, which
+         "files": []},               //   [O] brings up. Leave it out and [O]
+                                     //   says it is empty. See Desktops
   "props": {                         // per-instance settings, keyed "x,y"
     "48,13": {"targets": [{"x": 47, "y": 12},
                           {"x": 47, "y": 13}], "label": "LANDING"}
@@ -116,7 +119,9 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Bulkhead | `open`         | Starts open rather than sealed                 |
 | Tram     | `dir`, `dist`  | Which way the platform runs, and how far       |
 | Terminal | `title`, `text`| What the small window says                     |
-| Terminal | `desktop`      | This console has a desktop behind it (not built yet) |
+| Terminal | `desktop`      | This console opens its filing rather than one record |
+| Terminal | `files`        | What is filed on that desktop — one row per file |
+| Terminal | `card`, `cardsub` | The words the segment ends on when the sealed file gives way |
 | Forklift | `dir`          | Which way it faces, so which tile its second half covers |
 | Desk     | `dir`          | Which way it runs                              |
 | Cargo gate | `open`       | Starts open rather than sealed                 |
@@ -152,6 +157,7 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Hunter   | `range`        | Squares from its mark it will wander. `0` — the default — turns it loose on the whole deck |
 | Hunter   | `label`        | Name shown in the message log                  |
 | Elevator, Stairway, Hull breach | `fade` | The screen goes black across the crossing rather than cutting |
+| Elevator, Stairway, Hull breach | `card`, `cardsub` | Words held on that black, and the line under them |
 | *anything powered* | `circuit` | The circuit it waits on. Blank — the default — means it is live from the start |
 
 The palette is filed under headings — **Ground**, **Structure**, **Controls**,
@@ -528,6 +534,33 @@ answers the keys while the black is up, so it is also the way to give a
 crossing weight: an ordinary shaft between two rooms should cut, and the one
 that takes the unit off a deck for good should not.
 
+### Words held on that black
+
+A crossing that ends something wants more than a fade. `card` is what is
+written on the black, and `cardsub` is the smaller line under it. While a card
+is up the whole console goes with the deck — bars, feed, message log,
+objective, coordinates, the lot — and what is left is the words on nothing and
+a prompt. Any key brings the console back on the far side.
+
+`card` only reads on a link whose `fade` is on. There is no black to write on
+without one, and Survey says so rather than letting the words go missing.
+
+Each card is shown **once in a run**, by its words. A shaft that reads
+`PROLOGUE COMPLETE` is still a shaft: the unit may ride back up it and come
+down again, and what it rode out of does not end twice.
+
+The exit from `WaterTreatmentBottom` carries one:
+
+```js
+"0,27": {"dest":"Intermission", "fade":true,
+         "card":"PROLOGUE COMPLETE", "cardsub":"Chapter One — Intermission",
+         "label":"WATER-TREATMENT-EXIT"}
+```
+
+A console can end a segment on a card too — see **Desktops** below — which is
+the other half of the same idea: the black is made by whatever ended the
+thing, and the words sit on it either way.
+
 ## A flight of steps instead of a car
 
 A **Stairway** (`s`) is the same route without the machinery. It joins two
@@ -674,6 +707,103 @@ small window a console opens into, dressed as paper rather than as a screen.
 It is the one readable block that is not a console: paper carries no circuit,
 so a note reads the same on a dark deck as on a live one, and Survey asks only
 that something is written on it.
+
+## Desktops
+
+One screen, opened two ways. A **Terminal** (`c`) with its `desktop` turned on
+opens the machine behind the glass — the filing whoever sat here kept. A deck
+with an `os` set lets `[O]` bring up the unit's own store, anywhere on it,
+with nothing to walk to. Both hold the same kind of list and read the same
+way; the rest of this section is true of either.
+
+A terminal normally opens one small window holding one record. Turn its
+`desktop` on and give it `files`, and `[E]` opens the machine instead, and the
+unit goes through it the way whoever sat here did.
+
+`files` is a list. One row is one file:
+
+| Field    | Means                                                       |
+|----------|-------------------------------------------------------------|
+| `kind`   | `doc`, `image` or `locked`                                  |
+| `name`   | What it is called. A row with no name is not a file         |
+| `folder` | Which folder it sits in. Blank means loose on the desktop   |
+| `pass`   | The word that opens it, on a `locked` file                  |
+| `text`   | What is in it                                               |
+
+**Folders are not rows.** A folder exists because something names it, and
+stops existing when the last file naming it is renamed. That is the whole of
+how deep a desktop goes — one folder, and a way back out. A crew terminal is
+not a filesystem and the unit is not browsing for pleasure: it is looking for
+one thing, and everything else on the desktop is what it has to read past to
+find out there is one thing.
+
+A **document** reads as text, in the same green as the log. An **image** is
+kept column for column and drawn in a lighter phosphor, because the only ink
+this machine has is characters — line a report or a schematic up in a monospace
+editor and it comes out on the glass the way you drew it.
+
+A **locked** file asks for its word and says nothing else. A wrong word is
+rejected without a hint of how close it was. The word is never kept on the
+machine holding the file — it is on something else the unit can reach, and
+finding it is the work. Once a file gives way it stays given way for the run,
+through a re-initialise as well: the word is the operator's now, and asking
+twice is busywork.
+
+`[W]`/`[S]` walk the list, `[E]` opens, `[ESC]` goes back out a folder and
+then out of the desktop. While the desktop is up the keys belong to the
+machine rather than to the chassis, and while it is asking for a word they are
+letters — `[E]` types an `e`.
+
+### The unit's own store — `[O]`
+
+The same screen, brought up on nothing. A deck can carry an `os` of its own,
+which is not a block at all: `[O]` opens it anywhere on that deck, with no
+console to walk to and no circuit to wait on, because the chassis is carrying
+it rather than the ship. `[O]` closes it again, and the key shows up in the
+Objective row and the footer only on a deck that has one.
+
+It sits at the top level of the map, beside `spawn` and `under`:
+
+```js
+"os": {
+  "card": "THE CAR STOPS",
+  "cardsub": "Chapter One — the deck beyond it is not yet built",
+  "files": [ { "kind":"doc", "name":"READ ME FIRST.DOC", "folder":"", "pass":"", "text":"…" },
+             { "kind":"locked", "name":"CYGNUS.SEALED", "folder":"", "pass":"UBC-1", "text":"…" } ]
+}
+```
+
+`files` is exactly the list a console's desktop takes, and opens exactly the
+same screen — dressed in the unit's paler phosphor rather than a crew
+machine's green, because it is the unit's. What is different is the `card`:
+when a sealed file on the **store** gives way, that is the end of the segment,
+and the words are written on the black the way a link's card is.
+
+**Most decks leave it empty**, and a deck that leaves it empty never mentions
+it — `[O]` writes one line to the log and nothing else. It is for a segment
+that shuts the unit in somewhere with time on its hands, not for the run at
+large. In the editor it is a folded section low in the side pane, under
+**LOCAL STORE**, which says on its heading how many files are in it.
+
+That is how the **Intermission** car works. The car is sealed for transit and
+there is nothing on its glass worth the walk: whatever the unit has to read on
+the way down, it brought with it. The store holds eight files across three
+folders; one of them is `CYGNUS.SEALED`, and the word that opens it is printed
+on an image filed two folders away. Open it and the segment ends.
+
+### A console that ends a segment
+
+A terminal's `card` works the same way as the store's, for filing that belongs
+to the ship rather than to the unit: give a console a `card` and the locked
+file on its desktop becomes the end of something.
+
+### What Survey asks of filing
+
+Either kind, the same questions: files on a console with no desktop, a desktop
+with nothing filed on it, two files with the one name in the one folder, a
+file with nothing in it, a `locked` file with no word set — which anything at
+all opens — and a `card` on filing that holds nothing sealed, so the card
+could never come up.
 
 ## Blocks bigger than one tile
 

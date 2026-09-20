@@ -43,6 +43,26 @@ canvas{display:block}
 #fade{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:45;transition:opacity .85s linear}
 #fade.on{opacity:1}
 
+/* ---------- the card held on the black ----------
+   A link carrying `card` does not lift its black straight away. The console
+   goes with it — bars, feed, log and all — and what is left is the words, on
+   nothing, until the operator presses something. */
+body.carded .screen,body.carded #dpad,body.carded #tiny{opacity:0;pointer-events:none}
+body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
+#card{position:fixed;inset:0;z-index:46;display:none;place-items:center;background:#000;
+  opacity:0;transition:opacity .8s linear;color:var(--mfg);text-align:center;padding:24px}
+#card.up{display:grid}
+#card.on{opacity:1}
+#card .ct{font-family:'VT323',ui-monospace,monospace;font-size:clamp(38px,9vw,116px);
+  letter-spacing:.2em;line-height:.95;margin:0 0 0 .2em;text-shadow:0 0 22px rgba(120,255,190,.32)}
+#card .cs{margin-top:22px;color:var(--mdim);font-size:clamp(11px,1.6vw,14px);
+  letter-spacing:.38em;text-transform:uppercase;opacity:0;transition:opacity .8s linear}
+#card .cp{margin-top:54px;font-size:clamp(11px,1.5vw,14px);letter-spacing:.32em;
+  opacity:0;transition:opacity .8s linear}
+#card.ready .cs,#card.ready .cp{opacity:1}
+#card.ready .cp{animation:blink 1.6s steps(1) infinite}
+#card .cp b{color:var(--amber)}
+
 /* ---------- UESC-STYLE TERMINAL SHELL ---------- */
 .screen.term-screen{align-items:center;justify-content:center;padding:clamp(6px,2vw,24px)}
 .term{width:min(960px,100%);height:min(760px,100%);display:flex;flex-direction:column;background:#000;
@@ -139,6 +159,45 @@ canvas{display:block}
 #tiny.note .tiny-body{color:#ffe6b4;text-shadow:0 0 6px rgba(255,230,180,.3);font-style:italic}
 #tiny.note .tiny-foot{color:rgba(255,230,180,.55)}
 
+/* ---------- the desktop a console opens into ----------
+   Bigger than the small window a plain record gets, because there is more in
+   it than a record: the machine's own filing, one folder deep, and whatever
+   the crew left on it. Same glass, same green. */
+#desk{position:fixed;inset:0;z-index:36;display:none;place-items:center;background:rgba(0,0,0,.72);padding:16px}
+#desk.on{display:grid}
+.desk-win{width:min(760px,100%);height:min(560px,100%);display:flex;flex-direction:column;background:#000;
+  border:1px solid var(--gdim);box-shadow:0 0 40px rgba(28,240,28,.14);animation:termOn .25s ease-out}
+.desk-win .term-bar{font-size:13px;background:#031a03;color:var(--g);border-bottom:1px solid var(--gfaint)}
+#deskPath{flex:none;padding:5px 11px;border-bottom:1px solid var(--gfaint);font-size:12px;
+  color:var(--gdim);letter-spacing:.14em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#deskBody{flex:1;min-height:0;overflow-y:auto;padding:10px 11px;font-size:14px;line-height:1.35;
+  text-shadow:0 0 6px rgba(28,240,28,.35)}
+#deskBody p{margin:0 0 .8em}#deskBody p:last-child{margin-bottom:0}
+.file{display:flex;gap:9px;align-items:baseline;padding:3px 7px;border:1px solid transparent;cursor:pointer}
+.file .g{flex:none;width:1.1em;text-align:center;color:var(--gdim)}
+.file .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file .kd{flex:none;font-size:11px;color:var(--gdim);letter-spacing:.16em}
+.file:hover{background:#031a03}
+.file.sel{border-color:var(--amber);background:#0a0a02}
+.file.sel .g,.file.sel .kd{color:var(--amber)}
+.file.shut .g,.file.shut .nm{color:var(--red)}
+.file.open .g{color:var(--g)}
+/* a drawing on this machine is made of characters, so it is kept column for column */
+#deskBody pre{margin:0;font-family:inherit;font-size:13px;line-height:1.05;white-space:pre;
+  overflow-x:auto;color:var(--mfg);text-shadow:0 0 8px rgba(120,255,190,.3)}
+#deskPrompt{border:1px solid var(--gfaint);padding:8px 10px;margin-top:10px}
+#deskField{color:var(--amber);letter-spacing:.3em;min-height:1.3em;word-break:break-all}
+#deskMsg{color:var(--red);min-height:1.3em;margin-top:6px;font-size:13px}
+.desk-foot{flex:none;border-top:1px solid var(--gfaint);padding:5px 11px;font-size:12px;color:var(--gdim);
+  display:flex;justify-content:space-between;gap:10px}
+#deskNote{color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the chassis's own store is not a crew machine, and does not read as one */
+#desk.store .desk-win{border-color:var(--mdim);box-shadow:0 0 40px rgba(120,255,190,.12)}
+#desk.store .term-bar{background:#04140f;color:var(--mfg)}
+#desk.store #deskBody{color:var(--mfg);text-shadow:0 0 6px rgba(120,255,190,.3)}
+#desk.store .file .nm{color:var(--mfg)}
+#desk.store .file:hover{background:#04140f}
+
 #dpad{display:none;position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:30;grid-template-columns:repeat(3,54px);grid-template-rows:repeat(2,54px);gap:6px}
 #dpad button{font:inherit;font-size:18px;background:#000;color:var(--g);border:1px solid var(--gdim);touch-action:manipulation}
 #dpad [data-dir=up]{grid-column:2}#dpad [data-dir=left]{grid-column:1;grid-row:2}#dpad [data-dir=down]{grid-column:2;grid-row:2}#dpad [data-dir=right]{grid-column:3;grid-row:2}
@@ -211,7 +270,7 @@ canvas{display:block}
         <div class="box" id="objWrap"><h4>&lt;Objective&gt;</h4>
           <div id="obj" class="dim">—</div>
           <div id="carry"></div>
-          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div><div class="key" id="keyTrack" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">M</div></div>
+          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div><div class="key" id="keyTrack" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">M</div><div class="key" id="keyStore" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">O</div></div>
         </div>
       </div>
     </div>
@@ -220,12 +279,31 @@ canvas{display:block}
 </section>
 <div id="dpad"><button data-act="jump">JMP</button><button data-dir="up">▲</button><button data-act="use">E</button><button data-dir="left">◀</button><button data-dir="down">▼</button><button data-dir="right">▶</button></div>
 
+<!-- what a console with a desktop opens into: the machine's own filing -->
+<div id="desk">
+  <div class="desk-win">
+    <div class="term-bar"><span id="deskTitle">DESKTOP</span><span id="deskUser">NODE 77</span></div>
+    <div id="deskPath"></div>
+    <div id="deskBody"></div>
+    <div class="desk-foot"><span id="deskNote"></span><span id="deskHint">[E] OPEN · [ESC] CLOSE</span></div>
+  </div>
+</div>
+
 <!-- what a terminal opens into: one small window of text -->
 <div id="tiny">
   <div class="tiny-win">
     <div class="term-bar"><span id="tinyTitle">CONSOLE</span><span>[E] / ESC</span></div>
     <div class="tiny-body" id="tinyBody"></div>
     <div class="tiny-foot"><span id="tinyNote"></span><span>NODE 77</span></div>
+  </div>
+</div>
+
+<!-- the words a chapter ends on, held on the black a link was already making -->
+<div id="card">
+  <div>
+    <h2 class="ct" id="cardTitle"></h2>
+    <div class="cs" id="cardSub"></div>
+    <div class="cp">PRESS <b>ANY KEY</b> TO CONTINUE</div>
   </div>
 </div>
 
@@ -570,6 +648,8 @@ const tileDef=(x,y)=>ISO.at(MAP,x,y);
    half a forklift is as solid as the tile it was painted on — or the tile. */
 const bodyDef=(x,y)=>ISO.bodyAt(MAP,x,y);
 const propsOf=(x,y)=>ISO.propsAt(MAP,x,y)||{};
+/* The words a block ends a chapter on, or nothing — most blocks end nothing. */
+const cardOf=p=>String(p.card||'').trim()?{title:p.card,sub:p.cardsub||''}:null;
 /* A block built out of however many tiles the author used says how big the
    copy in front of the unit turned out to be, and answers to the name
    stencilled anywhere on it — a tank is painted from forty tiles and named on
@@ -899,11 +979,16 @@ function grantAbility(id,tag){
 }
 function syncAbilities(){
   const j=game.abilities.has('jump'), m=game.abilities.has('motion');
+  /* the store is the deck's rather than the chassis's, so this is re-read
+     every time the ground under the unit changes */
+  const o=ISO.osOf(MAP).length>0;
   $('#keyJump').style.display=j?'':'none';
   $('#keyTrack').style.display=m?'':'none';
+  $('#keyStore').style.display=o?'':'none';
   $('#dpad').classList.toggle('canjump',j);
   $('#footHint').textContent='WASD/Arrows to Move · [E] to Interact'+
-    (j?' · [SPACE] to Jump':'')+(m?' · [M] for the Tracker':'');
+    (j?' · [SPACE] to Jump':'')+(m?' · [M] for the Tracker':'')+
+    (o?' · [O] for the Store':'');
 }
 
 function startConsole(){
@@ -918,6 +1003,7 @@ function startConsole(){
   say(`Name Registered Identified: ${PLAYER.full.toUpperCase()}. UNIT COMPUTATIONAL STATUS NOTICED. MISSION STILL WITHIN ACCEPTABLE PARAMETERS OF SUSTAINMENT`,'',18,400);
   say('CONTINUE','',45,700).then(()=>{game.active=true;game.step=0;objective('Move.')});
   say('Move with [W][A][S][D] or the arrow keys.');
+  if(ISO.osOf(MAP).length)say('LOCAL STORE MOUNTED. [O] brings it up.','b');
 }
 
 const DIRV={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
@@ -950,7 +1036,7 @@ function checkBeacons(){
 }
 /* Either of the two screens the unit can open. While one is up the deck keys
    belong to it, not to the chassis. */
-const uiOpen=()=>term.on||fuse.on;
+const uiOpen=()=>term.on||fuse.on||desk.on;
 function tryMove(dir){
   if(!game.active||game.dead||uiOpen()||game.mt<1)return;
   game.face=dir;
@@ -1030,6 +1116,7 @@ function inReach(){
   return out;
 }
 function interact(){
+  if(desk.on)return deskOpen();
   if(term.on)return closeTerminal();
   if(fuse.on)return closeFusebox();
   if(!game.active||game.dead)return;
@@ -1075,7 +1162,7 @@ function pressButton(x,y){
   for(const l of lines)say(l.text,l.cls);
   /* the car goes last, so the log reads the press before the deck changes */
   const go=lines.find(l=>l.go);
-  if(go)transit(go.go.fade,()=>travelTo(go.go.deck,go.go.want));
+  if(go)transit(go.go.fade,()=>travelTo(go.go.deck,go.go.want),go.go.card);
 }
 /* A bulkhead is one tile. A cargo gate is as wide as the author painted it,
    so every tile of the one body answers together — and a gate the unit can
@@ -1139,13 +1226,13 @@ function rideLift(x,y,tag,called){
   if(called&&!aboard)
                   return {text:'Carriage'+tag+' called. The unit is not aboard.',cls:'dim'};
   return {text:'Carriage'+tag+(aboard?' answers. Doors close.':' answers. The unit steps aboard.'),
-          go:{deck, want:p.arrive||p.label||'', fade:!!p.fade}};
+          go:{deck, want:p.arrive||p.label||'', fade:!!p.fade, card:cardOf(p)}};
 }
 function useLift(x,y){
   world.lit.set(K(x,y),performance.now());
   const p=propsOf(x,y), r=rideLift(x,y,p.label?' ['+p.label+']':'');
   say(r.text,r.cls);
-  if(r.go)transit(r.go.fade,()=>travelTo(r.go.deck,r.go.want));
+  if(r.go)transit(r.go.fade,()=>travelTo(r.go.deck,r.go.want),r.go.card);
 }
 /* ---------- stairways ----------
    The other way off a deck, and the one that asks nothing of it: no carriage,
@@ -1160,7 +1247,7 @@ function useStair(x,y){
   if(!deck)      return say('Companionway'+tag+'. Deck '+p.dest+' is not in the record.','dim');
   if(deck===MAP) return say('Companionway'+tag+' comes back out on this deck.','dim');
   say('Companionway'+tag+'. The chassis takes the steps.','dim');
-  transit(p.fade,()=>travelTo(deck,p.arrive||p.label||'','stair'));
+  transit(p.fade,()=>travelTo(deck,p.arrive||p.label||'','stair'),cardOf(p));
 }
 /* Swap the deck under the unit. What it is fitted with crosses with it; the
    deck it left is put away as it stood, and the deck it arrives on is either
@@ -1181,13 +1268,16 @@ function travelTo(deck,want,how,square){
   const held=decks.get(MAP.id);
   if(held)restoreDeck(held);else buildWorld();
   level.entry={x:land.x, y:land.y};
-  cancelJump();closeTerminal();closeFusebox();
+  cancelJump();closeTerminal();closeFusebox();closeDesk();
   game.px=game.fx=land.x;game.py=game.fy=land.y;
   game.mt=1;game.bt=1;game.arc=0;game.sink=0;
   game.visited.clear();game.visited.set(K(land.x,land.y),performance.now());
   view.ready=false;                        // the camera does not fly between decks
   say(how==='drop'?'FALL ARRESTED. CHASSIS READS INTACT.':'TRANSIT LINK ENGAGED.','b');
   say('DECK REGISTERED: '+String(MAP.name||MAP.id).toUpperCase(),'b');
+  /* the keys the unit has on this deck are not the keys it had on the last */
+  syncAbilities();
+  if(ISO.osOf(MAP).length)say('LOCAL STORE MOUNTED. [O] brings it up.','b');
   if(how==='drop'){
     if(!land.spot)say('Nothing stencilled under the breach. Set down at the deck\'s landing record.','dim');
     /* a hole over a hole has nothing to stand the unit on, and going round
@@ -1211,7 +1301,7 @@ function fallThrough(x,y){
   const deck=p.dest?ISO.MAPS[p.dest]:null;
   if(deck&&deck!==MAP){
     say('STRUCTURAL BREACH'+tag+'. THE DECK GIVES WAY.','alert');
-    return transit(p.fade,()=>travelTo(deck,p.arrive||p.label||'','drop'));
+    return transit(p.fade,()=>travelTo(deck,p.arrive||p.label||'','drop'),cardOf(p));
   }
   /* the hole names no deck of its own: the one this deck is stacked on, at the
      square the unit went through, because the two are drawn in line. The
@@ -1257,6 +1347,7 @@ $('#carry').addEventListener('pointerdown',e=>{e.preventDefault();dropItem()});
 /* the tracker is raised and stowed by tapping as well as by [M] — the chip
    in the key row while it is down, its own footer while it is up */
 $('#keyTrack').addEventListener('pointerdown',e=>{e.preventDefault();toggleTracker()});
+$('#keyStore').addEventListener('pointerdown',e=>{e.preventDefault();desk.on?closeDesk():openStore()});
 $('#motionFoot').addEventListener('pointerdown',e=>{e.preventDefault();toggleTracker()});
 $('#motionFoot').style.cursor='pointer';
 function takeItem(x,y){
@@ -1808,22 +1899,64 @@ function drawTracker(now){
    black, the deck is swapped behind it, and it comes back up on the other
    side. Nothing answers the keys while the black is up. */
 const fade={on:false};
-function fadeThrough(run){
+function fadeThrough(run,card){
   if(fade.on)return;
   const el=$('#fade'), was=game.active;
   fade.on=true; game.active=false; held=[]; cancelJump();
   el.classList.add('on');
+  const lift=()=>{el.classList.remove('on'); fade.on=false; game.active=was&&!game.dead};
   setTimeout(()=>{
-    run();
+    run&&run();
+    /* a card holds the black it was already making, and the far deck waits
+       behind it for as long as the operator takes to read */
+    if(card&&showCard(card,lift))return;
     /* the far deck gets a moment to draw behind the black before it lifts */
-    setTimeout(()=>{
-      el.classList.remove('on'); fade.on=false;
-      game.active=was&&!game.dead;
-    },450);
+    setTimeout(lift,450);
   },900);
 }
 /* Cross to a deck the way the block that carries the unit there says to. */
-const transit=(slow,run)=>slow?fadeThrough(run):run();
+const transit=(slow,run,card)=>(slow||card)?fadeThrough(run,card):run();
+
+/* ---------- the card ----------
+   What a chapter ends on. The black is already up, so the card takes the
+   console down with it and writes its words on nothing: no bars, no log, no
+   objective, no feed. Nothing answers until the operator presses something,
+   and then it goes back the way it came.
+
+   Each card is shown once in a run. A shaft that reads PROLOGUE COMPLETE is
+   still a shaft: the unit may ride back up it, and what it rode out of does
+   not end twice. */
+const cardShown=new Set();
+const card={on:false, go:null};
+function showCard(c,done){
+  const words=String((c&&c.title)||'').trim();
+  if(!words||cardShown.has(words))return false;
+  cardShown.add(words);
+  const el=$('#card');
+  $('#cardTitle').textContent=words;
+  $('#cardSub').textContent=String((c&&c.sub)||'').trim();
+  document.body.classList.add('carded');
+  el.classList.add('up');
+  /* one frame on the far side of display:grid, or the fade-in never runs */
+  requestAnimationFrame(()=>{el.classList.add('on');
+    setTimeout(()=>el.classList.add('ready'),900)});
+  card.on=true; card.go=null;
+  /* the prompt does not answer before the words have finished arriving */
+  setTimeout(()=>{if(card.on)card.go=()=>dismissCard(done)},1100);
+  return true;
+}
+function dismissCard(done){
+  if(!card.on)return;
+  card.on=false; card.go=null;
+  const el=$('#card');
+  el.classList.remove('on','ready');
+  setTimeout(()=>{
+    el.classList.remove('up');
+    document.body.classList.remove('carded');
+    /* the console comes back up before the black over it does */
+    setTimeout(done,420);
+  },800);
+}
 
 /* ---------- terminals ---------- */
 const term={on:false, read:new Set()};
@@ -1832,14 +1965,16 @@ function openTerminal(x,y){
   const p=propsOf(x,y), title=p.title||'UNLABELLED CONSOLE';
   world.lit.set(K(x,y),performance.now());
   if(!powered(x,y))return say(deadLine('Console',x,y,''),'dim');
+  if(!term.read.has(K(x,y))){term.read.add(K(x,y));say('Console reads: '+title+'.','dim')}
+  /* a console with filing on it opens the machine instead of the record */
+  if(p.desktop&&openDesktop(x,y))return;
   term.on=true;
   $('#tinyTitle').textContent=title.toUpperCase();
   $('#tinyBody').innerHTML=String(p.text||'No readable record.')
     .split(/\n+/).map(l=>'<p>'+esc(l)+'</p>').join('');
-  $('#tinyNote').textContent=p.desktop?'DESKTOP PRESENT — INTERFACE NOT YET BUILT':'READ ONLY';
+  $('#tinyNote').textContent=p.desktop?'DESKTOP PRESENT — NOTHING FILED ON IT':'READ ONLY';
   $('#tiny').classList.remove('note');
   $('#tiny').classList.add('on');
-  if(!term.read.has(K(x,y))){term.read.add(K(x,y));say('Console reads: '+title+'.','dim')}
 }
 /* ---------- notes ----------
    The same small window a console opens, with nothing behind it: paper carries
@@ -1858,10 +1993,169 @@ function readNote(x,y){
 }
 function closeTerminal(){term.on=false;$('#tiny').classList.remove('on','note')}
 
+/* ---------- desktops ----------
+   A console an author marked `desktop` is not read off the glass. It opens
+   the machine the glass is wired to, and the unit goes through its filing the
+   way whoever sat here did: folders, what is written, what was drawn, and now
+   and then something shut.
+
+   The filing is one folder deep on purpose. A crew terminal is not a
+   filesystem and the unit is not browsing it for pleasure — it is looking for
+   one thing, and everything else on the desktop is what it has to read past
+   to find out there is one thing.
+
+   A locked file wants a password, which is never on the machine holding it:
+   it is written on something else on the deck. On a console carrying a card,
+   the file giving way is the end of the segment. */
+const desk={on:false, src:'term', x:0, y:0, files:[], folder:'', sel:0, open:null,
+            ask:false, typed:'', msg:'',
+            /* what has already given way, by console and name. It outlives
+               closing the desktop and a re-initialise both: the password is
+               the operator's now, and pretending otherwise is busywork */
+            cracked:new Set()};
+/* Where a file lives, for the record of what has already given way. A
+   console's filing is that console's; the unit's own store is the unit's,
+   under one name wherever it is brought up. */
+const fileKey=f=>(desk.src==='os'?'OS':desk.x+','+desk.y)+'/'+f.folder+'/'+f.name;
+const cracked=f=>desk.cracked.has(fileKey(f));
+
+function openDesktop(x,y){
+  const p=propsOf(x,y), files=ISO.filesOf(MAP,x,y);
+  /* a console marked for a desktop that was never given one still has its
+     record, so it reads the way it always did rather than opening on nothing */
+  if(!files.length)return false;
+  return raiseDesk('term',files,String(p.title||'DESKTOP'),x,y);
+}
+/* ---------- [O]: the unit's own store ----------
+   The same screen, brought up on nothing. There is no console to walk to and
+   no circuit to wait on: the chassis carries this one. Most decks stock it
+   with nothing and never mention it — it is a segment's business, for when
+   the unit is shut in somewhere with time on its hands. */
+function openStore(){
+  if(!game.active||game.dead)return;
+  const files=ISO.osOf(MAP);
+  if(!files.length){
+    const n=performance.now();
+    if(n-game.useLog>2500){game.useLog=n;say('Local store reads empty. Nothing filed on this run.','dim')}
+    return;
+  }
+  raiseDesk('os',files,'RECOVERY UNIT 07 \u2014 LOCAL STORE',0,0);
+}
+function raiseDesk(src,files,title,x,y){
+  desk.on=true; desk.src=src; desk.x=x; desk.y=y; desk.files=files;
+  desk.folder=''; desk.sel=0; desk.open=null; desk.ask=false; desk.typed=''; desk.msg='';
+  $('#deskTitle').textContent=title.toUpperCase();
+  $('#deskUser').textContent=src==='os'
+    ? (PLAYER.full?PLAYER.full.toUpperCase():'UNIT 07')
+    : (PLAYER.last?PLAYER.last.toUpperCase()+' \u00b7 NODE 77':'NODE 77');
+  $('#desk').classList.toggle('store',src==='os');
+  $('#desk').classList.add('on');
+  renderDesk();
+  return true;
+}
+function closeDesk(){desk.on=false;desk.open=null;desk.ask=false;$('#desk').classList.remove('on','store')}
+
+/* What the desktop is showing at this moment: the folders and the loose files
+   at the top level, or the way back out and what is inside one folder. */
+function deskRows(){
+  const out=[];
+  if(desk.folder){
+    out.push({up:true, name:'..', kind:'Back'});
+    for(const f of ISO.inFolder(desk.files,desk.folder)) out.push({file:f});
+  }else{
+    for(const name of ISO.foldersOf(desk.files)) out.push({dir:name});
+    for(const f of ISO.inFolder(desk.files,'')) out.push({file:f});
+  }
+  return out;
+}
+function renderDesk(){
+  const body=$('#deskBody');
+  $('#deskPath').textContent='/'+(desk.folder?'DESKTOP/'+desk.folder.toUpperCase():'DESKTOP');
+  /* something opened: what it says, what it was drawn as, or what it wants */
+  if(desk.open){
+    const f=desk.open;
+    if(desk.ask){
+      body.innerHTML='<p class="b">'+esc(f.name)+'</p>'+
+        '<p class="dim">This file is sealed. The machine wants the word for it.</p>'+
+        '<div id="deskPrompt"><div class="dim" style="font-size:12px;letter-spacing:.18em">PASSWORD</div>'+
+        '<div id="deskField" class="caret">'+esc('\u2022'.repeat(desk.typed.length))+'</div></div>'+
+        '<div id="deskMsg">'+esc(desk.msg)+'</div>';
+      $('#deskNote').textContent='SEALED';
+      $('#deskHint').textContent='TYPE \u00b7 [ENTER] TRY \u00b7 [ESC] BACK';
+    }else if(f.kind==='image'){
+      body.innerHTML='<p class="b">'+esc(f.name)+'</p><pre>'+esc(f.text||'Nothing rendered.')+'</pre>';
+      $('#deskNote').textContent='IMAGE';
+      $('#deskHint').textContent='[E]/[ESC] BACK';
+    }else{
+      body.innerHTML='<p class="b">'+esc(f.name)+'</p>'+
+        String(f.text||'The record is empty.').split(/\n+/).map(l=>'<p>'+esc(l)+'</p>').join('');
+      $('#deskNote').textContent=f.kind==='locked'?'OPEN':'READ ONLY';
+      $('#deskHint').textContent='[E]/[ESC] BACK';
+    }
+    body.scrollTop=0;
+    return;
+  }
+  const rows=deskRows();
+  if(desk.sel>=rows.length)desk.sel=Math.max(0,rows.length-1);
+  body.innerHTML=rows.map((r,i)=>{
+    const sel=i===desk.sel?' sel':'';
+    if(r.up)  return '<div class="file'+sel+'" data-i="'+i+'"><span class="g">\u2191</span>'+
+                     '<span class="nm">..</span><span class="kd">BACK</span></div>';
+    if(r.dir) return '<div class="file'+sel+'" data-i="'+i+'"><span class="g">\u25a4</span>'+
+                     '<span class="nm">'+esc(r.dir)+'</span><span class="kd">FOLDER</span></div>';
+    const f=r.file, k=ISO.FILE_KINDS[f.kind]||ISO.FILE_KINDS.doc;
+    const shut=f.kind==='locked'&&!cracked(f), was=f.kind==='locked'&&cracked(f);
+    return '<div class="file'+sel+(shut?' shut':'')+(was?' open':'')+'" data-i="'+i+'">'+
+           '<span class="g">'+k.glyph+'</span><span class="nm">'+esc(f.name)+'</span>'+
+           '<span class="kd">'+(shut?'SEALED':k.name.toUpperCase())+'</span></div>';
+  }).join('')||'<p class="dim">Nothing on the desktop.</p>';
+  const n=desk.files.length, d=ISO.foldersOf(desk.files).length;
+  $('#deskNote').textContent=n+' FILE'+(n===1?'':'S')+(d?' \u00b7 '+d+' FOLDER'+(d===1?'':'S'):'');
+  $('#deskHint').textContent='[W]/[S] SELECT \u00b7 [E] OPEN \u00b7 [ESC] '+(desk.folder?'UP':'CLOSE');
+  const on=body.querySelector('.file.sel');
+  if(on)on.scrollIntoView({block:'nearest'});
+  body.querySelectorAll('.file').forEach(el=>el.onclick=()=>{desk.sel=+el.dataset.i;deskOpen()});
+}
+/* [E] on whatever is selected: into a folder, back out of one, or into a file. */
+function deskOpen(){
+  const r=deskRows()[desk.sel];
+  if(!r)return;
+  if(r.up){desk.folder='';desk.sel=0;return renderDesk()}
+  if(r.dir){desk.folder=r.dir;desk.sel=0;return renderDesk()}
+  const f=r.file;
+  desk.open=f;
+  desk.ask=(f.kind==='locked'&&!cracked(f));
+  desk.typed='';desk.msg='';
+  renderDesk();
+}
+function deskBack(){
+  if(desk.open){desk.open=null;desk.ask=false;desk.typed='';desk.msg='';return renderDesk()}
+  if(desk.folder){desk.folder='';desk.sel=0;return renderDesk()}
+  closeDesk();
+}
+/* What the operator typed, against what the file wants. A file with no word
+   set on it was never sealed by anyone, so anything opens it. */
+function deskTry(){
+  const f=desk.open;
+  if(!f)return;
+  const want=String(f.pass||'').trim();
+  if(want&&desk.typed.trim().toUpperCase()!==want.toUpperCase()){
+    desk.typed='';desk.msg='REJECTED. The machine does not say how close that was.';
+    return renderDesk();
+  }
+  desk.cracked.add(fileKey(f));
+  desk.ask=false;desk.typed='';desk.msg='';
+  renderDesk();
+  say('SEAL LIFTED: '+f.name+'.','b');
+  /* on filing that carries a card, that is the end of the segment */
+  const c=desk.src==='os'?ISO.osCard(MAP):cardOf(propsOf(desk.x,desk.y));
+  if(c&&String(c.title||'').trim()){closeDesk();fadeThrough(null,c)}
+}
+
 /* ---------- ending the run ---------- */
 function die(reason){
   if(game.dead)return;
-  game.dead=true;game.active=false;game.sink=0;closeTerminal();closeFusebox();cancelJump();
+  game.dead=true;game.active=false;game.sink=0;closeTerminal();closeFusebox();closeDesk();cancelJump();
   say(reason,'alert');
   say('CHASSIS UNRECOVERABLE. SIGNAL LOST.','alert');
   objective('SIGNAL LOST. [R] to re-initialise.',true);
@@ -2217,6 +2511,9 @@ const KEYMAP={KeyW:'up',ArrowUp:'up',KeyS:'down',ArrowDown:'down',KeyA:'left',Ar
 let held=[],repeatAt=0;
 addEventListener('keydown',e=>{
   if(e.metaKey||e.ctrlKey||e.altKey)return;
+  /* the card takes every key there is: while it is up there is nothing else
+     on the screen for one to mean */
+  if(card.on){e.preventDefault();if(!e.repeat&&card.go)card.go();return}
   if(state==='menu'){e.preventDefault();startGame();return}
   if(state==='dive'){if(dive)dive.speed=3;return}
   if(state==='poem'){if(e.code==='Enter'||e.code==='Space'||e.code==='NumpadEnter'){e.preventDefault();endPoem()}return}
@@ -2228,6 +2525,40 @@ addEventListener('keydown',e=>{
     return;
   }
   if(state==='console'){
+    /* while the desktop is up the keys belong to the machine, not the deck —
+       and while it is asking for a password they are letters rather than
+       commands, so [E] types an e */
+    if(desk.on){
+      e.preventDefault();
+      if(desk.ask){
+        if(e.repeat&&e.code!=='Backspace')return;
+        if(e.code==='Enter'||e.code==='NumpadEnter')return deskTry();
+        if(e.code==='Escape')return deskBack();
+        if(e.code==='Backspace'){desk.typed=desk.typed.slice(0,-1);return renderDesk()}
+        if(e.key&&e.key.length===1&&desk.typed.length<32){desk.typed+=e.key;return renderDesk()}
+        return;
+      }
+      if(e.repeat)return;
+      if(e.code==='KeyO'&&desk.src==='os')return closeDesk();
+      if(e.code==='Escape'||e.code==='Backspace')return deskBack();
+      if(e.code==='KeyE'||e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')
+        return desk.open?deskBack():deskOpen();
+      /* a long record is walked down rather than selected through */
+      if(desk.open){
+        const b=$('#deskBody');
+        if(dir==='up')  b.scrollTop-=b.clientHeight*.5;
+        if(dir==='down')b.scrollTop+=b.clientHeight*.5;
+        return;
+      }
+      const rows=deskRows().length;
+      if(rows&&(dir==='up'||dir==='down')){
+        desk.sel=(desk.sel+(dir==='up'?rows-1:1))%rows;
+        return renderDesk();
+      }
+      if(dir==='left')return deskBack();
+      if(dir==='right')return deskOpen();
+      return;
+    }
     /* while the fusebox is up the deck keys belong to it */
     if(fuse.on){
       e.preventDefault();
@@ -2250,6 +2581,7 @@ addEventListener('keydown',e=>{
     }
     if(e.code==='KeyE'){e.preventDefault();if(!e.repeat)interact();return}
     if(e.code==='KeyM'){e.preventDefault();if(!e.repeat)toggleTracker();return}
+    if(e.code==='KeyO'){e.preventDefault();if(!e.repeat)openStore();return}
     if(e.code==='KeyQ'){e.preventDefault();if(!e.repeat)dropItem();return}
     if(e.code==='Escape'&&term.on){e.preventDefault();closeTerminal();return}
     if(e.code==='KeyR'&&game.dead){e.preventDefault();if(!e.repeat)respawn();return}
@@ -2284,6 +2616,8 @@ document.querySelectorAll('#dpad button').forEach(b=>b.addEventListener('pointer
 ['pointerup','pointercancel'].forEach(ev=>
   addEventListener(ev,()=>{if(jump.on)releaseJump()}));
 $('#tiny').addEventListener('pointerdown',e=>{if(e.target===$('#tiny'))closeTerminal()});
+$('#card').addEventListener('pointerdown',()=>{if(card.go)card.go()});
+$('#desk').addEventListener('pointerdown',e=>{if(e.target===$('#desk'))closeDesk()});
 
 let last=performance.now();
 function loop(now){

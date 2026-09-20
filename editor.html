@@ -47,6 +47,12 @@ input[type=text]{width:100%}
 .slot{display:flex;gap:4px;align-items:center;margin-bottom:3px}
 .slot input[type=text]{flex:1;width:auto;min-width:0}
 .slot select{max-width:96px}
+/* a row with something written in it: the short fields stay on one line and
+   what was written gets the width of the pane under them */
+.slot.tall{flex-wrap:wrap;align-items:center;border:1px solid var(--gfaint);
+  padding:4px 5px;margin-bottom:5px}
+.slot.tall input[type=text]{flex:1 1 84px}
+.slot.tall textarea{flex:1 0 100%;min-height:96px;margin-top:2px}
 .sw{width:17px;height:17px;flex:none;border:1px solid var(--gdim);display:grid;place-items:center;font-size:12px;line-height:1}
 .k{color:var(--gdim);margin-left:auto;font-size:12px}
 .dim{color:var(--gdim)}
@@ -139,6 +145,11 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
           <div><button data-edge="e" data-d="1">+</button><button data-edge="e" data-d="-1">−</button><div class="dim">E</div></div>
           <span></span><div><button data-edge="s" data-d="1">+</button><button data-edge="s" data-d="-1">−</button><div class="dim">S</div></div><span></span>
         </div>
+      </div>
+
+      <div class="sec" id="storeSec">
+        <h4 id="storeHead" style="cursor:pointer">LOCAL STORE <span class="dim" id="storeCount"></span></h4>
+        <div id="store" style="display:none"></div>
       </div>
 
       <div class="sec">
@@ -235,6 +246,7 @@ function changed(save){
     : '<li class="ok">Survey clean.</li>';
   $('#mW').value = map.w; $('#mH').value = map.h;
   drawInspector();
+  drawStore();
   if(save !== false) autosave();
 }
 
@@ -379,6 +391,31 @@ function drawInspector(){
   }
   for(const key in schema) box.appendChild(field(key, schema[key], vals[key]));
 }
+/* ---------- the deck's own store ----------
+   Not a block, so it is not in the inspector: [O] brings it up anywhere on
+   the deck. Same widgets as everything else, written straight onto the map. */
+function drawStore(){
+  const box = $('#store');
+  box.innerHTML = '';
+  const schema = ISO.OS_SCHEMA, os = map.os || {files:[], card:'', cardsub:''};
+  const write = (key, v) => {
+    pushUndo();
+    map.os = Object.assign({files:[], card:'', cardsub:''}, map.os, {[key]:v});
+    changed();
+  };
+  for(const key in schema)
+    box.appendChild(field(key, schema[key], os[key], v=>write(key, v)));
+  if(!(map.os && map.os.files.length)){
+    const note = document.createElement('div');
+    note.className = 'dim';
+    note.style.lineHeight = '1.3';
+    note.textContent = 'Empty. [O] says so and nothing else — most decks leave it that way.';
+    box.appendChild(note);
+  }
+  const n = (map.os && map.os.files.length) || 0;
+  $('#storeCount').textContent = n ? '\u00b7 '+n+' file'+(n===1?'':'s')+' \u00b7 [O]' : '\u00b7 empty';
+}
+
 /* What this square is, as a list of everything it could be instead. */
 function swapField(ch){
   const wrap = document.createElement('div');
@@ -400,13 +437,13 @@ function swapField(ch){
   wrap.append(label, sl);
   return wrap;
 }
-function field(key, spec, value){
+function field(key, spec, value, writer){
   const wrap = document.createElement('div');
   wrap.className = 'fld';
   const label = document.createElement('span');
   label.textContent = spec.label || key;
   wrap.appendChild(label);
-  const write = v => { pushUndo(); ISO.setProp(map, sel.x, sel.y, key, v); changed() };
+  const write = writer || (v => { pushUndo(); ISO.setProp(map, sel.x, sel.y, key, v); changed() });
 
   if(spec.type === 'bool'){
     const b = document.createElement('button');
@@ -460,9 +497,18 @@ function field(key, spec, value){
       const n = document.createElement('span');
       n.className = 'dim'; n.textContent = (i+1);
       line.appendChild(n);
+      /* a row holding written matter is laid out down the pane rather than
+         across it: a desktop file is a name, a folder and a page of text */
+      if(Object.values(fields).some(f=>f.type === 'lines')) line.className = 'slot tall';
       for(const k in fields){
         const f = fields[k];
-        if(f.type === 'pick'){
+        if(f.type === 'lines'){
+          const ta = document.createElement('textarea');
+          ta.placeholder = f.label || k; ta.title = f.label || k;
+          ta.value = row[k] == null ? '' : row[k];
+          ta.onchange = ()=>put(i, k, ta.value);
+          line.appendChild(ta);
+        }else if(f.type === 'pick'){
           const sl = document.createElement('select');
           (f.opts || []).forEach(o=>{
             const n2 = document.createElement('option');
@@ -538,6 +584,13 @@ function field(key, spec, value){
 }
 
 /* ---------- canvas ---------- */
+/* Folded away by default: a deck's store is stocked once, if at all, and the
+   tools under it are reached on every other click. */
+$('#storeHead').addEventListener('click', ()=>{
+  const box = $('#store');
+  box.style.display = box.style.display === 'none' ? '' : 'none';
+});
+
 const c = $('#c'), cx = c.getContext('2d');
 let W=0, H=0, D=1;
 function fitCanvas(){
