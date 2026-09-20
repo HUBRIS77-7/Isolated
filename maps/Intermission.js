@@ -9,27 +9,25 @@ ISO.register({
   "name": "Service Car 14",
   "w": 23,
   "h": 13,
-  "spawn": {"x": 1, "y": 6},
+  "spawn": {"x": 11, "y": 1},
   "beacons": [],
   "carriage": true,
   "os": {
-    "card": "THE CAR STOPS",
-    "cardsub": "Chapter One — the deck beyond it is not yet built",
+    "card": "PROLOUGE COMPLETE",
+    "cardsub": "BEGIN CHAPTER ONE?",
     "files": [
-      {"kind":"doc","name":"READ ME FIRST.DOC","folder":"","pass":"","text":"RECOVERY UNIT 07 — LOCAL STORE\n----\nThis is everything the chassis came down with. It is not much. Long-term travel took the rest of it.\n----\nOne file on this store will not open. It was sealed before the unit was woken, by something with the clearance to seal it.\n\nThe word that opens it is not kept on this store. Whoever sealed it was not careless. But they were in a hurry, and a hurry leaves things lying about in the other files.\n\nRead everything. The word is in here somewhere, written down by someone who did not know they were writing it down."},
-      {"kind":"locked","name":"CYGNUS.SEALED","folder":"","pass":"UBC-1","text":"ATTACHED TO RECOVERY UNIT 07 PRIOR TO WAKE. ORIGIN NOT ON FILE.\n----\nYou were not sent to recover the ship.\n\nThe ship is not recoverable. Everyone who could have told you that is in the water you just walked out of, and has been for some time.\n\nYou were sent to recover what came aboard with it. It is still aboard. It has had twenty-five years and it has not been idle.\n\nIt knows the unit is awake. It has known since the pumps came back on.\n\nKeep walking.\n- Cygnus"},
-      {"kind":"doc","name":"SERVICE RECORD.DOC","folder":"PERSONNEL","pass":"","text":"RECOVERY UNIT 07 — SERVICE RECORD\n----\nCHASSIS: intact. Long-term travel damage minimal.\nOPTICS: line of sight only. Last reading held five seconds.\nCARRIER: no long-range signal. Nothing leaves this hull.\n----\nSERVO BAY: empty.\nSENSOR BAY: empty.\n----\nBoth bays were stocked on departure. Neither was stocked on arrival. The manifest for the difference is on a deck this unit has not been to."},
-      {"kind":"doc","name":"NIGHT SHIFT MANIFEST.DOC","folder":"PERSONNEL","pass":"","text":"WATER TREATMENT — NIGHT SHIFT, TRAVEL YEAR 25\n----\n14 assigned.\n14 reported for shift.\n0 reported off it.\n----\nNo transfer requests on file. No leave on file. No bodies logged to Medical.\n\nThe shift is still marked ON DUTY. Twenty-five years is a long shift."},
-      {"kind":"doc","name":"SEAL NOTICE.DOC","folder":"LOGS","pass":"","text":"AUTOMATED: FILE SEALED ON THIS STORE\n----\nFILE: CYGNUS.SEALED\nSEALED BY: ENGINEERING COMMAND, CLEARANCE WITHHELD\n----\nPER STANDING ORDER, A SEAL SET IN TRANSIT TAKES ITS WORD FROM THE LAST ANOMALY DESIGNATION ON THE REPORT THAT PROMPTED IT.\n\nTHE REPORT IS FILED WITH THIS STORE. THE DESIGNATION IS PRINTED ON IT.\n\nENGINEERING COMMAND RECOMMENDS THE WORD BE COMMITTED TO MEMORY AND THE REPORT DESTROYED.\n----\nThe report was not destroyed."},
-      {"kind":"doc","name":"DESCENT LOG.DOC","folder":"LOGS","pass":"","text":"CAR 14 — DESCENT\n----\n00:00  Doors seal. Car departs Water Treatment, lower deck.\n00:04  Car passes a deck. Board has no number for it.\n00:11  Car passes a deck. Board has no number for it.\n00:19  Car passes a deck. Board has no number for it.\n----\nThe log is still writing. The unit is going to be in here a while."},
-      {"kind":"image","name":"PURITY REPORT 721.IMG","folder":"IMAGERY","pass":"","text":"  +------------------------------------------+\n  |  L.S.V MARE  /  WATER TREATMENT PLANT    |\n  |  PURITY REPORT 721   -   NIGHT SHIFT     |\n  +------------------------------------------+\n  |  TANK 07 ......................... PASS  |\n  |  TANK 09 ......................... PASS  |\n  |  TANK 11 ......................... PASS  |\n  |  TANK 12 ......................... HOLD  |\n  |                                          |\n  |  ANOMALY DESIGNATION ........... UBC-1   |\n  |  CLASSIFIED BY ....... ENGINEERING CMD   |\n  |                                          |\n  |  HANDWRITTEN, IN THE MARGIN:             |\n  |     \"it is not a contaminant\"            |\n  +------------------------------------------+"},
-      {"kind":"image","name":"CHASSIS SCHEMATIC.IMG","folder":"IMAGERY","pass":"","text":"        RECOVERY UNIT 07  /  CHASSIS\n     +----------------------------------+\n     |            [ OPTIC ]             |\n     |     ________________________     |\n     |    |  MANIPULATOR ....... 1  |    |\n     |    |  SERVO BAY ........ --  |    |\n     |    |  SENSOR BAY ....... --  |    |\n     |    |  CARRIER .......... --  |    |\n     |    |________________________|    |\n     |          |          |            |\n     |        [ T ]      [ T ]          |\n     +----------------------------------+\n         TRACK ASSEMBLY  /  4 SEGMENT"}
+      {"kind":"doc","name":"COMMUNICATIONS LOG","folder":"LOGS","pass":"","text":"COMMS LOG\n----\n00:00; COMMS WITH INSTELLAR COMMUNICATIONS NETWORK DISRUPTED.\n00:20; ATTEMPTING ACCESS TO ON-BOARD LONG-RANGE COMMUNICATIONS ANTENNA\n00:22; L-RCA ACCESS FAILED.\n--\n02:30; ATTEMPTING TO ACCESS SHIP-WIDE COMMUNICATIONS ARRAY\n02:35; COMMUNICATIONS ARRAY DAMAGED.\n02:45; COMMUNICATION RECIEVED FROM UNKNOWN SOURCE.\n02:55; QUARANTINED. SOURCE IDENTIFIED AS ONBOARD SHIP AI, CYGNUS."},
+      {"kind":"locked","name":"SEALED COMMUNICATION ","folder":"","pass":"CYGNUS","text":"CONNECTION ESTABLISHED\nSOURCE: L.S.V COMMAND CORE, CYGNUS\n---\nHello?\nI don't think you have transmission capabilities considering your tumble through the roof in Engineering, but you should be able to pick this up.\n\nI'm Cygnus, the Mare's AI Core for their journey to 61 Cygnus and future travels across the system and constellation. We've been adrift for 863 years.\n\n25 years into our voyage, we were... boarded... At least, that's what I think happened. Whatever got onboard slaughtered the crew slowly, and it's been using the biomass from their bodies to fuel themselves until we get to 61 Cygni.\n\nYou have to get out of here. The fact you made it out of Engineering is testament enough. There should be a shuttle in the deployment bay. It has long range comms, and enough FTL fuel to get you back to Sol.\n\nBe safe.\n\n-CYGNUS \n"},
+      {"kind":"doc","name":"TRAVEL LOG","folder":"LOGS","pass":"","text":"[LOG BEGIN]\n\nINITIAL DEPLOYMENT: [ERROR; UNKNOWN]\n\nNOTABLE EVENT: Gravitational Slingshot off of Procyon\n\nNOTABLE EVENT: Gravitational Slingshot off of Sirius\n\nNOTABLE EVENT: Entered SOL's SOI. Contacted by SAFFRON. Permitted Passage.\n\nNOTABLE EVENT: Gravitational Slingshot off of Ross 248. Now heading upwards.\n\nNOTABLE EVENT: Collision with unknown object.\n\n[LOG ENDS]"},
+      {"kind":"doc","name":"Thoughts","folder":"PERSONAL","pass":"","text":"...\n...\n...\nI'm scared of this place.\nI don't like it.\nI've never been somewhere with the dead before.\nThe creatures are fine, but not the bodies.\nNo no no.\nNever bodies.\n---\nAt least I'm not alone out here. Going to try and find a way up to the ship's command. Probably find a map."},
+      {"kind":"doc","name":"Memories","folder":"Personal","pass":"","text":"Fields of glistening wheat.\n...\nHmmm.\nNever been to planet for more than a couple of hours before. Especially not one with wheat.\n...\nHow strange."},
+      {"kind":"doc","name":"SHIP-WIDE COMMUNICATIONS LOG","folder":"RECOVERED DOCUMENTS","pass":"","text":"07-09-25 (7 months, 9 days, 25 years into journey)\n------------------------\nENG-COM-NET: FAILED\nAGRI-COM-NET: UP.\nSEC-COM-NET: FAILED\nSCI-COM-NET: LOCKED DOWN\nGEN-COM-NET: UP\nCOMMAND-COM-NET: VIEW-ONLY\nPORT-COM-NET: FAILED."},
+      {"kind":"doc","name":"Agriculture Resistence","folder":"RECOVERED DOCUMENTS","pass":"","text":"All survivors of D-Day, Agriculture Dome #12 is welcoming refuge. We can take up to 1200 more people before we will have to close down entry. \n\nDomes 1 through 7 have fallen to the invasion.\n\nDomes 8 through 9 are not open to refuge. \n\nSomething has happened to Domes 10 through 11."}
     ]
   },
   "props": {
     "11,0": {"title":"CAR 14 — FLOOR INDICATOR","text":"SERVICE CAR 14\n----\nDEPARTED: WATER TREATMENT, LOWER DECK\nDESCENDING.\n----\nDOORS: SEALED FOR TRANSIT\nCALL PLATE: NO ANSWER UNTIL THE CAR IS STOPPED\n----\nThe indicator counts nothing. Whatever deck this car is passing, it is not one the board has a number for.","desktop":false,"files":[],"card":"","cardsub":"","circuit":""},
-    "22,6": {"title":"CAR 14 — MAINTENANCE PANEL","text":"MAINTENANCE PANEL, SERVICE CAR 14\n----\nNO FAULTS LOGGED. NO FAULTS LOGGABLE: THE PANEL WAS NEVER WIRED TO ANYTHING BUT ITSELF.\n----\nThere is nothing on this glass worth the walk. Whatever the unit has to read on the way down, it brought with it. [O] brings the local store up.","desktop":false,"files":[],"card":"","cardsub":"","circuit":""},
-    "13,8": {"title":"HANDWRITTEN NOTE","text":"Whoever reads this after me: the lift only runs the one way once the pumps are down. Sit tight in the hold.\nIt is not a long wait. It only feels like one.\nIf you have got something to read, read it."}
+    "13,8": {"title":"Poison?!?!","text":"THAT'S HOW IT ENDS?\nPOISON?\nFUCKING POISON?\nThose damn stalking bastards!\nTheir touch is toxic, FATAL.\nI felt off after I rushed past a horde of them in Engineering Command, but... FUCK!\nI can't die here, not like this.\n\nFUCK FUCK FUCK\n\n- Martin"}
   },
   "rows": [
     "###########c###########",
@@ -38,10 +36,10 @@ ISO.register({
     "#=====================#",
     "#=====================#",
     "#=====================#",
-    "#=====================c",
+    "#=====================#",
     "#=====================#",
     "#============n========#",
-    "#====================,#",
+    "#===========SXX======,#",
     "#===================,,#",
     "#===BB===========B====#",
     "#######################"
