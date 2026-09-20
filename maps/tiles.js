@@ -106,20 +106,21 @@ const JUMP = 4;
    The tile says which kind it is and everything about how that kind behaves
    is read from here, so a second creature costs one entry here and one tile
    below.
-   None of this waits on the unit. A contact with nothing to follow goes
-   looking: it picks somewhere on the deck it can get to, walks there, stands
-   a moment, and picks somewhere else. Whether the unit has ever moved does
-   not come into it.
+   None of this waits on the unit. Every contact walks on its own time, in
+   every mood it has: with nothing to follow it goes looking — picks
+   somewhere on the deck it can get to, walks there, stands a moment, and
+   picks somewhere else — and with something to follow it closes. Whether
+   the unit has moved never decides whether a contact moves.
 
-     moves  — what drives it once it is following. 'clock': a pace of its
-              own, so it closes whether the unit moves or not. 'motion': it
-              is given exactly as much ground to cover as the unit covers, so
-              it is still while the unit is still — which is the whole of
-              the defence against one. Neither setting touches how it
-              wanders; a contact always prowls on its own time
+     hunts  — what it hunts by. 'motion': it finds the unit by movement and
+              nothing else, so a unit that has been still for a few seconds
+              is a unit it loses the trail of and wanders away from, and one
+              it has caught up with it can only strike while that unit is
+              moving. Leave it out and it hunts whatever is there, still or
+              not
      speed  — tiles a second it crosses the deck at while it is following.
-              For a motion-keyed one this is only how quickly it spends what
-              the unit's own movement has given it, never how far it gets
+              A contact quicker than the unit is one no open ground escapes,
+              so anything that kills wants to be slower than the chassis
      prowl  — tiles a second while it is only wandering. Slower than the
               other, because looking for something is not the same as having
               found it
@@ -135,24 +136,30 @@ const JUMP = 4;
      calm   — squares it wants between itself and the unit before it will
               stop running, and the ground it holds for a while afterwards
               rather than wandering straight back in
+     bars   — tile ids it will not set a foot on, however walkable they are.
+              A contact barred from doorways is a contact a room with a door
+              on it keeps out
      kills  — what the log says when it reaches the unit, or false for one
               that never does — a contact that only ever follows
      notice — the line the first reading of one writes
      spooked— the line it writes when it breaks and runs
+     cools  — the line one that hunts by movement writes when the trail it
+              was following stops moving and goes cold
      fill, line, glyph — how it draws: a body, its edge, and the mark it
               carries. Neither of them is drawn as a square, because neither
               of them stands on one */
 const FOES = {
-  stalker: {id:'stalker', name:'Stalker', moves:'clock', speed:5, prowl:2.8,
+  stalker: {id:'stalker', name:'Stalker', speed:5, prowl:2.8,
             wake:18, keep:3, shy:2, bolt:2.1, calm:9, kills:false, glyph:'\u03a8',
             fill:'rgba(255,180,74,.18)', line:'rgba(255,180,74,.85)',
             notice:'CONTACT. Something is keeping pace with the unit. It comes no closer.',
             spooked:'CONTACT BREAKS AND RUNS. It will not be walked up to.'},
-  hunter:  {id:'hunter',  name:'Hunter',  moves:'motion', speed:9, prowl:2.2,
-            wake:14, keep:0, glyph:'\u039b',
-            kills:'CONTACT CLOSED THE LAST SQUARE. CHASSIS OPENED.',
+  hunter:  {id:'hunter',  name:'Hunter',  hunts:'motion', speed:6.5, prowl:2.2,
+            wake:14, keep:0, glyph:'\u039b', bars:['door'],
+            kills:'CONTACT STRUCK WHAT IT HEARD MOVING. CHASSIS OPENED.',
             fill:'rgba(255,59,47,.2)', line:'rgba(255,59,47,.9)',
-            notice:'CONTACT. It reads still. It was not still a moment ago.'},
+            notice:'CONTACT. It has the unit. It is coming.',
+            cools:'CONTACT LOSES THE TRAIL. It is looking for something that has stopped.'},
 };
 
 /* ---------- fuses ----------
