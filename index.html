@@ -650,7 +650,7 @@ function stashDeck(){
                     ways:new Map([...world.ways].map(([k,w])=>[k,w.map(o=>Object.assign({},o))])),
                     drops:new Map(world.drops),
                     trams:world.trams.map(t=>Object.assign({},t)),
-                    foes:world.foes.map(f=>Object.assign({},f)),
+                    foes:world.foes.map(foeCopy),
                     entry:{x:level.entry.x, y:level.entry.y}});
 }
 function restoreDeck(d){
@@ -662,7 +662,7 @@ function restoreDeck(d){
   world.trams=d.trams.map(t=>Object.assign({},t));
   /* a deck is left standing as it was, and whatever was following the unit
      across it is still standing where it stopped */
-  world.foes=d.foes.map(f=>Object.assign({},f));
+  world.foes=d.foes.map(foeCopy);
   world.lit.clear();
   sight.live.clear(); sight.seen.clear();     // optical memory does not ride the car
   level.entry={x:d.entry.x, y:d.entry.y};
@@ -1412,16 +1412,28 @@ function checkFooting(){
    it is given exactly as much ground to cover as the unit covers, and is
    still while the unit is still.
 
-   Neither of them lives on the grid the way the unit does. A contact holds a
+   Neither of them waits on the unit to exist. A contact that has not noticed
+   anything goes looking: it picks somewhere on the deck it can reach, walks
+   there, stands a moment, and picks somewhere else, whether the unit has ever
+   moved or not. What the unit's own movement decides is only how one of them
+   closes once it has something to close on.
+
+   Nor does either live on the grid the way the unit does. A contact holds a
    real position — `rx`, `ry`, in tiles — and crosses the deck at its own
    speed; the grid is only what it steers by. `x`, `y` is the square it is
    making for, and it chooses the next one the moment it arrives, so what the
    feed draws is something walking rather than something jumping from square
    to square. */
+/* A contact, copied off a deck or back onto one. The route it is walking is a
+   list of its own, so it is copied rather than shared — a deck put away
+   must not go on being walked by the contact the unit took away with it. */
+const foeCopy=f=>Object.assign({},f,{path:f.path?f.path.slice():null});
 function makeFoe(kind,x,y,p){
   const d=ISO.FOES[kind];
-  return {kind, x, y, rx:x, ry:y, credit:0, vis:0, awake:false, met:false,
-          moved:-1e9, wake:((p&&p.wake)|0)||d.wake, label:(p&&p.label)||''};
+  return {kind, x, y, rx:x, ry:y, hx:x, hy:y, credit:0, vis:0, met:false,
+          mood:'roam', path:null, rest:Math.random()*1.5, flee:0, wary:0, said:-1e9,
+          moved:-1e9, wake:((p&&p.wake)|0)||d.wake, range:(p&&p.range)|0,
+          label:(p&&p.label)||''};
 }
 const foeDef=f=>ISO.FOES[f.kind]||{};
 /* The square a contact counts as being in: the one it is making for, and the
@@ -1432,10 +1444,12 @@ const foeIn=(f,x,y)=>(f.x===x&&f.y===y)||
 const foeAt=(x,y)=>world.foes.find(f=>foeIn(f,x,y))||null;
 /* Ground a contact will put a foot on: whatever the unit could stand on, less
    anything that would end it there. A contact is no better over a pit than
-   the chassis is. */
+   the chassis is, and it will not set foot on a rail at all — neither on
+   the platform nor on the span it has left. So a platform is ground only the
+   unit trusts, and riding one is a way off a deck nothing follows it onto. */
 function foeGround(x,y){
   if(!ISO.inside(MAP,x,y)||!walkableAt(x,y))return false;
-  if(tramOn(x,y))return true;                          // the platform is floor
+  if(tileDef(x,y).signal==='move')return false;
   const t=bodyDef(x,y);
   return !t.deadly&&!t.fall;
 }
@@ -1464,57 +1478,158 @@ function foeFlow(){
   flow={key, d};
   return d;
 }
-/* Whether it is following at all. It takes an interest inside its own range
-   and holds it well past the same number, so one does not switch on and off
-   while the unit paces the edge of the reading. */
-function foeAwake(f){
-  const here=foeFlow().get(K(f.x,f.y));
-  if(here!==undefined&&here<=f.wake){
-    if(!f.awake){
-      f.awake=true;
-      if(!f.met){f.met=true;say(foeDef(f).notice,'alert')}
+/* ---------- what mood it is in ----------
+   Three, and the whole of a contact's behaviour hangs off which one it is in.
+   `roam` is the one it starts in and comes back to: it has nothing to do with
+   the unit at all, and does not wait on it — it goes looking. `follow` is
+   once the unit is inside its range. `scatter` is the one a shy thing drops
+   into when the unit walks up on it, and it runs until it has the ground back
+   that it wanted. */
+const SCATTER_FOR=2.4;                     // seconds a thing that breaks keeps running
+const WARY_FOR=6;                          // and how long afterwards it will not come back in
+function foeMood(f,dt){
+  const d=foeDef(f), here=foeFlow().get(K(f.x,f.y));
+  if(f.rest>0)f.rest=Math.max(0,f.rest-dt);
+  if(f.wary>0)f.wary=Math.max(0,f.wary-dt);
+  if(f.mood==='scatter'){
+    f.flee-=dt;
+    /* far enough, or run out of fright */
+    if(f.flee<=0||here===undefined||here>=(d.calm||8)){
+      f.mood=(here!==undefined&&here<=f.wake)?'follow':'roam';
+      f.path=null;
     }
-  }else if(here===undefined||here>f.wake*1.6)f.awake=false;
-  return f.awake;
+    return;
+  }
+  if(here!==undefined&&here<=f.wake){
+    if(f.mood!=='follow'){
+      f.mood='follow'; f.path=null; f.rest=0;
+      if(!f.met){f.met=true;say(d.notice,'alert')}
+    }
+    if(d.shy&&here<=d.shy)foeScatter(f);
+  }else if(here===undefined||here>f.wake*1.6){
+    if(f.mood!=='roam'){f.mood='roam';f.path=null;f.credit=0}
+  }
 }
-/* Where it goes next, chosen when it arrives and not before. Down the sweep
-   to close, up it to back off, and across it where the ground allows, which
-   is how one that keeps its distance works its way round a corner rather than
-   standing at it. A contact already at the distance it keeps has nowhere it
-   wants to be: it comes to rest and stays there until the unit moves and the
-   reading changes, which is also why a tracker reads an empty screen for as
-   long as the unit stands still. Answers whether it found anywhere to go. */
-function foeAim(f){
+/* Approached too closely, or walked into. It drops whatever it was doing and
+   puts ground between itself and the unit as fast as it goes — and then
+   stays out of reach a while rather than wandering straight back in, because
+   something that bolts and returns in the same breath never bolted. */
+function foeScatter(f){
+  if(f.mood==='scatter')return;
+  const d=foeDef(f), n=performance.now();
+  f.mood='scatter'; f.flee=SCATTER_FOR; f.wary=WARY_FOR+Math.random()*3;
+  f.path=null; f.credit=0;
+  if(d.spooked&&n-f.said>5000){f.said=n;say(d.spooked,'dim')}
+}
+
+/* ---------- somewhere to be ----------
+   A contact that is not following is not standing about either. One sweep out
+   from where it stands, a square picked out of what the sweep reached, and
+   the way back to it kept as a list of squares — so what crosses the deck
+   reads as something searching it rather than something drifting. */
+const ROAM_REACH=18;                       // squares a contact will set out across
+const ROAM_MIN=5;                          // and the shortest trip it bothers with
+function foeRoute(f){
+  const from=K(f.x,f.y), parent=new Map([[from,null]]);
+  const home=(x,y)=>Math.max(Math.abs(x-f.hx),Math.abs(y-f.hy));
+  /* a contact given a range is tethered to the mark it was painted on. One
+     that has been carried outside its own tether — chased there, or driven
+     there giving ground — heads back towards the mark instead of picking at
+     random, which is what makes a range something an author can rely on */
+  const leash=f.range>0, out=leash&&home(f.x,f.y)>f.range;
+  let edge=[[f.x,f.y]]; const far=[]; let best=null, bestd=Infinity;
+  for(let r=1;r<=ROAM_REACH&&edge.length;r++){
+    const next=[];
+    for(const [x,y] of edge)for(const dir in DIRV){
+      const nx=x+DIRV[dir][0], ny=y+DIRV[dir][1], k=K(nx,ny);
+      if(parent.has(k)||!foeGround(nx,ny))continue;
+      parent.set(k,K(x,y)); next.push([nx,ny]);
+      if(r<ROAM_MIN&&!out)continue;
+      const h=home(nx,ny);
+      if(out){if(h<bestd){bestd=h;best=k}}
+      else if(!leash||h<=f.range)far.push(k);
+    }
+    edge=next;
+  }
+  let k=out?best:far.length?far[Math.random()*far.length|0]:null;
+  if(!k)return null;                                   // nowhere worth going
+  const path=[];
+  while(k&&k!==from){
+    const [x,y]=k.split(',').map(Number);
+    path.unshift({x,y}); k=parent.get(k);
+  }
+  return path.length?path:null;
+}
+/* The next square of a route it is walking, or a new route when the last one
+   runs out. It stands a moment at the end of each — which is what stops a
+   wandering contact reading as a thing on rails, and what takes it off the
+   tracker between trips. */
+function foeAimRoam(f){
+  if(f.rest>0)return false;
+  if(!f.path){
+    f.path=foeRoute(f);
+    if(!f.path){f.rest=1.2+Math.random()*1.8;return false}
+  }
+  const n=f.path.shift();
+  /* the route was worked out a while ago: a door may have shut across it, or
+     the unit may be standing in it now */
+  const gone=!n||!foeGround(n.x,n.y)||foeAt(n.x,n.y)||(n.x===game.px&&n.y===game.py)||
+             Math.abs(n.x-f.x)+Math.abs(n.y-f.y)!==1;
+  if(!f.path.length){f.path=null;f.rest=.7+Math.random()*2.2}
+  if(gone){f.path=null;f.rest=Math.max(f.rest,.3);return false}
+  f.x=n.x;f.y=n.y;
+  return true;
+}
+/* Where it goes next while the unit is what it is going by. Down the sweep to
+   close, up it to back off or to run, and across it where the ground allows,
+   which is how one that keeps its distance works its way round a corner
+   rather than standing at it. A contact already at the distance it keeps has
+   nowhere it wants to be and comes to rest until the reading changes.
+   Answers whether it found anywhere to go. */
+function foeAimUnit(f,flee){
   const d=foeDef(f), reach=foeFlow(), here=reach.get(K(f.x,f.y));
   if(here===undefined)return false;                    // nothing joins it to the unit
-  const keep=d.keep|0, want=here>keep?-1:here<keep?1:0, opts=[];
+  /* one still rattled from the last approach holds the ground it ran for,
+     rather than the ground it would ordinarily pace at */
+  const keep=f.wary>0?(d.calm||8):(d.keep|0);
+  const want=flee?1:here>keep?-1:here<keep?1:0;
+  const opts=[], level=[];
   for(const dir in DIRV){
     const nx=f.x+DIRV[dir][0], ny=f.y+DIRV[dir][1], v=reach.get(K(nx,ny));
     if(v===undefined||!foeGround(nx,ny)||foeAt(nx,ny))continue;
     if(v===0&&!d.kills)continue;                       // one that never closes never arrives
     if(want<0?v<here:want>0?v>here:v===here)opts.push([nx,ny]);
+    else if(flee&&v===here)level.push([nx,ny]);        // cornered: sidle rather than freeze
   }
-  if(!opts.length)return false;                        // hemmed in: it stands where it is
-  const [nx,ny]=opts[Math.random()*opts.length|0];
+  const pick=opts.length?opts:level;
+  if(!pick.length)return false;                        // hemmed in: it stands where it is
+  const [nx,ny]=pick[Math.random()*pick.length|0];
   f.x=nx;f.y=ny;
   return true;
 }
+const foeAim=f=>f.mood==='roam'?foeAimRoam(f):foeAimUnit(f,f.mood==='scatter');
 /* Ground crossed, rather than squares taken. A contact walks towards the
-   square it is making for at its own speed and picks the next one the instant
-   it gets there, so it keeps going in one motion for as long as it has
-   somewhere to be. One keyed to the unit's movement spends a ration instead:
-   it is handed a tile of it for every tile the unit covers, and when that runs
-   out it stops wherever it happens to be — between squares as readily as on
-   one. */
-function foeAdvance(f,dt,awake){
-  const d=foeDef(f), motion=d.moves==='motion';
-  let budget=(d.speed||5)*dt;
+   square it is making for at whatever its mood moves it at, and picks the
+   next one the instant it gets there, so it keeps going in one motion for as
+   long as it has somewhere to be. Only a motion-keyed one that is following
+   spends a ration instead: it is handed a tile of it for every tile the unit
+   covers, and when that runs out it stops wherever it happens to be —
+   between squares as readily as on one. Wandering never touches the ration,
+   which is why one of them is still crossing the deck while the unit stands
+   and watches it. */
+function foeAdvance(f,dt){
+  const d=foeDef(f), fast=d.speed||5;
+  const motion=f.mood==='follow'&&d.moves==='motion';
+  const speed=f.mood==='roam'?(d.prowl||fast*.55)
+             :f.mood==='scatter'?fast*(d.bolt||2)
+             :fast;
+  let budget=speed*dt;
   if(motion)budget=Math.min(budget,f.credit);
   for(let guard=0;budget>1e-5&&guard<8;guard++){
     const dx=f.x-f.rx, dy=f.y-f.ry, gap=Math.hypot(dx,dy);
     if(gap<1e-4){                                      // arrived, so choose again
       f.rx=f.x;f.ry=f.y;
-      if(!awake||!foeAim(f))break;
+      if(!foeAim(f))break;
       continue;
     }
     const go=Math.min(budget,gap);
@@ -1541,7 +1656,7 @@ function foeShove(f){
   if(!opts.length)return false;
   opts.sort((a,b)=>b[2]-a[2]);
   const [nx,ny]=opts[0];
-  f.x=nx;f.y=ny;
+  f.x=nx;f.y=ny;f.path=null;
   /* it flinches out of the square rather than waiting to be walked through */
   f.rx+=(nx-f.rx)*.4; f.ry+=(ny-f.ry)*.4;
   f.credit=Math.max(f.credit,1);                       // enough to finish giving ground
@@ -1549,13 +1664,16 @@ function foeShove(f){
   return true;
 }
 /* A contact standing in the square the unit is moving into. One that never
-   closes gives ground rather than be touched; one that does needs no help
-   finishing what it was going to do anyway. True means the move is off. */
+   closes gives ground rather than be touched — and a shy one takes being
+   walked into as every bit the reason to run that being walked up to is. One
+   that does close needs no help finishing what it was going to do anyway.
+   True means the move is off. */
 function contactInWay(nx,ny,dx,dy){
   const f=foeAt(nx,ny);
   if(!f)return false;
   const d=foeDef(f);
   if(d.kills){die(d.kills);return true}
+  if(d.shy)foeScatter(f);
   if(foeShove(f))return false;
   game.bx=dx;game.by=dy;game.bt=0;
   const n=performance.now();
@@ -1563,28 +1681,31 @@ function contactInWay(nx,ny,dx,dy){
   return true;
 }
 /* Every contact on the deck, advanced with everything else that moves on it.
-   One that is keyed to the unit's movement is advanced here too — it simply
-   has nothing to spend until the unit hands it something. `vis` is how much
-   of it the optics currently have, eased rather than switched, so one crossing
-   the edge of what the unit can see fades instead of blinking. */
+   `vis` is how much of one the optics currently have, eased rather than
+   switched, so one crossing the edge of what the unit can see fades instead
+   of blinking. A contact only ever reaches the unit while it is following
+   one: something that has not noticed the unit is something that walks round
+   it. */
 const FOE_FADE=.16;                        // seconds a contact takes to come up or go
 function updateFoes(dt){
   const stopped=!game.active||game.dead, k=Math.min(1,dt/FOE_FADE);
   for(const f of world.foes){
     f.vis=lerp(f.vis, sight.live.has(K(Math.round(f.rx),Math.round(f.ry)))?1:0, k);
     if(stopped)continue;
-    foeAdvance(f,dt,foeAwake(f));
-    if(foeDef(f).kills&&foeOnUnit(f)){die(foeDef(f).kills);return}
+    foeMood(f,dt);
+    foeAdvance(f,dt);
+    if(f.mood==='follow'&&foeDef(f).kills&&foeOnUnit(f)){die(foeDef(f).kills);return}
   }
 }
-/* The unit covered a tile of deck. Whatever is keyed to that is handed the
-   same tile to cover — one for one, which is why holding still is the only
-   thing that works on one. It spends it in its own time, which is what makes
-   the thing read as a lunge rather than a hop. */
+/* The unit covered a tile of deck. Whatever is keyed to that and following is
+   handed the same tile to cover — one for one, which is why holding still
+   is the only thing that works on one. It spends it in its own time, which is
+   what makes the thing read as a lunge rather than a hop. One that has not
+   noticed the unit is wandering on its own time and wants nothing. */
 function foesOnMove(){
   if(game.dead)return;
   for(const f of world.foes)
-    if(foeDef(f).moves==='motion'&&foeAwake(f))f.credit+=1;
+    if(foeDef(f).moves==='motion'&&f.mood==='follow')f.credit+=1;
 }
 
 /* ---------- the motion tracker ----------
