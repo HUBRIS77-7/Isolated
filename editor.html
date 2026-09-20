@@ -102,6 +102,11 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
           <span class="dim">x / y</span></div>
         <div class="row"><label><input type="checkbox" id="mCar"
           title="This deck is the inside of a car. An elevator calling it needs no elevator drawn here to come out at"> is a carriage</label></div>
+        <div class="row"><span class="dim">chapter</span>
+          <input type="number" id="mChN" style="width:56px" min="0"
+            title="Which chapter this seam opens. Orders the rows a chapter select would show">
+          <input type="text" id="mChName" placeholder="name of the chapter it opens" style="flex:1;width:auto"
+            title="This deck is an intermission: crossing into it writes the run down. Leave the name blank and it is ordinary ground"></div>
       </div>
 
       <div class="sec">
@@ -219,6 +224,8 @@ function setMap(m, resetView){
   $('#mW').value = map.w; $('#mH').value = map.h;
   showUnder();
   $('#mCar').checked = !!map.carriage;
+  $('#mChN').value = map.chapter ? map.chapter.n : '';
+  $('#mChName').value = map.chapter ? map.chapter.name : '';
   if(resetView !== false) fit();
   changed(false);
 }
@@ -1008,6 +1015,17 @@ function writeUnder(){
 /* A deck that is the inside of a car, rather than a deck with one parked on
    it: nothing to draw, and a ride into it sets the unit down on its spawn. */
 $('#mCar').onchange = ()=>{ pushUndo(); map.carriage = $('#mCar').checked; changed() };
+/* The seam between two chapters. Naming the chapter this deck opens makes it
+   an intermission: the game writes the run down on crossing into it, and a
+   chapter select would list it. Clear the name and it is ground again. */
+function writeChapter(){
+  const name = $('#mChName').value.trim();
+  pushUndo();
+  map.chapter = name ? {n:parseInt($('#mChN').value,10)|0, name} : null;
+  changed();
+}
+$('#mChN').onchange    = writeChapter;
+$('#mChName').onchange = writeChapter;
 $('#mUnder').onchange = writeUnder;
 $('#mUdx').onchange   = writeUnder;
 $('#mUdy').onchange   = writeUnder;

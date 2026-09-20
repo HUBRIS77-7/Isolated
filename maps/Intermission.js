@@ -12,6 +12,7 @@ ISO.register({
   "spawn": {"x": 11, "y": 1},
   "beacons": [],
   "carriage": true,
+  "chapter": {"n": 1, "name": "Chapter One"},
   "os": {
     "card": "PROLOGUE COMPLETE",
     "cardsub": "BEGIN CHAPTER ONE?",

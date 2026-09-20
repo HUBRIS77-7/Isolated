@@ -257,6 +257,18 @@ function normalizeOS(map){
 const osOf = map => cleanFiles((map && map.os && map.os.files) || []);
 const osCard = map => (map && map.os) ? {title:map.os.card||'', sub:map.os.cardsub||''} : null;
 
+/* ---------- chapters ----------
+   The chapter a deck opens, or nothing — most decks open none. */
+const chapterOf = map => (map && map.chapter) || null;
+/* Every seam the game has, in the order its chapters run. This is the whole
+   shape of the thing, not the shape of one run: which of these a run has
+   actually reached is the save's business, and a chapter select would read
+   the two together. */
+const chapters = () => Object.keys(MAPS).map(id => MAPS[id])
+  .filter(m => m.chapter)
+  .map(m => ({deck:m.id, n:m.chapter.n, name:m.chapter.name, deckName:m.name || m.id}))
+  .sort((a,b) => a.n - b.n || (a.deck < b.deck ? -1 : 1));
+
 const TILES = {
   ' ': {key:' ', id:'void',   name:'Unmapped',  walk:false, fill:null,
         bump:'Edge of mapped space. Nothing registers beyond.'},
@@ -625,6 +637,14 @@ function normalize(map){
      than a deck with one parked on it. It needs no car drawn on it, because
      the unit riding in is already aboard the moment the deck loads */
   map.carriage = !!map.carriage;
+  /* a deck that is the seam between two chapters: the intermission the unit
+     crosses to get from one into the next, and the only place a run is
+     written down. `n` is the order the chapters run in and `name` is what
+     the one this seam opens is called. A deck that names no chapter is
+     ordinary ground, and crossing it keeps nothing. */
+  const c = map.chapter;
+  map.chapter = (c && String(c.name||'').trim())
+              ? {n:Math.max(0, c.n|0), name:String(c.name).trim()} : null;
   /* the deck this one is stacked on: an id and where its origin sits in this
      deck's own squares, so two decks of different sizes still line up */
   const u = map.under;
@@ -991,6 +1011,24 @@ function audit(map){
   const out = {walkable:0, unreachable:0, issues:[]};
   /* whatever filing this is, it wants the same things of it */
   checkFiles(out, 'The deck store', osOf(map), map.os && map.os.card, 'the store');
+  /* two seams claiming one chapter is not an error the game can trip over —
+     each keeps its own record, under its own deck — but a chapter select
+     would list them both under the same number, and the author meant one */
+  if(map.chapter){
+    const clash = Object.keys(MAPS).filter(id => id !== map.id &&
+                    MAPS[id].chapter && MAPS[id].chapter.n === map.chapter.n);
+    if(clash.length)
+      out.issues.push('This deck opens chapter '+map.chapter.n+', and so does '+
+                      clash.join(', ')+'. A chapter select would list them under one number.');
+    /* the record is written by crossing into the seam, so a seam nothing
+       crosses into is a chapter no run ever reaches */
+    const into = Object.keys(MAPS).filter(id => id !== map.id &&
+      Object.keys(MAPS[id].props || {}).some(k => MAPS[id].props[k].dest === map.id));
+    if(!into.length)
+      out.issues.push('This deck opens chapter '+map.chapter.n+
+                      ', but no other deck crosses into it, so the run is never written down here. '+
+                      'Point a car, a flight of steps or a breach at it.');
+  }
   for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++) if(walkable(map,x,y)) out.walkable++;
   const under = bodyAt(map, map.spawn.x, map.spawn.y);
   if(!walkable(map, map.spawn.x, map.spawn.y))
@@ -1277,6 +1315,8 @@ function toJSON(map){
     '  "spawn": {"x": '+map.spawn.x+', "y": '+map.spawn.y+'},\n'+
     '  "beacons": ['+map.beacons.map(b=>'{"x": '+b.x+', "y": '+b.y+'}').join(', ')+'],\n'+
     (map.carriage ? '  "carriage": true,\n' : '')+
+    (map.chapter ? '  "chapter": {"n": '+map.chapter.n+
+                   ', "name": '+JSON.stringify(map.chapter.name)+'},\n' : '')+
     (map.under ? '  "under": {"deck": '+JSON.stringify(map.under.deck)+
                  ', "dx": '+map.under.dx+', "dy": '+map.under.dy+'},\n' : '')+
     (map.os ? '  "os": {\n'+
@@ -1420,6 +1460,7 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
 global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, ITEMS, CARRY,
                circuitOf, waysOf, boxes, circuitFed, itemAt,
                FILE_KINDS, OS_SCHEMA, filesOf, osOf, osCard, foldersOf, inFolder,
+               chapterOf, chapters,
                def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
                schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,

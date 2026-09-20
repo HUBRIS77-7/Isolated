@@ -45,6 +45,11 @@ ISO.register({
   "carriage": true,                  // this deck IS the inside of a car rather
                                      //   than a deck with one parked on it.
                                      //   Draw no `^` on it. See Decks
+  "chapter": {"n": 1,                // this deck is the intermission that opens
+              "name": "Chapter One"},//   chapter 1, and crossing into it is
+                                     //   where the run is kept. Leave it out
+                                     //   and the deck keeps nothing. See
+                                     //   Chapters
   "os": {"card": "", "cardsub": "",  // the unit's own store on this deck, which
          "files": []},               //   [O] brings up. Leave it out and [O]
                                      //   says it is empty. See Desktops
@@ -574,6 +579,10 @@ A console can end a segment on a card too — see **Desktops** below — which i
 the other half of the same idea: the black is made by whatever ended the
 thing, and the words sit on it either way.
 
+A card is words, and nothing more: it is not where the run is kept. That is
+the deck's `chapter`, and it is written on the way in rather than on the way
+out — see **Chapters**.
+
 ## A flight of steps instead of a car
 
 A **Stairway** (`s`) is the same route without the machinery. It joins two
@@ -694,6 +703,90 @@ Everything else about decks is unchanged. Each one keeps what was changed on
 it, fuses and all, and `[R]` re-initialises the unit on the deck it fell to, at
 the square it came down on.
 
+## Chapters, and where a run is kept
+
+A run is not written down square by square. It is written down at the seams.
+
+A deck whose map carries a `chapter` is an **intermission**: the crossing
+between one chapter and the next, and the only place the game keeps anything.
+
+```js
+"chapter": {"n": 1, "name": "Chapter One"}
+```
+
+`n` orders the chapters and `name` is what the one this seam opens is called.
+A deck that names no chapter is ordinary ground, and crossing it keeps nothing.
+`Intermission` — the service car at the bottom of Water Treatment — carries the
+first of these, so the prologue ends by riding into a record.
+
+The record is written the moment the unit is set down on the far deck, before
+it has done anything there. So the car is kept with its sealed file still
+sealed: beginning Chapter One again begins it with the reading still to do.
+
+### What crosses the seam, and what does not
+
+What is kept is what the game already says outlives the chassis — the same
+things `[R]` does not take away:
+
+* the name the operator registered,
+* what the unit has been fitted with,
+* what filing has given way, by console and file,
+* what words a run has already ended on, so a card is not shown twice,
+* and whatever is in the manipulator.
+
+The decks are **not** kept. A chapter begins as its author drew it: every door
+shut, every fuse back in its clip, every contact back on its mark. This is the
+whole reason the seam is the save point rather than the doorway between two
+rooms — the decks behind a seam are not the decks in front of it, so there is
+nothing to carry over and nothing to go stale.
+
+It also means a chapter is played in one sitting. There is no halfway.
+
+### Beginning a chapter again
+
+The title screen offers the furthest chapter the browser has a record of:
+
+```
+PRESS ANY KEY
+OR [C] TO CONTINUE — CHAPTER ONE
+```
+
+Any other key starts a new run, which is how the prologue is played — the
+prologue sits in front of the first seam, so nothing was ever kept at it.
+
+A record whose deck is no longer registered in `index.html`, one written by an
+older build, and one the browser has mangled all read as no record at all: a
+run that cannot be begun again honestly is not offered. A private window or a
+full store means the run is simply not written down, and the log says so
+rather than the game stopping.
+
+`[R]` still re-initialises on the deck the unit is standing on, and after a
+resume the seam **is** the deck the run began on — so `[R]` in the car puts the
+unit back in the car.
+
+### The chapter select that is not drawn yet
+
+There is no chapter select screen. The data it needs is there:
+
+| | |
+|---|---|
+| `ISO.chapters()` | every seam the game has, in chapter order — the whole shape, whatever a run has reached |
+| `SAVE.chapters()` | every chapter this browser has a record of, in the same order, each row carrying its number, its name, the deck it begins on and when it was written |
+| `SAVE.recent()` | the furthest of those, which is what the title screen offers |
+| `SAVE.resume(deck)` | begin that chapter — from the title screen it takes the same dive a new run takes |
+| `SAVE.clear()` | forget the lot |
+
+A row on that screen is one entry from `SAVE.chapters()`, and picking it is one
+call to `SAVE.resume(row.deck)`. Nothing else needs to be built for it to work.
+
+Records are kept one per seam, under the deck that is the seam, so the record
+of Chapter One is still there once Chapter Two has been reached — and a second
+run reaching a seam overwrites that seam's record with its own, rather than
+adding a row.
+
+Survey flags two decks claiming the same chapter number, and a seam no other
+deck crosses into — a chapter no run can reach is a chapter never written down.
+
 ## What the crew left behind
 
 Four blocks that are nothing but what they look like. **Blood** (`;`),
@@ -809,6 +902,11 @@ on an image filed two folders away. Open it and the segment ends.
 A terminal's `card` works the same way as the store's, for filing that belongs
 to the ship rather than to the unit: give a console a `card` and the locked
 file on its desktop becomes the end of something.
+
+A card ends a segment; it does not keep the run. Those are two halves of the
+same seam and they are set separately: the deck's `chapter` is what writes the
+record down when the unit crosses in, and the card is what the segment ends
+on once it has. The service car does both — see **Chapters**.
 
 ### What Survey asks of filing
 
