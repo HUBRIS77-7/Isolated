@@ -161,6 +161,37 @@ const JUMP = 4;
      spooked— the line it writes when it breaks and runs
      cools  — the line one that hunts by movement writes when the trail it
               was following stops moving and goes cold
+     side   — whose it is. A gun fires on anything whose side is not its own,
+              and on the unit whatever happens, so two things of one side
+              never trade rounds while the unit stands between them. Leave it
+              out and the thing belongs to nobody, which is what everything
+              that came aboard on its own does
+     hull   — rounds it takes to put down. Left out, one does it
+     fixed  — it is an emplacement rather than a contact: bolted where it was
+              painted, it crosses no ground at all, and a route is never
+              changed by one being in the way except that it is in the way
+     gun    — it shoots: {range, warm, cool, spin}. `range` is tiles it
+              reaches, and it reaches through nothing solid — the line has to
+              be as clear as the optics would need it. `warm` is seconds it
+              holds a target before the round goes, which is the whole of the
+              warning anything gets; `cool` is seconds between rounds, and
+              `spin` is radians a second it lays round onto a new mark
+     shot   — what the log says when the round is the unit
+     felled — what it says when one is put down
+     carries— it picks the unit up rather than striking it: {hold, rest,
+              struggle}. `hold` is seconds it keeps carrying before it sets
+              the unit down wherever it has got to, `rest` is seconds it keeps
+              its distance afterwards, and `struggle` is movement keys it
+              takes to break the grip early
+     grabs, drops, shaken — the lines it writes lifting the unit, setting it
+              down where it was going, and losing it to a struggle
+     bulk   — squares either side of its middle, so a `bulk` of 1 is three
+              tiles by three. It needs the whole of that clear to move into a
+              square, and anything it is over when it moves is under it
+     slides — it does not steer. It takes a heading and runs along it until
+              something stops the whole of its body, then it takes another —
+              which is a thing to keep out of the way of rather than a thing
+              to hide from
      fill, line, glyph — how it draws: a body, its edge, and the mark it
               carries. Neither of them is drawn as a square, because neither
               of them stands on one */
@@ -176,6 +207,34 @@ const FOES = {
             fill:'rgba(255,59,47,.2)', line:'rgba(255,59,47,.9)',
             notice:'CONTACT. It has the unit. It is coming.',
             cools:'CONTACT LOSES THE TRAIL. It is looking for something that has stopped.'},
+  /* ---------- what the command deck left running ----------
+     Three of them, and none of them came aboard: a gun bolted to the deck, a
+     drone that was fitted to move things about and has nothing left to move
+     but the unit, and nine squares of freight that stopped answering the
+     control that used to steer it. The first two are `command` side, which
+     is the whole of why the gun and the drone leave each other alone. */
+  turret:  {id:'turret',  name:'Sentry turret', side:'command', fixed:true, hull:3,
+            wake:0, keep:0, kills:false, glyph:'\u2295',
+            gun:{range:10, warm:.8, cool:1.5, spin:2.6},
+            fill:'rgba(96,170,255,.2)', line:'rgba(150,205,255,.9)',
+            notice:'EMPLACEMENT ACTIVE. It has laid onto the unit. It is coming round.',
+            shot:'ROUND THROUGH THE CHASSIS. THE TURRET HAD THE LINE.',
+            felled:'EMPLACEMENT DOWN. The mount stops tracking.'},
+  drone:   {id:'drone',   name:'Security drone', side:'command', speed:6, prowl:3.4,
+            wake:16, keep:0, hull:2, kills:false, glyph:'\u25c8',
+            carries:{hold:5, rest:7, struggle:8},
+            fill:'rgba(52,116,214,.22)', line:'rgba(96,170,255,.9)',
+            notice:'CONTACT. Command pattern, and it is coming for the unit rather than at it.',
+            grabs:'THE DRONE HAS THE CHASSIS OFF THE DECK. It is taking it somewhere.',
+            drops:'SET DOWN. The drone lets go and stands off.',
+            shaken:'GRIP BROKEN. The drone drops the unit where it stands.',
+            felled:'DRONE DOWN. Whatever it was carrying it is not carrying now.'},
+  block:   {id:'block',   name:'Block', bulk:1, slides:true, speed:4.4, prowl:3,
+            wake:12, keep:0, hull:12, glyph:'\u25a0',
+            fill:'rgba(255,59,47,.16)', line:'rgba(255,120,80,.85)',
+            kills:'CHASSIS CAUGHT UNDER NINE SQUARES OF MOVING FREIGHT.',
+            notice:'CONTACT. Nine squares of it, and it is already under way.',
+            felled:'BLOCK STOPPED. Whatever was driving it has given out.'},
 };
 
 /* ---------- fuses ----------
@@ -313,6 +372,16 @@ const chapters = () => Object.keys(MAPS).map(id => MAPS[id])
   .filter(m => m.chapter)
   .map(m => ({deck:m.id, n:m.chapter.n, name:m.chapter.name, deckName:m.name || m.id}))
   .sort((a,b) => a.n - b.n || (a.deck < b.deck ? -1 : 1));
+
+/* ---------- the command deck ----------
+   One family of blocks and one palette for it: the deep blue of structure,
+   the blue of a working surface, and the pale blue of glass and painted
+   lettering. Nothing else on the ship is blue — plating is green, controls
+   are amber, transit is mint — so an operator that has crossed one deck of
+   this knows the next one on sight, before it has read a single stencil. */
+const CMD_DEEP = {fill:'rgba(18,48,116,.34)',  line:'rgba(74,132,214,.62)'};
+const CMD_BLUE = {fill:'rgba(52,116,214,.18)', line:'rgba(96,170,255,.66)'};
+const CMD_PALE = {fill:'rgba(150,205,255,.14)',line:'rgba(190,228,255,.7)'};
 
 const TILES = {
   ' ': {key:' ', id:'void',   name:'Unmapped',  walk:false, fill:null,
@@ -528,6 +597,28 @@ const TILES = {
         props:{wake:{type:'int',  label:'Takes an interest within', def:14, min:2, max:40},
                range:{type:'int', label:'Wanders within (0: the whole deck)', def:0, min:0, max:60},
                label:{type:'text', label:'Stencilled', def:''}}},
+  /* An emplacement rather than a contact: it is painted where it stands and
+     it stands there. `wake` and `range` mean nothing to something that never
+     walks, so it carries neither \u2014 what it reaches is the line it fires
+     down, and that is set on the kind rather than copy by copy. */
+  '<': {key:'<', id:'turret',  name:'Sentry turret', walk:true, foe:'turret',
+        fill:'rgba(150,205,255,.1)', line:'rgba(150,205,255,.45)', glyph:'\u2295',
+        enter:'Mounting ring set into the plate. Cable still live under it.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
+  'z': {key:'z', id:'drone',   name:'Security drone', walk:true, foe:'drone',
+        fill:'rgba(96,170,255,.1)', line:'rgba(96,170,255,.45)', glyph:'\u25c8',
+        enter:'Charging cradle, empty. Whatever sat in it is not in it now.',
+        props:{wake:{type:'int',  label:'Takes an interest within', def:16, min:2, max:40},
+               range:{type:'int', label:'Wanders within (0: the whole deck)', def:0, min:0, max:60},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* Three tiles by three of it, and the mark is the middle one: leave the
+     eight squares round it clear or it has nowhere to start from. */
+  '0': {key:'0', id:'block',   name:'Block', walk:true, foe:'block',
+        fill:'rgba(255,120,80,.09)', line:'rgba(255,120,80,.4)', glyph:'\u25a0',
+        enter:'Guide rail worn bright in a long straight line. Something heavy runs this way.',
+        props:{wake:{type:'int',  label:'Takes an interest within', def:12, min:2, max:40},
+               range:{type:'int', label:'Wanders within (0: the whole deck)', def:0, min:0, max:60},
+               label:{type:'text', label:'Stencilled', def:''}}},
 
   /* ---------- open land ----------
      A dome is not a deck. What the unit crosses out here is ground rather
@@ -700,6 +791,106 @@ const TILES = {
         fill:'rgba(186,140,84,.12)',  line:'rgba(186,140,84,.48)',
         bump:'Figure on a cross-post. Sacking, straw and a coat. It read as a contact until the optics resolved it.',
         props:{label:{type:'text', label:'Stencilled', def:''}}},
+
+  /* ---------- the command deck ----------
+     Eight blocks that are the same eight blocks as everywhere else on the
+     ship — a desk, a barrier, a console, a car — built to a standard nobody
+     applied anywhere below. They are worth having as their own family rather
+     than as a blue coat of paint on the old ones because they are read
+     together: a deck laid out of these is a deck the crew ran the ship from,
+     and the operator is meant to know that from the colour before it has
+     pressed anything. */
+  'J': {key:'J', id:'cmddesk', name:'Command Desk',  walk:false, clear:true,
+        foot:{len:3}, parts:['\u25a4','\u2550','\u25a4'],
+        fill:CMD_BLUE.fill, line:CMD_BLUE.line,
+        bump:'Command desk. Three stations of it, chairs pushed back, and the glass dark.',
+        props:{dir:{type:'dir', label:'Runs', def:'right'},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* A bar down across the way. It has no handle — a blockade is dropped and
+     lifted from somewhere else, which is the whole of what it is for: a
+     button on a wall, or a control filed on a console's desktop. */
+  '-': {key:'-', id:'blockade', name:'Command Blockade', walk:false,
+        fill:CMD_DEEP.fill, line:CMD_DEEP.line, glyph:'\u2550',
+        signal:'toggle', merge:true, powered:true,
+        bump:'Blockade bar, down across the way. It lifts to a control \u2014 on a wall, or filed on a console.',
+        open:{fill:'rgba(18,48,116,.06)', line:'rgba(74,132,214,.3)', glyph:'\u2594'},
+        lock:{fill:'rgba(18,48,116,.5)',  line:'rgba(150,205,255,.85)', glyph:'\u2593',
+              bump:'Blockade bar, down across the way. Locked out. No control on this deck lifts it.'},
+        props:{open:{type:'bool',   label:'Starts lifted', def:false},
+               locked:{type:'bool', label:'Locked \u2014 cannot be lifted', def:false}}},
+  /* Filled bags, stacked where somebody wanted cover in a hurry. As big as it
+     is painted, and low enough to read over \u2014 which is the difference
+     between cover for the unit and cover for whatever is on the far side. */
+  '(': {key:'(', id:'sandbag', name:'Command Sandbags', walk:false,
+        merge:true, sized:true, clear:true,
+        fill:'rgba(74,132,214,.24)', line:'rgba(96,170,255,.52)', glyph:'\u25ac',
+        bump:'Filled bags, stacked two high. Too heavy to shift, low enough to read over.'},
+  /* A relay with a console in its foot. It is the one block on the deck that
+     is both: the mast carries the signal and the glass at the bottom of it is
+     read exactly the way a terminal is, desktop, filing, controls and all. */
+  'q': {key:'q', id:'cmdrelay', name:'Command Relay', walk:false,
+        fill:CMD_PALE.fill, line:CMD_PALE.line, glyph:'\u2299',
+        press:'terminal', powered:true,
+        bump:'Command relay. The mast is dead and the glass in its foot is not. [E] to read.',
+        props:{title:{type:'text',  label:'Header',  def:'COMMAND RELAY'},
+               text:{type:'lines',  label:'Text',    def:'Carrier lost. No traffic held.'},
+               desktop:{type:'bool',label:'Has desktop', def:false},
+               files:Object.assign({}, FILE_SLOTS, {label:'Desktop holds'}),
+               card:{type:'text',   label:'Words the locked file ends on', def:''},
+               cardsub:{type:'text',label:'Line under them',               def:''},
+               label:{type:'text',  label:'Stencilled', def:''}}},
+  /* Three tiles by three of dish and mast. While it is live it transmits, and
+     the unit reads it through structure the way it reads a beacon \u2014 so an
+     antenna is what a command deck is navigated by, and it goes quiet once
+     the unit has walked up to it and there is nothing left to steer by. */
+  'l': {key:'l', id:'antenna', name:'Command Antenna', walk:false,
+        foot:{len:3, wide:3},
+        parts:[['\u256d','\u2500','\u256e'],
+               ['\u2502','\u25c9','\u2502'],
+               ['\u2570','\u2534','\u256f']],
+        fill:CMD_BLUE.fill, line:CMD_BLUE.line,
+        ping:true, powered:true,
+        bump:'Antenna array. The dish still turns, and the carrier under it still reads.',
+        spent:{fill:'rgba(52,116,214,.05)', line:'rgba(96,170,255,.26)',
+               bump:'Antenna array. Carrier dropped. Nothing transmitting.'},
+        props:{dir:{type:'dir',  label:'Faces', def:'right'},
+               range:{type:'int',  label:'Goes quiet within', def:3, min:0, max:20},
+               armed:{type:'bool', label:'Starts transmitting', def:true},
+               objective:{type:'text', label:'Objective while lit', def:''},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* The command deck's own car. It is a car like any other \u2014 it pairs with
+     an ordinary elevator at the far end, because a shaft is a shaft. */
+  '[': {key:'[', id:'cmdlift', name:'Command Elevator', walk:true,
+        fill:CMD_PALE.fill, line:CMD_PALE.line, glyph:'\u21c5',
+        beacon:true, press:'lift', signal:'lift', powered:true,
+        link:{kind:'lift', noun:'carriage'},
+        enter:'Command carriage. Plate reads live, and the call panel is lit. [E] rides it.',
+        props:{dest:{type:'map',  label:'Deck it serves',    def:''},
+               arrive:{type:'text',label:'Comes out at car', def:''},
+               fade:{type:'bool',  label:'Screen goes black across it', def:false},
+               card:CARD, cardsub:CARDSUB,
+               label:{type:'text', label:'Stencilled',       def:''}}},
+  /* Painted board, bolted to the bulkhead. Read the way a sign is: paint
+     needs no circuit, so it says the same thing on a dead deck. */
+  'N': {key:'N', id:'cmdsign', name:'Command Signage', walk:false, clear:true,
+        fill:CMD_PALE.fill, line:CMD_PALE.line, glyph:'\u25e9',
+        press:'note',
+        bump:'Command signage, stencilled on steel. [E] reads it.',
+        props:{title:{type:'text', label:'Header', def:'COMMAND SIGNAGE'},
+               text:{type:'lines', label:'Text',   def:'The lettering has gone under corrosion.'}}},
+  /* The glass the deck was actually run from. Everything a terminal does,
+     desktop and filing included \u2014 and a control filed on one lifts a
+     blockade from across the room. */
+  'I': {key:'I', id:'cmdterm', name:'Command Terminal', walk:false, clear:true,
+        fill:CMD_BLUE.fill, line:CMD_BLUE.line, glyph:'\u25a9',
+        press:'terminal', powered:true,
+        bump:'Command console. Heavier glass than the crew decks carry. [E] to read.',
+        props:{title:{type:'text',  label:'Header',  def:'COMMAND CONSOLE'},
+               text:{type:'lines',  label:'Text',    def:'No readable record.'},
+               desktop:{type:'bool',label:'Has desktop', def:false},
+               files:Object.assign({}, FILE_SLOTS, {label:'Desktop holds'}),
+               card:{type:'text',   label:'Words the locked file ends on', def:''},
+               cardsub:{type:'text',label:'Line under them',               def:''}}},
 };
 
 /* ---------- palette categories ----------
@@ -718,7 +909,8 @@ const CATS = [
   {id:'farm',      name:'Farm',        keys:'|w&yj@'},
   {id:'remains',   name:'Remains',     keys:';SXY'},
   {id:'kit',       name:'Unit & kit',  keys:'M*fk'},
-  {id:'contacts',  name:'Contacts',    keys:'Ee'},
+  {id:'command',   name:'Command deck', keys:'J-(qlNI['},
+  {id:'contacts',  name:'Contacts',    keys:'Ee<z0'},
 ];
 /* One setting, fitted to every block that runs on power. */
 for(const ch in TILES) if(TILES[ch].powered)
@@ -1382,14 +1574,14 @@ function audit(map){
     if(t.press === 'terminal'){
       const files = filesOf(map,x,y);
       if(!files.length && !String(p.text||'').trim())
-        out.issues.push('Terminal'+where+' has no text to display.');
+        out.issues.push(t.name+where+' has no text to display.');
       if(files.length && !p.desktop)
-        out.issues.push('Terminal'+where+' has '+files.length+' file(s) filed on it but no desktop, '+
+        out.issues.push(t.name+where+' has '+files.length+' file(s) filed on it but no desktop, '+
                         'so nothing on it can be opened or pressed. Turn its desktop on.');
       if(p.desktop && !files.length)
-        out.issues.push('Terminal'+where+' is marked as having a desktop and nothing is filed on it. '+
+        out.issues.push(t.name+where+' is marked as having a desktop and nothing is filed on it. '+
                         'It reads as a plain record.');
-      checkFiles(out, 'Terminal'+where, files, p.card, 'the desktop', map);
+      checkFiles(out, t.name+where, files, p.card, 'the desktop', map);
     }
     /* a card is words written on the black a crossing makes. Without a fade
        there is no black to write them on */
@@ -1533,6 +1725,22 @@ function audit(map){
       if(head.x===x && head.y===y && names.size > 1)
         out.issues.push(t.name+where+' is one body stencilled '+names.size+' different ways ('+
                         [...names].join(', ')+'). It reads as one, and answers to the first name on it.');
+    }
+    /* a contact the size of a room needs the room: the mark is the middle of
+       it, and every square of the body has to be ground it could stand on or
+       it can never take a single heading */
+    if(t.foe && FOES[t.foe] && FOES[t.foe].bulk){
+      const b = FOES[t.foe].bulk|0;
+      let blocked = 0;
+      for(let j=-b;j<=b;j++)for(let i=-b;i<=b;i++){
+        if(!i && !j) continue;
+        if(!inside(map,x+i,y+j) || !walkable(map,x+i,y+j) ||
+           bodyAt(map,x+i,y+j).deadly || bodyAt(map,x+i,y+j).fall) blocked++;
+      }
+      if(blocked)
+        out.issues.push(t.name+where+' is '+(b*2+1)+' tiles by '+(b*2+1)+
+                        ', and '+blocked+' square(s) of where it stands are not ground it can hold. '+
+                        'It starts wedged and never moves.');
     }
     if(t.foot) for(const c of footprint(map,x,y)){
       if(!c.i && !c.j) continue;                       // the tile it is painted on
