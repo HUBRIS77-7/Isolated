@@ -212,20 +212,34 @@ const CARDSUB = {type:'text', label:'Line under them',         def:''};
               column, because the only ink this machine has is characters
      locked — something the operator has to earn. Its `pass` is what opens it,
               and on the console that carries a `card` the opening of it is
-              the end of the segment                                        */
+              the end of the segment
+     app    — something that does rather than says. Its `targets` are the
+              blocks it drives, the same list a button on a wall carries, and
+              opening it does not drive them: pressing it does. A `pass` on
+              one is a control the operator has to earn the use of rather
+              than a record they have to earn the reading of                */
 const FILE_KINDS = {
   doc:    {id:'doc',    name:'Document',    glyph:'\u2261'},
   image:  {id:'image',  name:'Image',       glyph:'\u25a6'},
   locked: {id:'locked', name:'Locked file', glyph:'\u25a0'},
+  app:    {id:'app',    name:'Control',     glyph:'\u25ce'},
 };
 const FILE_OPTS = Object.keys(FILE_KINDS).map(k=>({value:k, label:FILE_KINDS[k].name}));
 /* One row of filing, wherever the filing is kept. A crew console declares this
-   as its `files`; the unit's own store is the same list at deck level. */
+   as its `files`; the unit's own store is the same list at deck level.
+
+   Two of the fields only mean anything on some kinds — a document has no word
+   on it and drives nothing — and `when` is what the editor reads to keep a row
+   down to the fields that do. It is a question about the row, not about the
+   map, so it is asked of the row. */
 const FILE_SLOTS = {type:'slots', label:'Holds', def:[],
                     fields:{kind:{type:'pick',  label:'Kind',      def:'doc', opts:FILE_OPTS},
                             name:{type:'text',  label:'Called',    def:''},
                             folder:{type:'text',label:'In folder', def:''},
-                            pass:{type:'text',  label:'Opens with',def:''},
+                            pass:{type:'text',  label:'Opens with',def:'',
+                                  when:r=>r.kind === 'locked' || r.kind === 'app'},
+                            targets:{type:'points', label:'Presses', def:[],
+                                     when:r=>r.kind === 'app'},
                             text:{type:'lines', label:'Contents',  def:''}}};
 
 /* ---------- the unit's own store ----------
@@ -760,6 +774,9 @@ function cleanFiles(rows){
                              name:String(r.name).trim(),
                              folder:String(r.folder||'').trim(),
                              pass:String(r.pass||''),
+                             /* only a control drives anything, but the list is
+                                tidied the same way wherever it was written */
+                             targets:coerce(FILE_SLOTS.fields.targets, r.targets),
                              text:String(r.text||'')}));
 }
 const filesOf = (map,x,y) => cleanFiles((propsAt(map,x,y)||{}).files);
@@ -770,14 +787,35 @@ const foldersOf = files => {
 };
 const inFolder = (files,folder) => files.filter(f=>f.folder === folder);
 
-/* Every block a button points at, as "x,y" -> [{x,y} of each button]. */
+/* ---------- what can press ----------
+   Every control on this deck that runs to a block. A button on a wall is one.
+   So is a control filed on a console's desktop, and so is one carried in the
+   unit's own store — the glass is the wall in those two, and the survey has to
+   count all three or a bulkhead driven off a desktop reads as a bulkhead
+   nothing drives. A store control has no square of its own: it is pressed
+   wherever the unit is standing. */
+function signalSources(map){
+  const out = [];
+  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
+    const t = def(tileAt(map,x,y));
+    if(t.press === 'button')
+      out.push({x, y, what:'Button', targets:signalTargets(map,x,y)});
+    if(t.press === 'terminal')
+      for(const f of filesOf(map,x,y))
+        if(f.kind === 'app') out.push({x, y, what:'Control "'+f.name+'"', targets:f.targets});
+  }
+  for(const f of osOf(map))
+    if(f.kind === 'app')
+      out.push({x:null, y:null, what:'Control "'+f.name+'" in the local store', targets:f.targets});
+  return out;
+}
+
+/* Every block a control points at, as "x,y" -> [{x,y} of each control]. */
 function signalIndex(map){
   const out = {};
-  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++){
-    if(def(tileAt(map,x,y)).press !== 'button') continue;
-    for(const t of signalTargets(map,x,y))
-      (out[pk(t.x,t.y)] || (out[pk(t.x,t.y)] = [])).push({x,y});
-  }
+  for(const s of signalSources(map))
+    for(const t of s.targets || [])
+      (out[pk(t.x,t.y)] || (out[pk(t.x,t.y)] = [])).push({x:s.x, y:s.y});
   return out;
 }
 
@@ -1010,7 +1048,7 @@ function reachable(map, from, opts){
 function audit(map){
   const out = {walkable:0, unreachable:0, issues:[]};
   /* whatever filing this is, it wants the same things of it */
-  checkFiles(out, 'The deck store', osOf(map), map.os && map.os.card, 'the store');
+  checkFiles(out, 'The deck store', osOf(map), map.os && map.os.card, 'the store', map);
   /* two seams claiming one chapter is not an error the game can trip over —
      each keeps its own record, under its own deck — but a chapter select
      would list them both under the same number, and the author meant one */
@@ -1119,11 +1157,11 @@ function audit(map){
         out.issues.push('Terminal'+where+' has no text to display.');
       if(files.length && !p.desktop)
         out.issues.push('Terminal'+where+' has '+files.length+' file(s) filed on it but no desktop, '+
-                        'so nothing on it can be opened. Turn its desktop on.');
+                        'so nothing on it can be opened or pressed. Turn its desktop on.');
       if(p.desktop && !files.length)
         out.issues.push('Terminal'+where+' is marked as having a desktop and nothing is filed on it. '+
                         'It reads as a plain record.');
-      checkFiles(out, 'Terminal'+where, files, p.card, 'the desktop');
+      checkFiles(out, 'Terminal'+where, files, p.card, 'the desktop', map);
     }
     /* a card is words written on the black a crossing makes. Without a fade
        there is no black to write them on */
@@ -1280,7 +1318,7 @@ function audit(map){
 /* What any filing has to be true of, wherever it is kept: a name is how a
    file is opened, so two of them in one folder is one file the operator can
    never get at, and a card wants something sealed to bring it up. */
-function checkFiles(out, who, files, card, place){
+function checkFiles(out, who, files, card, place, map){
   const seen = new Set();
   for(const f of files){
     const k = f.folder+'/'+f.name.toUpperCase();
@@ -1288,11 +1326,27 @@ function checkFiles(out, who, files, card, place){
       out.issues.push(who+' files two things called "'+f.name+'"'+
                       (f.folder ? ' in folder "'+f.folder+'"' : ' on '+place)+'.');
     seen.add(k);
-    if(!String(f.text||'').trim())
+    /* a control is not read, so it is allowed to say nothing. Everything
+       else on a desktop is there to be read and an empty one is a mistake */
+    if(!String(f.text||'').trim() && f.kind !== 'app')
       out.issues.push(who+' files "'+f.name+'", which has nothing in it.');
     if(f.kind === 'locked' && !String(f.pass||'').trim())
       out.issues.push(who+' files "'+f.name+'" as sealed with no word set, '+
                       'so anything at all opens it.');
+    /* a control filed on a desktop is wired the way a button on a wall is,
+       and goes wrong in the same three ways */
+    if(f.kind === 'app' && map){
+      const to = f.targets || [];
+      if(!to.length)
+        out.issues.push(who+' files "'+f.name+'" as a control that signals nothing.');
+      for(const c of to){
+        if(!inside(map, c.x, c.y))
+          out.issues.push(who+' files "'+f.name+'", which signals a square outside the record.');
+        else if(!at(map, c.x, c.y).signal)
+          out.issues.push(who+' files "'+f.name+'", which signals '+at(map,c.x,c.y).name+
+                          ' at '+c.x+','+c.y+', which does not answer signals.');
+      }
+    }
   }
   const sealed = files.filter(f=>f.kind === 'locked');
   if(String(card||'').trim() && !sealed.length)
@@ -1463,7 +1517,8 @@ global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, ITEM
                chapterOf, chapters,
                def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
-               schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,
+               schemaOf, defaults, propsAt, setProp, signalIndex, signalSources, signalTargets,
+               tramPath, key:pk,
                links, linkLanding, linkNoun, lifts, liftLanding, stencilled, dropLanding,
                underOf, underAt, seeThrough, dropAt,
                footprint, partAt, coveredBy, cluster, lockedShut,

@@ -128,7 +128,7 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Tram     | `dir`, `dist`  | Which way the platform runs, and how far       |
 | Terminal | `title`, `text`| What the small window says                     |
 | Terminal | `desktop`      | This console opens its filing rather than one record |
-| Terminal | `files`        | What is filed on that desktop — one row per file |
+| Terminal | `files`        | What is filed on that desktop — one row per file, a control among them |
 | Terminal | `card`, `cardsub` | The words the segment ends on when the sealed file gives way |
 | Forklift | `dir`          | Which way it faces, so which tile its second half covers |
 | Desk     | `dir`          | Which way it runs                              |
@@ -220,7 +220,9 @@ where a curve is going to land. A drag that swings off the edge of the record
 lays the part of the curve that is on it and drops the rest.
 
 The canvas draws the wiring while you work: amber from each button to every
-block it drives, and a pale line along the rail each platform runs.
+block it drives, a finer amber from each console to whatever its filed
+controls drive (see **Desktops**), and a pale line along the rail each
+platform runs.
 
 One press signals all of them at once — a bank of bulkheads opens together, and
 a button may drive bulkheads and call a platform in the same press. Each block
@@ -828,13 +830,17 @@ unit goes through it the way whoever sat here did.
 
 `files` is a list. One row is one file:
 
-| Field    | Means                                                       |
-|----------|-------------------------------------------------------------|
-| `kind`   | `doc`, `image` or `locked`                                  |
-| `name`   | What it is called. A row with no name is not a file         |
-| `folder` | Which folder it sits in. Blank means loose on the desktop   |
-| `pass`   | The word that opens it, on a `locked` file                  |
-| `text`   | What is in it                                               |
+| Field     | Means                                                      |
+|-----------|------------------------------------------------------------|
+| `kind`    | `doc`, `image`, `locked` or `app`                          |
+| `name`    | What it is called. A row with no name is not a file        |
+| `folder`  | Which folder it sits in. Blank means loose on the desktop  |
+| `pass`    | The word that opens it, on a `locked` file or an `app`     |
+| `targets` | The blocks an `app` presses — any number                   |
+| `text`    | What is in it, or the legend on a control's key            |
+
+The editor keeps a row down to the fields its kind uses: a document has no
+password box and nothing to wire, and the two appear as you change the kind.
 
 **Folders are not rows.** A folder exists because something names it, and
 stops existing when the last file naming it is renamed. That is the whole of
@@ -860,6 +866,54 @@ then out of the desktop. While the desktop is up the keys belong to the
 machine rather than to the chassis, and while it is asking for a word they are
 letters — `[E]` types an `e`.
 
+### A control filed on a desktop — `app`
+
+A file that does rather than says. An **app** is a **Button** (`b`) that lives
+on the glass instead of on a wall: it carries `targets`, the same list of
+squares a button carries, and pressing it drives them through the same
+drivers — bulkheads open and shut, platforms are called, a car is rung for.
+One press, one line per thing that answered, exactly as a wall control reads.
+
+Opening it does not press it. It opens on its key, with whatever its `text`
+says as the legend above it and, under it, what the deck answered the last
+time it was struck — the log is behind the desktop, and the operator is
+looking at this. `[E]` presses, `[ESC]` backs out, and the key can be clicked
+as readily as pressed.
+
+| | Button on a wall | Control on a desktop |
+|---|---|---|
+| Pressed from | the square beside it | the console it is filed on, anywhere in its filing |
+| Wants | nothing | its `pass`, if the author set one |
+| Power | its own circuit | the console's — a dark console never opens at all |
+| Reads as | `◎` amber on the deck | `◎` amber in the list, `CONTROL` beside it |
+
+**Put a word on it and the press is what the operator has to earn.** A
+`pass` on an `app` reads `LOCKED` in the list and asks the way a sealed file
+does — the same prompt, the same flat rejection, the same word kept somewhere
+else on the deck. What is behind it is a door rather than a page, which is the
+whole difference: a sealed record is a thing to have read, and a locked
+control is a thing to be able to do. Once released it stays released for the
+run, a re-initialise included, and after that it is simply a key to press.
+
+A control does **not** end a segment. A `card` on the console it is filed on
+belongs to that console's sealed *record* — earning a control is the middle of
+the work, and the run carries straight on to the press.
+
+In the editor, wire one the way you wire a button: **Pick ▸** on the row, then
+click the blocks. The list stays open so a bank of them goes in one pass, a
+square clicked twice comes back out, and `Esc` ends it. The canvas draws the
+lines from the console in a finer amber than a wall control's, because the
+unit has to be at that glass — and past whatever word the file was shut with —
+to use them. The survey checks them the way it checks a button's: a control
+that signals nothing, or signals a square outside the record, or signals
+something that does not answer signals, is reported.
+
+A control **in the unit's own store** works the same and is pressed anywhere
+on the deck, with no console to walk to and no circuit to wait on, because the
+chassis is carrying it. That is a large key to hand an operator: it opens its
+targets from across the deck. Give it a word, or keep it for the deck that
+means it.
+
 ### The unit's own store — `[O]`
 
 The same screen, brought up on nothing. A deck can carry an `os` of its own,
@@ -879,8 +933,8 @@ It sits at the top level of the map, beside `spawn` and `under`:
 }
 ```
 
-`files` is exactly the list a console's desktop takes, and opens exactly the
-same screen — dressed in the unit's paler phosphor rather than a crew
+`files` is exactly the list a console's desktop takes — controls included —
+and opens exactly the same screen — dressed in the unit's paler phosphor rather than a crew
 machine's green, because it is the unit's. What is different is the `card`:
 when a sealed file on the **store** gives way, that is the end of the segment,
 and the words are written on the black the way a link's card is.
