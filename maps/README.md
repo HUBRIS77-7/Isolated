@@ -42,6 +42,9 @@ ISO.register({
                                      // reachable tile ≥6 steps away. A car
                                      // or a flight of steps counts as a
                                      // beacon spot too.
+  "os": {"card": "", "cardsub": "",  // the unit's own store on this deck, which
+         "files": []},               //   [O] brings up. Leave it out and [O]
+                                     //   says it is empty. See Desktops
   "props": {                         // per-instance settings, keyed "x,y"
     "48,13": {"targets": [{"x": 47, "y": 12},
                           {"x": 47, "y": 13}], "label": "LANDING"}
@@ -707,10 +710,15 @@ that something is written on it.
 
 ## Desktops
 
-A **Terminal** (`c`) normally opens one small window holding one record. Turn
-its `desktop` on and give it `files`, and `[E]` opens the machine behind the
-glass instead: the filing whoever sat here kept, and the unit goes through it
-the way they did.
+One screen, opened two ways. A **Terminal** (`c`) with its `desktop` turned on
+opens the machine behind the glass — the filing whoever sat here kept. A deck
+with an `os` set lets `[O]` bring up the unit's own store, anywhere on it,
+with nothing to walk to. Both hold the same kind of list and read the same
+way; the rest of this section is true of either.
+
+A terminal normally opens one small window holding one record. Turn its
+`desktop` on and give it `files`, and `[E]` opens the machine instead, and the
+unit goes through it the way whoever sat here did.
 
 `files` is a list. One row is one file:
 
@@ -746,24 +754,56 @@ then out of the desktop. While the desktop is up the keys belong to the
 machine rather than to the chassis, and while it is asking for a word they are
 letters — `[E]` types an `e`.
 
-### A console that ends a segment
+### The unit's own store — `[O]`
 
-Give a terminal a `card` and the locked file on it becomes the end of
-something. The word goes in, the seal lifts, the screen goes to black, and the
-card sits on it exactly as a link's card does — no console, no log, just the
-words and a prompt. `cardsub` is the line under them.
+The same screen, brought up on nothing. A deck can carry an `os` of its own,
+which is not a block at all: `[O]` opens it anywhere on that deck, with no
+console to walk to and no circuit to wait on, because the chassis is carrying
+it rather than the ship. `[O]` closes it again, and the key shows up in the
+Objective row and the footer only on a deck that has one.
+
+It sits at the top level of the map, beside `spawn` and `under`:
+
+```js
+"os": {
+  "card": "THE CAR STOPS",
+  "cardsub": "Chapter One — the deck beyond it is not yet built",
+  "files": [ { "kind":"doc", "name":"READ ME FIRST.DOC", "folder":"", "pass":"", "text":"…" },
+             { "kind":"locked", "name":"CYGNUS.SEALED", "folder":"", "pass":"UBC-1", "text":"…" } ]
+}
+```
+
+`files` is exactly the list a console's desktop takes, and opens exactly the
+same screen — dressed in the unit's paler phosphor rather than a crew
+machine's green, because it is the unit's. What is different is the `card`:
+when a sealed file on the **store** gives way, that is the end of the segment,
+and the words are written on the black the way a link's card is.
+
+**Most decks leave it empty**, and a deck that leaves it empty never mentions
+it — `[O]` writes one line to the log and nothing else. It is for a segment
+that shuts the unit in somewhere with time on its hands, not for the run at
+large. In the editor it is a folded section low in the side pane, under
+**LOCAL STORE**, which says on its heading how many files are in it.
 
 That is how the **Intermission** car works. The car is sealed for transit and
-the only thing in it that answers is the unit's own store on the far wall.
-The store holds eight files across three folders; one of them is
-`CYGNUS.SEALED`, and the word that opens it is printed on an image filed two
-folders away. Open it and the segment ends.
+there is nothing on its glass worth the walk: whatever the unit has to read on
+the way down, it brought with it. The store holds eight files across three
+folders; one of them is `CYGNUS.SEALED`, and the word that opens it is printed
+on an image filed two folders away. Open it and the segment ends.
 
-Survey checks a desktop the way it checks everything else: files on a console
-with no desktop, a desktop with nothing filed on it, two files with the one
-name in the one folder, a file with nothing in it, a `locked` file with no
-word set — which anything at all opens — and a `card` on a console that files
-nothing sealed, so the card could never come up.
+### A console that ends a segment
+
+A terminal's `card` works the same way as the store's, for filing that belongs
+to the ship rather than to the unit: give a console a `card` and the locked
+file on its desktop becomes the end of something.
+
+### What Survey asks of filing
+
+Either kind, the same questions: files on a console with no desktop, a desktop
+with nothing filed on it, two files with the one name in the one folder, a
+file with nothing in it, a `locked` file with no word set — which anything at
+all opens — and a `card` on filing that holds nothing sealed, so the card
+could never come up.
 
 ## Blocks bigger than one tile
 

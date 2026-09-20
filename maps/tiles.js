@@ -219,6 +219,43 @@ const FILE_KINDS = {
   locked: {id:'locked', name:'Locked file', glyph:'\u25a0'},
 };
 const FILE_OPTS = Object.keys(FILE_KINDS).map(k=>({value:k, label:FILE_KINDS[k].name}));
+/* One row of filing, wherever the filing is kept. A crew console declares this
+   as its `files`; the unit's own store is the same list at deck level. */
+const FILE_SLOTS = {type:'slots', label:'Holds', def:[],
+                    fields:{kind:{type:'pick',  label:'Kind',      def:'doc', opts:FILE_OPTS},
+                            name:{type:'text',  label:'Called',    def:''},
+                            folder:{type:'text',label:'In folder', def:''},
+                            pass:{type:'text',  label:'Opens with',def:''},
+                            text:{type:'lines', label:'Contents',  def:''}}};
+
+/* ---------- the unit's own store ----------
+   Not a block. The chassis carries a small store of its own and [O] brings it
+   up on whatever glass is to hand, anywhere on a deck, with no console to walk
+   to and no circuit to wait on. It is deck-level because it is a segment's
+   business rather than the whole game's: a deck that stocks it has something
+   for the operator to read while it is stuck somewhere, and a deck that leaves
+   it empty never mentions it.
+
+   It is the same filing a console's desktop holds and opens the same screen.
+   What is different is whose it is — and that a sealed file in here can end a
+   segment, which is what `card` is for.                                     */
+const OS_SCHEMA = {
+  files:   FILE_SLOTS,
+  card:    {type:'text', label:'Words the sealed file ends on', def:''},
+  cardsub: {type:'text', label:'Line under them',               def:''},
+};
+function normalizeOS(map){
+  const had = (map.os && typeof map.os === 'object') ? map.os : {};
+  const out = {};
+  for(const k in OS_SCHEMA) out[k] = coerce(OS_SCHEMA[k], had[k]);
+  /* a store with nothing filed on it is no store at all, and a deck that has
+     one is only the deck that stocked it */
+  map.os = out.files.length ? out : null;
+  return map;
+}
+/* The store on this deck, tidied the way a console's filing is. */
+const osOf = map => cleanFiles((map && map.os && map.os.files) || []);
+const osCard = map => (map && map.os) ? {title:map.os.card||'', sub:map.os.cardsub||''} : null;
 
 const TILES = {
   ' ': {key:' ', id:'void',   name:'Unmapped',  walk:false, fill:null,
@@ -273,12 +310,7 @@ const TILES = {
                desktop:{type:'bool',label:'Has desktop', def:false},
                /* what the desktop holds, if it has one. One row is one file;
                   the folder it names is made by its being in it */
-               files:{type:'slots', label:'Desktop holds', def:[],
-                      fields:{kind:{type:'pick',  label:'Kind',      def:'doc', opts:FILE_OPTS},
-                              name:{type:'text',  label:'Called',    def:''},
-                              folder:{type:'text',label:'In folder', def:''},
-                              pass:{type:'text',  label:'Opens with',def:''},
-                              text:{type:'lines', label:'Contents',  def:''}}},
+               files:Object.assign({}, FILE_SLOTS, {label:'Desktop holds'}),
                /* what the segment ends on when the locked file gives way */
                card:{type:'text',   label:'Words the locked file ends on', def:''},
                cardsub:{type:'text',label:'Line under them',               def:''}}},
@@ -572,6 +604,7 @@ function makeMap(opts){
     under: opts.under || null,
     rows: opts.rows || Array.from({length:h}, ()=>fill.repeat(w)),
     props: opts.props || {},
+    os: opts.os || null,
   });
 }
 
@@ -592,6 +625,7 @@ function normalize(map){
   const u = map.under;
   map.under = (u && u.deck) ? {deck:String(u.deck), dx:u.dx|0, dy:u.dy|0} : null;
   normalizeProps(map);
+  normalizeOS(map);
   return bumpVersion(map);
 }
 const clampPt = (p,w,h) => ({x:Math.min(w-1,Math.max(0,p.x|0)), y:Math.min(h-1,Math.max(0,p.y|0))});
@@ -695,15 +729,15 @@ const signalTargets = (map,x,y) => ((propsAt(map,x,y)||{}).targets) || [];
    folder rather than two. `folders` is what a desktop shows at its top level
    — every folder something is in, in the order the author wrote them — and
    `inFolder` is what is inside one, the root being the empty name. */
-function filesOf(map,x,y){
-  const rows = (propsAt(map,x,y)||{}).files || [];
-  return rows.filter(r=>String(r.name||'').trim())
-             .map(r=>({kind:FILE_KINDS[r.kind] ? r.kind : 'doc',
-                       name:String(r.name).trim(),
-                       folder:String(r.folder||'').trim(),
-                       pass:String(r.pass||''),
-                       text:String(r.text||'')}));
+function cleanFiles(rows){
+  return (rows||[]).filter(r=>String(r.name||'').trim())
+                   .map(r=>({kind:FILE_KINDS[r.kind] ? r.kind : 'doc',
+                             name:String(r.name).trim(),
+                             folder:String(r.folder||'').trim(),
+                             pass:String(r.pass||''),
+                             text:String(r.text||'')}));
 }
+const filesOf = (map,x,y) => cleanFiles((propsAt(map,x,y)||{}).files);
 const foldersOf = files => {
   const out = [];
   for(const f of files) if(f.folder && !out.includes(f.folder)) out.push(f.folder);
@@ -947,6 +981,8 @@ function reachable(map, from, opts){
 /* Health check the editor surfaces and the game can log. */
 function audit(map){
   const out = {walkable:0, unreachable:0, issues:[]};
+  /* whatever filing this is, it wants the same things of it */
+  checkFiles(out, 'The deck store', osOf(map), map.os && map.os.card, 'the store');
   for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++) if(walkable(map,x,y)) out.walkable++;
   const under = bodyAt(map, map.spawn.x, map.spawn.y);
   if(!walkable(map, map.spawn.x, map.spawn.y))
@@ -1041,28 +1077,7 @@ function audit(map){
       if(p.desktop && !files.length)
         out.issues.push('Terminal'+where+' is marked as having a desktop and nothing is filed on it. '+
                         'It reads as a plain record.');
-      /* a name is how a file is opened, so two of them in one folder is one
-         file the operator can never get at */
-      const seen = new Set();
-      for(const f of files){
-        const k = f.folder+'/'+f.name.toUpperCase();
-        if(seen.has(k))
-          out.issues.push('Terminal'+where+' files two things called "'+f.name+'"'+
-                          (f.folder ? ' in folder "'+f.folder+'"' : ' on the desktop')+'.');
-        seen.add(k);
-        if(!String(f.text||'').trim())
-          out.issues.push('Terminal'+where+' files "'+f.name+'", which has nothing in it.');
-        if(f.kind === 'locked' && !String(f.pass||'').trim())
-          out.issues.push('Terminal'+where+' files "'+f.name+'" as sealed with no word set, '+
-                          'so anything at all opens it.');
-      }
-      const sealed = files.filter(f=>f.kind === 'locked');
-      if(String(p.card||'').trim() && !sealed.length)
-        out.issues.push('Terminal'+where+' ends the segment on a card, but nothing filed on it '+
-                        'is sealed, so the card never comes up.');
-      if(sealed.length > 1 && String(p.card||'').trim())
-        out.issues.push('Terminal'+where+' files '+sealed.length+' sealed things and ends the segment '+
-                        'on a card. Whichever gives way first ends it.');
+      checkFiles(out, 'Terminal'+where, files, p.card, 'the desktop');
     }
     /* a card is words written on the black a crossing makes. Without a fade
        there is no black to write them on */
@@ -1214,6 +1229,32 @@ function audit(map){
 }
 
 /* ---------- serialising ---------- */
+/* What any filing has to be true of, wherever it is kept: a name is how a
+   file is opened, so two of them in one folder is one file the operator can
+   never get at, and a card wants something sealed to bring it up. */
+function checkFiles(out, who, files, card, place){
+  const seen = new Set();
+  for(const f of files){
+    const k = f.folder+'/'+f.name.toUpperCase();
+    if(seen.has(k))
+      out.issues.push(who+' files two things called "'+f.name+'"'+
+                      (f.folder ? ' in folder "'+f.folder+'"' : ' on '+place)+'.');
+    seen.add(k);
+    if(!String(f.text||'').trim())
+      out.issues.push(who+' files "'+f.name+'", which has nothing in it.');
+    if(f.kind === 'locked' && !String(f.pass||'').trim())
+      out.issues.push(who+' files "'+f.name+'" as sealed with no word set, '+
+                      'so anything at all opens it.');
+  }
+  const sealed = files.filter(f=>f.kind === 'locked');
+  if(String(card||'').trim() && !sealed.length)
+    out.issues.push(who+' ends the segment on a card, but nothing filed on it is sealed, '+
+                    'so the card never comes up.');
+  if(sealed.length > 1 && String(card||'').trim())
+    out.issues.push(who+' files '+sealed.length+' sealed things and ends the segment on a card. '+
+                    'Whichever gives way first ends it.');
+}
+
 function toJSON(map){
   const keys = Object.keys(map.props||{}).sort((a,b)=>{
     const [ax,ay]=a.split(',').map(Number), [bx,by]=b.split(',').map(Number);
@@ -1227,6 +1268,12 @@ function toJSON(map){
     '  "beacons": ['+map.beacons.map(b=>'{"x": '+b.x+', "y": '+b.y+'}').join(', ')+'],\n'+
     (map.under ? '  "under": {"deck": '+JSON.stringify(map.under.deck)+
                  ', "dx": '+map.under.dx+', "dy": '+map.under.dy+'},\n' : '')+
+    (map.os ? '  "os": {\n'+
+              '    "card": '+JSON.stringify(map.os.card)+',\n'+
+              '    "cardsub": '+JSON.stringify(map.os.cardsub)+',\n'+
+              '    "files": [\n'+
+              map.os.files.map(f=>'      '+JSON.stringify(f)).join(',\n')+
+              '\n    ]\n  },\n' : '')+
     '  "props": {'+(keys.length
       ? '\n'+keys.map(k=>'    '+JSON.stringify(k)+': '+JSON.stringify(map.props[k])).join(',\n')+'\n  '
       : '')+'},\n'+
@@ -1361,7 +1408,7 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
 
 global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, ITEMS, CARRY,
                circuitOf, waysOf, boxes, circuitFed, itemAt,
-               FILE_KINDS, filesOf, foldersOf, inFolder,
+               FILE_KINDS, OS_SCHEMA, filesOf, osOf, osCard, foldersOf, inFolder,
                def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
                schemaOf, defaults, propsAt, setProp, signalIndex, signalTargets, tramPath, key:pk,

@@ -191,6 +191,12 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
 .desk-foot{flex:none;border-top:1px solid var(--gfaint);padding:5px 11px;font-size:12px;color:var(--gdim);
   display:flex;justify-content:space-between;gap:10px}
 #deskNote{color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the chassis's own store is not a crew machine, and does not read as one */
+#desk.store .desk-win{border-color:var(--mdim);box-shadow:0 0 40px rgba(120,255,190,.12)}
+#desk.store .term-bar{background:#04140f;color:var(--mfg)}
+#desk.store #deskBody{color:var(--mfg);text-shadow:0 0 6px rgba(120,255,190,.3)}
+#desk.store .file .nm{color:var(--mfg)}
+#desk.store .file:hover{background:#04140f}
 
 #dpad{display:none;position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:30;grid-template-columns:repeat(3,54px);grid-template-rows:repeat(2,54px);gap:6px}
 #dpad button{font:inherit;font-size:18px;background:#000;color:var(--g);border:1px solid var(--gdim);touch-action:manipulation}
@@ -264,7 +270,7 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
         <div class="box" id="objWrap"><h4>&lt;Objective&gt;</h4>
           <div id="obj" class="dim">—</div>
           <div id="carry"></div>
-          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div><div class="key" id="keyTrack" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">M</div></div>
+          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div><div class="key" id="keyTrack" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">M</div><div class="key" id="keyStore" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">O</div></div>
         </div>
       </div>
     </div>
@@ -973,11 +979,16 @@ function grantAbility(id,tag){
 }
 function syncAbilities(){
   const j=game.abilities.has('jump'), m=game.abilities.has('motion');
+  /* the store is the deck's rather than the chassis's, so this is re-read
+     every time the ground under the unit changes */
+  const o=ISO.osOf(MAP).length>0;
   $('#keyJump').style.display=j?'':'none';
   $('#keyTrack').style.display=m?'':'none';
+  $('#keyStore').style.display=o?'':'none';
   $('#dpad').classList.toggle('canjump',j);
   $('#footHint').textContent='WASD/Arrows to Move · [E] to Interact'+
-    (j?' · [SPACE] to Jump':'')+(m?' · [M] for the Tracker':'');
+    (j?' · [SPACE] to Jump':'')+(m?' · [M] for the Tracker':'')+
+    (o?' · [O] for the Store':'');
 }
 
 function startConsole(){
@@ -992,6 +1003,7 @@ function startConsole(){
   say(`Name Registered Identified: ${PLAYER.full.toUpperCase()}. UNIT COMPUTATIONAL STATUS NOTICED. MISSION STILL WITHIN ACCEPTABLE PARAMETERS OF SUSTAINMENT`,'',18,400);
   say('CONTINUE','',45,700).then(()=>{game.active=true;game.step=0;objective('Move.')});
   say('Move with [W][A][S][D] or the arrow keys.');
+  if(ISO.osOf(MAP).length)say('LOCAL STORE MOUNTED. [O] brings it up.','b');
 }
 
 const DIRV={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
@@ -1263,6 +1275,9 @@ function travelTo(deck,want,how,square){
   view.ready=false;                        // the camera does not fly between decks
   say(how==='drop'?'FALL ARRESTED. CHASSIS READS INTACT.':'TRANSIT LINK ENGAGED.','b');
   say('DECK REGISTERED: '+String(MAP.name||MAP.id).toUpperCase(),'b');
+  /* the keys the unit has on this deck are not the keys it had on the last */
+  syncAbilities();
+  if(ISO.osOf(MAP).length)say('LOCAL STORE MOUNTED. [O] brings it up.','b');
   if(how==='drop'){
     if(!land.spot)say('Nothing stencilled under the breach. Set down at the deck\'s landing record.','dim');
     /* a hole over a hole has nothing to stand the unit on, and going round
@@ -1332,6 +1347,7 @@ $('#carry').addEventListener('pointerdown',e=>{e.preventDefault();dropItem()});
 /* the tracker is raised and stowed by tapping as well as by [M] — the chip
    in the key row while it is down, its own footer while it is up */
 $('#keyTrack').addEventListener('pointerdown',e=>{e.preventDefault();toggleTracker()});
+$('#keyStore').addEventListener('pointerdown',e=>{e.preventDefault();desk.on?closeDesk():openStore()});
 $('#motionFoot').addEventListener('pointerdown',e=>{e.preventDefault();toggleTracker()});
 $('#motionFoot').style.cursor='pointer';
 function takeItem(x,y){
@@ -1991,29 +2007,53 @@ function closeTerminal(){term.on=false;$('#tiny').classList.remove('on','note')}
    A locked file wants a password, which is never on the machine holding it:
    it is written on something else on the deck. On a console carrying a card,
    the file giving way is the end of the segment. */
-const desk={on:false, x:0, y:0, files:[], folder:'', sel:0, open:null,
+const desk={on:false, src:'term', x:0, y:0, files:[], folder:'', sel:0, open:null,
             ask:false, typed:'', msg:'',
             /* what has already given way, by console and name. It outlives
                closing the desktop and a re-initialise both: the password is
                the operator's now, and pretending otherwise is busywork */
             cracked:new Set()};
-const fileKey=(x,y,f)=>x+','+y+'/'+f.folder+'/'+f.name;
-const cracked=f=>desk.cracked.has(fileKey(desk.x,desk.y,f));
+/* Where a file lives, for the record of what has already given way. A
+   console's filing is that console's; the unit's own store is the unit's,
+   under one name wherever it is brought up. */
+const fileKey=f=>(desk.src==='os'?'OS':desk.x+','+desk.y)+'/'+f.folder+'/'+f.name;
+const cracked=f=>desk.cracked.has(fileKey(f));
 
 function openDesktop(x,y){
   const p=propsOf(x,y), files=ISO.filesOf(MAP,x,y);
   /* a console marked for a desktop that was never given one still has its
      record, so it reads the way it always did rather than opening on nothing */
   if(!files.length)return false;
-  desk.on=true; desk.x=x; desk.y=y; desk.files=files;
+  return raiseDesk('term',files,String(p.title||'DESKTOP'),x,y);
+}
+/* ---------- [O]: the unit's own store ----------
+   The same screen, brought up on nothing. There is no console to walk to and
+   no circuit to wait on: the chassis carries this one. Most decks stock it
+   with nothing and never mention it — it is a segment's business, for when
+   the unit is shut in somewhere with time on its hands. */
+function openStore(){
+  if(!game.active||game.dead)return;
+  const files=ISO.osOf(MAP);
+  if(!files.length){
+    const n=performance.now();
+    if(n-game.useLog>2500){game.useLog=n;say('Local store reads empty. Nothing filed on this run.','dim')}
+    return;
+  }
+  raiseDesk('os',files,'RECOVERY UNIT 07 \u2014 LOCAL STORE',0,0);
+}
+function raiseDesk(src,files,title,x,y){
+  desk.on=true; desk.src=src; desk.x=x; desk.y=y; desk.files=files;
   desk.folder=''; desk.sel=0; desk.open=null; desk.ask=false; desk.typed=''; desk.msg='';
-  $('#deskTitle').textContent=String(p.title||'DESKTOP').toUpperCase();
-  $('#deskUser').textContent=PLAYER.last?PLAYER.last.toUpperCase()+' \u00b7 NODE 77':'NODE 77';
+  $('#deskTitle').textContent=title.toUpperCase();
+  $('#deskUser').textContent=src==='os'
+    ? (PLAYER.full?PLAYER.full.toUpperCase():'UNIT 07')
+    : (PLAYER.last?PLAYER.last.toUpperCase()+' \u00b7 NODE 77':'NODE 77');
+  $('#desk').classList.toggle('store',src==='os');
   $('#desk').classList.add('on');
   renderDesk();
   return true;
 }
-function closeDesk(){desk.on=false;desk.open=null;desk.ask=false;$('#desk').classList.remove('on')}
+function closeDesk(){desk.on=false;desk.open=null;desk.ask=false;$('#desk').classList.remove('on','store')}
 
 /* What the desktop is showing at this moment: the folders and the loose files
    at the top level, or the way back out and what is inside one folder. */
@@ -2103,13 +2143,13 @@ function deskTry(){
     desk.typed='';desk.msg='REJECTED. The machine does not say how close that was.';
     return renderDesk();
   }
-  desk.cracked.add(fileKey(desk.x,desk.y,f));
+  desk.cracked.add(fileKey(f));
   desk.ask=false;desk.typed='';desk.msg='';
   renderDesk();
   say('SEAL LIFTED: '+f.name+'.','b');
-  /* on a console that carries a card, that is the end of the segment */
-  const c=cardOf(propsOf(desk.x,desk.y));
-  if(c){closeDesk();fadeThrough(null,c)}
+  /* on filing that carries a card, that is the end of the segment */
+  const c=desk.src==='os'?ISO.osCard(MAP):cardOf(propsOf(desk.x,desk.y));
+  if(c&&String(c.title||'').trim()){closeDesk();fadeThrough(null,c)}
 }
 
 /* ---------- ending the run ---------- */
@@ -2499,6 +2539,7 @@ addEventListener('keydown',e=>{
         return;
       }
       if(e.repeat)return;
+      if(e.code==='KeyO'&&desk.src==='os')return closeDesk();
       if(e.code==='Escape'||e.code==='Backspace')return deskBack();
       if(e.code==='KeyE'||e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')
         return desk.open?deskBack():deskOpen();
@@ -2540,6 +2581,7 @@ addEventListener('keydown',e=>{
     }
     if(e.code==='KeyE'){e.preventDefault();if(!e.repeat)interact();return}
     if(e.code==='KeyM'){e.preventDefault();if(!e.repeat)toggleTracker();return}
+    if(e.code==='KeyO'){e.preventDefault();if(!e.repeat)openStore();return}
     if(e.code==='KeyQ'){e.preventDefault();if(!e.repeat)dropItem();return}
     if(e.code==='Escape'&&term.on){e.preventDefault();closeTerminal();return}
     if(e.code==='KeyR'&&game.dead){e.preventDefault();if(!e.repeat)respawn();return}
