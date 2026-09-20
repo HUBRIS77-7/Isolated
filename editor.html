@@ -53,6 +53,12 @@ input[type=text]{width:100%}
   padding:4px 5px;margin-bottom:5px}
 .slot.tall input[type=text]{flex:1 1 84px}
 .slot.tall textarea{flex:1 0 100%;min-height:96px;margin-top:2px}
+/* what a control filed on a desktop runs to: the same wiring a button carries,
+   on its own line of the row because a row is already full across */
+.slot .pts{flex:1 0 100%;display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin-top:2px}
+.slot .pts .dim{font-size:11px;letter-spacing:.08em;margin-right:2px}
+.slot .pts .at{color:var(--amber);border-color:var(--gfaint);padding:1px 5px;font-size:11px}
+.slot .pts .at:hover{border-color:var(--amber)}
 .sw{width:17px;height:17px;flex:none;border:1px solid var(--gdim);display:grid;place-items:center;font-size:12px;line-height:1}
 .k{color:var(--gdim);margin-left:auto;font-size:12px}
 .dim{color:var(--gdim)}
@@ -214,6 +220,46 @@ let hover = null, drag = null, rectAnchor = null, panning = null, spaceDown = fa
 let sealed = new Set(), gated = new Set();   // no way in at all · only by jumping
 let onCircuit = {};                          // circuit name -> the blocks waiting on it
 let sel = null, picking = null;          // block under the inspector, field awaiting a click
+
+/* ---------- "Pick ▸" ----------
+   A field that wants a square on the record rather than a word in a box. The
+   click lands long after the inspector was drawn, and the inspector is redrawn
+   on every write, so what is held between the two is a path to the field
+   rather than a hold on it: whose settings (a block's, or the deck's own
+   store), which setting, and — where the setting is a list of rows, as a
+   desktop's filing is — which row and which field of that row. Anything
+   held onto instead goes stale the moment the first click writes. */
+const pickAt = (where, key, row, sub) =>
+  ({id:where+'/'+key+'/'+(row==null ? '' : row+'/'+sub), where, key,
+    row:(row==null ? null : row), sub:sub||null});
+const picked = id => !!picking && picking.id === id;
+/* The settings this path is written into: a block's, or the deck's store. */
+const pickBag = p => p.where==='store' ? (map.os || {}) : (ISO.propsAt(map, sel.x, sel.y) || {});
+function pickValue(p){
+  const v = pickBag(p)[p.key];
+  if(p.row == null) return v;
+  const row = (v || [])[p.row];
+  return row ? row[p.sub] : null;
+}
+function pickPut(p, v){
+  if(p.row != null){
+    const rows = (pickBag(p)[p.key] || []).slice();
+    if(!rows[p.row]) return false;                       // the row went out from under us
+    rows[p.row] = Object.assign({}, rows[p.row], {[p.sub]:v});
+    v = rows;
+  }
+  if(p.where==='store'){ map.os = Object.assign({files:[], card:'', cardsub:''}, map.os, {[p.key]:v}); return true }
+  return ISO.setProp(map, sel.x, sel.y, p.key, v);
+}
+/* The kind of field a path leads to, so a click knows whether it is setting
+   one square or adding to a list of them. */
+function pickSpec(p){
+  const schema = p.where==='store' ? ISO.OS_SCHEMA
+               : (sel && ISO.inside(map, sel.x, sel.y) && ISO.schemaOf(ISO.tileAt(map, sel.x, sel.y)));
+  const f = schema && schema[p.key];
+  if(!f) return null;
+  return p.row == null ? f : ((f.fields || {})[p.sub] || null);
+}
 
 const clone = m => JSON.parse(JSON.stringify(m));
 function pushUndo(){ undo.push(clone(map)); if(undo.length>120) undo.shift(); redo.length = 0; }
@@ -414,7 +460,7 @@ function drawStore(){
     changed();
   };
   for(const key in schema)
-    box.appendChild(field(key, schema[key], os[key], v=>write(key, v)));
+    box.appendChild(field(key, schema[key], os[key], v=>write(key, v), 'store'));
   if(!(map.os && map.os.files.length)){
     const note = document.createElement('div');
     note.className = 'dim';
@@ -447,7 +493,8 @@ function swapField(ch){
   wrap.append(label, sl);
   return wrap;
 }
-function field(key, spec, value, writer){
+function field(key, spec, value, writer, where){
+  where = where || 'block';
   const wrap = document.createElement('div');
   wrap.className = 'fld';
   const label = document.createElement('span');
@@ -466,10 +513,11 @@ function field(key, spec, value, writer){
     pt.className = 'pt';
     const at = document.createElement('b');
     at.textContent = value ? `${value.x},${value.y}` : '— not set —';
+    const path = pickAt(where, key);
     const pick = document.createElement('button');
-    pick.textContent = picking === key ? 'click a block…' : 'Pick ▸';
-    pick.classList.toggle('picking', picking === key);
-    pick.onclick = ()=>{ picking = picking === key ? null : key; drawInspector() };
+    pick.textContent = picked(path.id) ? 'click a block…' : 'Pick ▸';
+    pick.classList.toggle('picking', picked(path.id));
+    pick.onclick = ()=>{ picking = picked(path.id) ? null : path; drawInspector() };
     pt.append(at, pick);
     wrap.appendChild(pt);
   }else if(spec.type === 'points'){
@@ -490,10 +538,11 @@ function field(key, spec, value, writer){
     const at = document.createElement('b');
     at.textContent = pts.length ? '' : '— not set —';
     if(!pts.length) at.className = 'dim';
+    const path = pickAt(where, key);
     const pick = document.createElement('button');
-    pick.textContent = picking === key ? 'click blocks… (Esc)' : (pts.length ? 'Add ▸' : 'Pick ▸');
-    pick.classList.toggle('picking', picking === key);
-    pick.onclick = ()=>{ picking = picking === key ? null : key; drawInspector() };
+    pick.textContent = picked(path.id) ? 'click blocks… (Esc)' : (pts.length ? 'Add ▸' : 'Pick ▸');
+    pick.classList.toggle('picking', picked(path.id));
+    pick.onclick = ()=>{ picking = picked(path.id) ? null : path; drawInspector() };
     row.append(at, pick);
     wrap.appendChild(row);
   }else if(spec.type === 'slots'){
@@ -512,7 +561,33 @@ function field(key, spec, value, writer){
       if(Object.values(fields).some(f=>f.type === 'lines')) line.className = 'slot tall';
       for(const k in fields){
         const f = fields[k];
-        if(f.type === 'lines'){
+        /* a field that only means anything on some rows is only on those rows:
+           a document has no word on it and drives nothing, and a box for each
+           is a box the author has to learn to ignore */
+        if(f.when && !f.when(row)) continue;
+        if(f.type === 'points'){
+          /* the same wiring a block's own field does, written into one row of
+             a list: what it runs to, each with a way to drop it, and a button
+             that leaves the record live for the next click */
+          const pts = row[k] || [], path = pickAt(where, key, i, k);
+          const box = document.createElement('div');
+          box.className = 'pts';
+          const nm = document.createElement('span');
+          nm.className = 'dim'; nm.textContent = f.label || k;
+          box.appendChild(nm);
+          pts.forEach((q,j)=>{
+            const b = document.createElement('button');
+            b.className = 'at'; b.textContent = q.x+','+q.y+' ×'; b.title = 'Unlink';
+            b.onclick = ()=>put(i, k, pts.filter((_,m)=>m!==j));
+            box.appendChild(b);
+          });
+          const pick = document.createElement('button');
+          pick.textContent = picked(path.id) ? 'click blocks… (Esc)' : (pts.length ? 'Add ▸' : 'Pick ▸');
+          pick.classList.toggle('picking', picked(path.id));
+          pick.onclick = ()=>{ picking = picked(path.id) ? null : path; drawInspector() };
+          box.appendChild(pick);
+          line.appendChild(box);
+        }else if(f.type === 'lines'){
           const ta = document.createElement('textarea');
           ta.placeholder = f.label || k; ta.title = f.label || k;
           ta.value = row[k] == null ? '' : row[k];
@@ -547,7 +622,9 @@ function field(key, spec, value, writer){
     add.textContent = rows.length ? '+ another' : '+ add';
     add.onclick = ()=>{
       const row = {};
-      for(const k in fields) row[k] = fields[k].def;
+      /* a list default is copied rather than shared, or every row of filing
+         ends up wired to the squares the first one was */
+      for(const k in fields) row[k] = Array.isArray(fields[k].def) ? [] : fields[k].def;
       write(rows.concat(row));
     };
     wrap.appendChild(add);
@@ -721,6 +798,19 @@ function drawWiring(z){
       cx.strokeStyle = 'rgba(255,180,74,.85)';
       cx.strokeRect(tx+z*.18, ty+z*.18, z*.64, z*.64);
     }
+    /* a control filed on a console's desktop runs the same lines a button on a
+       wall does. It is drawn finer because it is not on the wall: the unit has
+       to be at this glass, and past whatever word the file was shut with */
+    if(t.press === 'terminal') for(const f of ISO.filesOf(map,x,y)){
+      if(f.kind !== 'app') continue;
+      for(const c of (f.targets || [])){
+        const [tx,ty] = toScreen(c.x, c.y);
+        cx.strokeStyle = 'rgba(255,180,74,.4)'; cx.setLineDash([2*D,4*D]);
+        cx.beginPath(); cx.moveTo(aX,aY); cx.lineTo(tx+z/2,ty+z/2); cx.stroke(); cx.setLineDash([]);
+        cx.strokeStyle = 'rgba(255,180,74,.7)';
+        cx.beginPath(); cx.arc(tx+z/2, ty+z/2, z*.26, 0, 6.283); cx.stroke();
+      }
+    }
     if(t.press === 'vent'){
       const d = (ISO.propsAt(map,x,y)||{}).dest;
       if(d){
@@ -861,21 +951,22 @@ function act(p, erase, isStart){
   const ch = erase ? ' ' : paint;
   if(picking){                                                   // finishing a "Pick ▸"
     if(!isStart) return;
-    const schema = sel && ISO.schemaOf(ISO.tileAt(map,sel.x,sel.y));
-    if(!schema || !schema[picking] || !ISO.inside(map,p.x,p.y)){
+    const spec = pickSpec(picking);
+    if(!spec || !ISO.inside(map,p.x,p.y)){
       picking = null; drawInspector(); return;                   // clicked off the record
     }
     pushUndo();
-    if(schema[picking].type !== 'points'){
-      ISO.setProp(map, sel.x, sel.y, picking, {x:p.x, y:p.y});
-      picking = null; changed(); toast('Linked to '+p.x+','+p.y); return;
+    if(spec.type !== 'points'){
+      if(pickPut(picking, {x:p.x, y:p.y})) toast('Linked to '+p.x+','+p.y);
+      picking = null; changed(); return;
     }
     /* a list stays open, so a bank of blocks is wired in one pass — click a
        block again to drop it, Esc when done */
-    const had = (ISO.propsAt(map,sel.x,sel.y) || {})[picking] || [];
+    const had = pickValue(picking) || [];
     const i = had.findIndex(q=>q.x===p.x && q.y===p.y);
-    ISO.setProp(map, sel.x, sel.y, picking,
-                i>=0 ? had.filter((_,j)=>j!==i) : had.concat({x:p.x, y:p.y}));
+    if(!pickPut(picking, i>=0 ? had.filter((_,j)=>j!==i) : had.concat({x:p.x, y:p.y}))){
+      picking = null; changed(); return;                         // the field went away
+    }
     changed();
     toast((i>=0 ? 'Unlinked from ' : 'Linked to ')+p.x+','+p.y+' · Esc when done');
     return;

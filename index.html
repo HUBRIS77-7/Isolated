@@ -189,6 +189,20 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
 /* a drawing on this machine is made of characters, so it is kept column for column */
 #deskBody pre{margin:0;font-family:inherit;font-size:13px;line-height:1.05;white-space:pre;
   overflow-x:auto;color:var(--mfg);text-shadow:0 0 8px rgba(120,255,190,.3)}
+/* a control filed on a desktop: the key, what it runs to, and what the deck
+   said the last time it was struck. Amber because it is a control — the same
+   amber a button on a wall is drawn in */
+.file.app .g{color:var(--amber)}
+.file.app.shut .g{color:var(--red)}
+#deskRun{display:flex;align-items:center;gap:12px;margin:12px 0 0}
+#deskRun .dim{font-size:12px;letter-spacing:.16em}
+#deskFire{font:inherit;font-size:14px;letter-spacing:.2em;padding:9px 20px;cursor:pointer;
+  background:#0a0a02;color:var(--amber);border:1px solid var(--amber);
+  text-shadow:0 0 8px rgba(255,180,74,.4);box-shadow:0 0 18px rgba(255,180,74,.12)}
+#deskFire:hover{background:var(--amber);color:#000;text-shadow:none}
+#deskFire:active{transform:translateY(1px)}
+#deskRead{border-top:1px solid var(--gfaint);margin-top:12px;padding-top:8px;font-size:13px}
+#deskRead p{margin:0 0 .35em}#deskRead p:last-child{margin-bottom:0}
 #deskPrompt{border:1px solid var(--gfaint);padding:8px 10px;margin-top:10px}
 #deskField{color:var(--amber);letter-spacing:.3em;min-height:1.3em;word-break:break-all}
 #deskMsg{color:var(--red);min-height:1.3em;margin-top:6px;font-size:13px}
@@ -1295,7 +1309,7 @@ function inReach(){
   return out;
 }
 function interact(){
-  if(desk.on)return deskOpen();
+  if(desk.on)return deskUse();
   if(term.on)return closeTerminal();
   if(fuse.on)return closeFusebox();
   if(!game.active||game.dead)return;
@@ -1322,21 +1336,28 @@ function interact(){
 }
 /* A control may run to any number of blocks; they all answer the one press.
    The drivers report a line rather than writing it, so a bank of bulkheads
-   doing the same thing reads as one line in the log instead of four. */
-function pressButton(x,y){
-  world.lit.set(K(x,y),performance.now());
-  const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
-  if(!powered(x,y))return say(deadLine('Control',x,y,tag),'dim');
-  const targets=ISO.signalTargets(MAP,x,y);
-  if(!targets.length)return say('Control'+tag+' pressed. No line runs from it.','dim');
+   doing the same thing reads as one line in the log instead of four — and a
+   control filed on a desktop can put the same lines on its own glass, which
+   is where the operator is looking while it is up. */
+function driveAll(targets,tag){
   const lines=[];
-  for(const c of targets){
+  for(const c of targets||[]){
+    if(!ISO.inside(MAP,c.x,c.y))continue;          // a line drawn off the record
     const t=tileDef(c.x,c.y);
     const r=t.signal==='toggle'?driveDoor(c.x,c.y,tag)
            :t.signal==='move'  ?callTram(c.x,c.y,tag)
            :t.signal==='lift'  ?rideLift(c.x,c.y,tag,true):null;
     if(r&&!lines.some(l=>l.text===r.text))lines.push(r);
   }
+  return lines;
+}
+function pressButton(x,y){
+  world.lit.set(K(x,y),performance.now());
+  const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  if(!powered(x,y))return say(deadLine('Control',x,y,tag),'dim');
+  const targets=ISO.signalTargets(MAP,x,y);
+  if(!targets.length)return say('Control'+tag+' pressed. No line runs from it.','dim');
+  const lines=driveAll(targets,tag);
   if(!lines.length)return say('Control'+tag+' pressed. Nothing on the far end answers.','dim');
   for(const l of lines)say(l.text,l.cls);
   /* the car goes last, so the log reads the press before the deck changes */
@@ -2191,6 +2212,10 @@ function closeTerminal(){term.on=false;$('#tiny').classList.remove('on','note')}
    the file giving way is the end of the segment. */
 const desk={on:false, src:'term', x:0, y:0, files:[], folder:'', sel:0, open:null,
             ask:false, typed:'', msg:'',
+            /* what the last press of a filed control reported, kept on the
+               control's own glass: the log is behind the desktop and the
+               operator is not reading it while this is up */
+            ran:[],
             /* what has already given way, by console and name. It outlives
                closing the desktop and a re-initialise both: the password is
                the operator's now, and pretending otherwise is busywork */
@@ -2200,6 +2225,13 @@ const desk={on:false, src:'term', x:0, y:0, files:[], folder:'', sel:0, open:nul
    under one name wherever it is brought up. */
 const fileKey=f=>(desk.src==='os'?'OS':desk.x+','+desk.y)+'/'+f.folder+'/'+f.name;
 const cracked=f=>desk.cracked.has(fileKey(f));
+/* What the machine will not hand over yet. A sealed record always asks until
+   it gives way — an author who set no word on one sealed it against nothing,
+   and it still asks — and a control asks only where its author put a word on
+   it, because a control with no word is a button that happens to be filed. */
+const wants=f=>f.kind==='locked' ? !cracked(f)
+             : f.kind==='app'    ? (!!String(f.pass||'').trim() && !cracked(f))
+             : false;
 
 function openDesktop(x,y){
   const p=propsOf(x,y), files=ISO.filesOf(MAP,x,y);
@@ -2225,7 +2257,7 @@ function openStore(){
 }
 function raiseDesk(src,files,title,x,y){
   desk.on=true; desk.src=src; desk.x=x; desk.y=y; desk.files=files;
-  desk.folder=''; desk.sel=0; desk.open=null; desk.ask=false; desk.typed=''; desk.msg='';
+  desk.folder=''; desk.sel=0; desk.open=null; desk.ask=false; desk.typed=''; desk.msg=''; desk.ran=[];
   $('#deskTitle').textContent=title.toUpperCase();
   $('#deskUser').textContent=src==='os'
     ? (PLAYER.full?PLAYER.full.toUpperCase():'UNIT 07')
@@ -2235,7 +2267,8 @@ function raiseDesk(src,files,title,x,y){
   renderDesk();
   return true;
 }
-function closeDesk(){desk.on=false;desk.open=null;desk.ask=false;$('#desk').classList.remove('on','store')}
+function closeDesk(){desk.on=false;desk.open=null;desk.ask=false;desk.ran=[];
+  $('#desk').classList.remove('on','store')}
 
 /* What the desktop is showing at this moment: the folders and the loose files
    at the top level, or the way back out and what is inside one folder. */
@@ -2258,12 +2291,35 @@ function renderDesk(){
     const f=desk.open;
     if(desk.ask){
       body.innerHTML='<p class="b">'+esc(f.name)+'</p>'+
-        '<p class="dim">This file is sealed. The machine wants the word for it.</p>'+
+        '<p class="dim">'+(f.kind==='app'
+          ? 'This control is locked out. The machine wants the word before it will press.'
+          : 'This file is sealed. The machine wants the word for it.')+'</p>'+
         '<div id="deskPrompt"><div class="dim" style="font-size:12px;letter-spacing:.18em">PASSWORD</div>'+
         '<div id="deskField" class="caret">'+esc('\u2022'.repeat(desk.typed.length))+'</div></div>'+
         '<div id="deskMsg">'+esc(desk.msg)+'</div>';
-      $('#deskNote').textContent='SEALED';
+      $('#deskNote').textContent=f.kind==='app'?'LOCKED OUT':'SEALED';
       $('#deskHint').textContent='TYPE \u00b7 [ENTER] TRY \u00b7 [ESC] BACK';
+    }else if(f.kind==='app'){
+      /* a control is not read, it is worked: whatever its author wrote on it
+         is the legend above the key, and under the key is what the deck
+         answered the last time it was struck */
+      const to=(f.targets||[]).length;
+      body.innerHTML='<p class="b">'+esc(f.name)+'</p>'+
+        String(f.text||'No legend. The key is unmarked.')
+          .split(/\n+/).map(l=>'<p>'+esc(l)+'</p>').join('')+
+        '<div id="deskRun"><button id="deskFire" type="button">\u25ce PRESS</button>'+
+        '<span class="dim">'+(to?to+' LINE'+(to===1?'':'S')+' OUT':'WIRED TO NOTHING')+'</span></div>'+
+        (desk.ran.length
+          ? '<div id="deskRead">'+desk.ran.map(l=>'<p'+(l.cls?' class="'+l.cls+'"':'')+'>'+
+              esc(l.text)+'</p>').join('')+'</div>'
+          : '');
+      $('#deskNote').textContent='CONTROL';
+      $('#deskHint').textContent='[E] PRESS \u00b7 [ESC] BACK';
+      const fire=$('#deskFire');
+      if(fire)fire.onclick=deskPress;
+      /* the readout is under the key, so the glass follows it down */
+      body.scrollTop=desk.ran.length?body.scrollHeight:0;
+      return;
     }else if(f.kind==='image'){
       body.innerHTML='<p class="b">'+esc(f.name)+'</p><pre>'+esc(f.text||'Nothing rendered.')+'</pre>';
       $('#deskNote').textContent='IMAGE';
@@ -2286,10 +2342,12 @@ function renderDesk(){
     if(r.dir) return '<div class="file'+sel+'" data-i="'+i+'"><span class="g">\u25a4</span>'+
                      '<span class="nm">'+esc(r.dir)+'</span><span class="kd">FOLDER</span></div>';
     const f=r.file, k=ISO.FILE_KINDS[f.kind]||ISO.FILE_KINDS.doc;
-    const shut=f.kind==='locked'&&!cracked(f), was=f.kind==='locked'&&cracked(f);
-    return '<div class="file'+sel+(shut?' shut':'')+(was?' open':'')+'" data-i="'+i+'">'+
+    const shut=wants(f), was=!shut&&cracked(f);
+    return '<div class="file'+sel+(shut?' shut':'')+(was?' open':'')+
+           (f.kind==='app'?' app':'')+'" data-i="'+i+'">'+
            '<span class="g">'+k.glyph+'</span><span class="nm">'+esc(f.name)+'</span>'+
-           '<span class="kd">'+(shut?'SEALED':k.name.toUpperCase())+'</span></div>';
+           '<span class="kd">'+(shut?(f.kind==='app'?'LOCKED':'SEALED'):k.name.toUpperCase())+
+           '</span></div>';
   }).join('')||'<p class="dim">Nothing on the desktop.</p>';
   const n=desk.files.length, d=ISO.foldersOf(desk.files).length;
   $('#deskNote').textContent=n+' FILE'+(n===1?'':'S')+(d?' \u00b7 '+d+' FOLDER'+(d===1?'':'S'):'');
@@ -2306,12 +2364,18 @@ function deskOpen(){
   if(r.dir){desk.folder=r.dir;desk.sel=0;return renderDesk()}
   const f=r.file;
   desk.open=f;
-  desk.ask=(f.kind==='locked'&&!cracked(f));
-  desk.typed='';desk.msg='';
+  desk.ask=wants(f);
+  desk.typed='';desk.msg='';desk.ran=[];
   renderDesk();
 }
+/* [E] with the desktop up: into whatever is selected, or — on a control that
+   is already open and already earned — the press itself. */
+function deskUse(){
+  if(desk.open&&desk.open.kind==='app'&&!desk.ask)return deskPress();
+  return deskOpen();
+}
 function deskBack(){
-  if(desk.open){desk.open=null;desk.ask=false;desk.typed='';desk.msg='';return renderDesk()}
+  if(desk.open){desk.open=null;desk.ask=false;desk.typed='';desk.msg='';desk.ran=[];return renderDesk()}
   if(desk.folder){desk.folder='';desk.sel=0;return renderDesk()}
   closeDesk();
 }
@@ -2328,10 +2392,43 @@ function deskTry(){
   desk.cracked.add(fileKey(f));
   desk.ask=false;desk.typed='';desk.msg='';
   renderDesk();
-  say('SEAL LIFTED: '+f.name+'.','b');
-  /* on filing that carries a card, that is the end of the segment */
+  say((f.kind==='app'?'CONTROL RELEASED: ':'SEAL LIFTED: ')+f.name+'.','b');
+  /* on a sealed record that carries a card, that is the end of the segment.
+     A control is not a record: earning it is the middle of the work, and what
+     the operator earned was the press — so the run carries on to it */
+  if(f.kind==='app')return;
   const c=desk.src==='os'?ISO.osCard(MAP):cardOf(propsOf(desk.x,desk.y));
   if(c&&String(c.title||'').trim()){closeDesk();fadeThrough(null,c)}
+}
+
+/* ---------- pressing something filed ----------
+   A control on a desktop drives blocks exactly as a button on a wall does —
+   the same targets, the same drivers, the same one line per thing that
+   answered. What is different is where it is pressed from: a crew console
+   runs on the ship's supply and goes dead with its circuit, while the store
+   is the chassis's own and answers anywhere on the deck. */
+function deskPress(){
+  const f=desk.open;
+  if(!f||f.kind!=='app'||desk.ask)return;
+  const tag=' ['+f.name+']';
+  if(desk.src==='term'){
+    world.lit.set(K(desk.x,desk.y),performance.now());
+    if(!powered(desk.x,desk.y)){
+      const line=deadLine('Console',desk.x,desk.y,'');
+      desk.ran=[{text:line,cls:'dim'}];say(line,'dim');
+      return renderDesk();
+    }
+  }
+  const targets=f.targets||[];
+  const lines=targets.length?driveAll(targets,tag):[];
+  desk.ran=lines.length?lines:[{cls:'dim',
+    text:targets.length?'Pressed'+tag+'. Nothing on the far end answers.'
+                       :'Pressed'+tag+'. No line runs from it.'}];
+  for(const l of desk.ran)say(l.text,l.cls);
+  /* the car goes last, and the desktop does not ride down with it */
+  const go=lines.find(l=>l.go);
+  if(go){closeDesk();return transit(go.go.fade,()=>travelTo(go.go.deck,go.go.want),go.go.card)}
+  renderDesk();
 }
 
 /* ---------- ending the run ---------- */
@@ -2730,7 +2827,7 @@ addEventListener('keydown',e=>{
       if(e.code==='KeyO'&&desk.src==='os')return closeDesk();
       if(e.code==='Escape'||e.code==='Backspace')return deskBack();
       if(e.code==='KeyE'||e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')
-        return desk.open?deskBack():deskOpen();
+        return desk.open?(desk.open.kind==='app'?deskPress():deskBack()):deskOpen();
       /* a long record is walked down rather than selected through */
       if(desk.open){
         const b=$('#deskBody');
@@ -2744,7 +2841,7 @@ addEventListener('keydown',e=>{
         return renderDesk();
       }
       if(dir==='left')return deskBack();
-      if(dir==='right')return deskOpen();
+      if(dir==='right')return deskUse();
       return;
     }
     /* while the fusebox is up the deck keys belong to it */
