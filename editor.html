@@ -345,8 +345,12 @@ function tileButton(ch){
                 `<span>${t.name}</span><span class="k">${HOTKEY[ch] == null ? '' : HOTKEY[ch]}</span>`;
   b.title = (t.walk ? 'Walkable' : 'Blocks the unit')
           + (!t.walk && t.clear ? ' · but sight passes over it' : '')
+          + (t.walk && t.dense ? ' · but sight stops dead in it' : '')
+          + (t.slow > 1 ? ' · slower to cross' : '')
           + (t.foot ? ' · covers more than its own tile' : '')
           + (t.merge ? ' · touching copies become one block' : '')
+          + (t.slide ? ' · runs open a tile at a time when a control signals it' : '')
+          + (t.keyed ? ' · held by a lock: only the key it names opens it' : '')
           + (t.powered ? ' · runs on power (Select → circuit)' : '')
           + (t.take ? ' · small enough for the unit to carry off' : '')
           + (t.props ? ' · set up per instance (Select)' : '');

@@ -105,6 +105,32 @@ ISO.register({
 | `n`  | Note      | yes  | `[E]` reads it. Paper: it needs no circuit   |
 | `E`  | Stalker   | yes  | Where a contact starts, not a block. It paces the unit and never closes |
 | `e`  | Hunter    | yes  | Where a contact starts. It hunts by movement, it closes, and it will not pass a doorway |
+| `d`  | Dirt      | yes  | Open earth                                   |
+| `g`  | Grass     | yes  |                                              |
+| `p`  | Path      | yes  | Beaten track                                 |
+| `r`  | Tire tracks | yes | Touching copies run as one set of ruts      |
+| `_`  | Wooden floor | yes | Boards, for what is built out of timber    |
+| `P`  | Pond      | no   | Water. Touching copies become one pond — as big as you paint it. Sight crosses it; the chassis does not |
+| `H`  | Wooden wall | no |                                              |
+| `h`  | Wooden fencing | no | Blocks like a wall; you can see over it  |
+| `i`  | Window    | no   | Blocks like a wall; the room reads clear through it |
+| `Q`  | Silo wall | no   | Touching copies become one silo — as big as you paint it |
+| `K`  | Locked door | no | Held by a lock, not a circuit. Only the key it names opens it, and `[E]` is what tries it |
+| `k`  | Key       | yes  | Small enough to carry off. `[E]` lifts it, `[Q]` sets it down |
+| `?`  | Sign      | no   | `[E]` reads it. Paint: it needs no circuit   |
+| `>`  | Sliding gate | no | Runs open a tile at a time when a button signals it, from the end its `dir` points at. Touching copies run as one gate |
+| `R`  | Car       | no   | Seven tiles by three; turns with its `dir`   |
+| `@`  | Windmill  | no   | Three tiles by three; turns with its `dir`   |
+| `Z`  | Bed       | no   | Two tiles long; turns with its `dir`         |
+| `a`  | Chair     | no   | Decoration. Sight passes over it             |
+| `U`  | Sofa      | no   | Two tiles long; turns with its `dir`         |
+| `t`  | Table     | no   | Two tiles by two; turns with its `dir`       |
+| `m`  | Television | no  | `[E]` reads what is on it — and it draws power, so a dark circuit is a dark screen |
+| `\|`  | Corn stalk | yes | Standing crop. Walkable, slow, and sight stops dead in it — a field is cover |
+| `w`  | Wheat     | yes  | Crop. Slower to cross, and low enough to read over |
+| `&`  | Tomatoes  | yes  | Crop. Slower to cross                        |
+| `y`  | Hay bale  | no   | Touching copies stack as one. Low enough to read over |
+| `j`  | Scarecrow | no   | Decoration. Sight passes over it             |
 
 To add a tile type, add one entry to `TILES` in `tiles.js`. It shows up in the
 editor palette on its own and the game obeys it straight away — walkability,
@@ -166,10 +192,26 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Hunter   | `label`        | Name shown in the message log                  |
 | Elevator, Stairway, Hull breach | `fade` | The screen goes black across the crossing rather than cutting |
 | Elevator, Stairway, Hull breach | `card`, `cardsub` | Words held on that black, and the line under them |
+| Silo wall | `label`       | Stencilled name — read from anywhere on the one silo |
+| Locked door | `opens`     | Which key turns it. No other does, and no control does |
+| Locked door | `label`     | Name shown in the message log                  |
+| Key      | `opens`        | Which lock this one is cut for                 |
+| Key      | `label`        | Name shown in the message log                  |
+| Sign     | `title`, `text`| What the board says                            |
+| Sliding gate | `dir`      | Which end it runs open from, and back toward when it shuts |
+| Sliding gate | `open`     | Starts open rather than shut                   |
+| Sliding gate | `locked`   | Nothing drives it — there is no `[E]` on one either |
+| Television | `title`, `text` | What is on the screen                     |
+| Television | `label`      | Name shown in the message log                  |
+| Car, Windmill | `dir`     | Which way it faces, so which tiles it covers   |
+| Car, Windmill | `label`   | Stencilled name                                |
+| Bed, Sofa, Table | `dir`  | Which way it runs                              |
+| Scarecrow | `label`       | Stencilled name                                |
 | *anything powered* | `circuit` | The circuit it waits on. Blank — the default — means it is live from the start |
 
-The palette is filed under headings — **Ground**, **Structure**, **Controls**,
-**Transit**, **Fixtures**, **Remains**, **Unit & kit**, **Contacts** — and each heading folds away with a
+The palette is filed under headings — **Ground**, **Open land**, **Structure**,
+**Buildings**, **Controls**, **Transit**, **Fixtures**, **Furnishings**, **Farm**,
+**Remains**, **Unit & kit**, **Contacts** — and each heading folds away with a
 click, so a room is laid out from the six or seven blocks it actually uses
 rather than from a list of thirty. Which headings are folded is kept between
 visits, like the draft is. The number keys still reach the first ten blocks
@@ -303,6 +345,10 @@ What is being carried crosses between decks, the way a fitted package does.
 What it does not survive is `[R]`: the deck is rebuilt around the unit, clips
 and all, so anything it was holding is back where it was found rather than held
 twice.
+
+A **Key** (`k`) is the second, and it works the same way with one difference:
+what it answers to is a lock rather than a circuit. Which lock is `opens`, on
+the key and on the door alike — see **A lock, rather than a circuit** below.
 
 To add another kind of small object, add one entry to `ITEMS` in `tiles.js` and
 one tile that says it holds that kind — the lifting, the carrying, the setting
@@ -1045,6 +1091,14 @@ intact. 3 × 2 units.* A cargo gate works the same way, so a gate four tiles
 tall opens as one door, whether the unit drives it or a button does. So does a
 tank wall, which is what makes a vessel taking up half a deck drawable at all.
 
+A block that states its own size can also state what each of its cells is drawn
+as (`parts`). A flat list is one mark per cell along the block's facing, which
+is what makes a forklift a body and a fork rather than two of the same square.
+A list of lists is a row of marks per cell **across** it as well, which is what
+a car needs: seven tiles by three, wheels at its corners, a cab and a bed. Both
+turn with the block, because `parts` is read off the footprint rather than off
+the map.
+
 Survey flags a big block that reaches past the edge of the record, stands in a
 wall, or overlaps another one.
 
@@ -1107,6 +1161,76 @@ Buttons and terminals do not block signals — they block the unit, so put them
 in a wall next to a tile it can stand on. A tram's rail may run over unmapped
 space or a pit; the platform is the floor while it is there, and bare rail
 when it is not.
+
+## A gate that runs
+
+A cargo gate is shut or open the instant it is signalled. A **Sliding gate**
+(`>`) is neither, for as long as it takes to cross itself: the press starts it
+and the deck plays on, a tile at a time, from the end its `dir` points at
+toward the far one. Shutting it runs the same way in reverse. The default is
+`right`, which is a gate that opens left to right.
+
+It is as big as you paint it, the way a cargo gate is — touching copies are one
+gate and run together — and it has no handle: a gate that size answers a
+control and nothing else, so Survey asks for a button wired to it. Wire the
+line to any tile of the body; the whole runs.
+
+Nothing else about it is special, which is the point. Every tile it has opened
+is an opened tile from the moment it opens: the unit can walk in behind the
+leading edge while the rest is still running, sight follows through the gap as
+it widens, and a contact can come the other way. Signal it again while it is
+under way and it turns round from where it stands. Pull the supply mid-run and
+it stops where it stands — and it will not close on the unit: it holds where it
+has got to and says so.
+
+`locked` works on it as on any gate: nothing drives it, and Survey stops
+counting the ground behind it as reachable. One body, one track — Survey flags
+a gate whose tiles are pointed different ways, because it runs as a whole.
+
+## A lock, rather than a circuit
+
+Most of what a deck withholds, it withholds with power: a fuse somewhere else,
+a circuit that reads dead. A **Locked door** (`K`) withholds with a lock. It
+takes no circuit and no control: `[E]` tries whatever is in the manipulator
+against it, the **Key** (`k`) it was cut for turns it, and nothing else does.
+
+The two halves name each other with the same setting — `opens` on the door is
+which key turns it, `opens` on the key is which lock it was cut for — and the
+cuts themselves live in `KEYS` in `tiles.js`, alongside the fuse ratings. A new
+one costs one entry there; the editor's pickers are built from that list.
+
+A turned lock stays turned. The key is not spent, so one key opens every door
+cut for it, and a door that has given way is an ordinary door from then on:
+`[E]` swings it shut and open again, and a control wired to it drives it like
+any other. Before that, a control is no help at all — the signal reaches the
+door and the log says the lock does not answer to one. That is the whole
+difference between a lock and a circuit: a circuit is somewhere else on the
+deck, and a lock is in the manipulator or it is not.
+
+Survey checks a lock the way it checks a fusebox way: a door whose key is
+placed on no deck in the record is a door that never opens, and it says so.
+
+## A field to walk into
+
+Crop is the one ground the unit can walk into that costs it something. **Wheat**
+(`w`) and **Tomatoes** (`&`) are slower to cross than open earth and low enough
+to read over. **Corn stalk** (`|`) is neither: it is `dense`, which means
+walkable and opaque at once — standing crop well over the chassis, that sight
+stops dead in.
+
+That makes a cornfield the one piece of cover on an open deck. The unit in it
+reads nothing out of it, and nothing reads into it: what the operator has while
+crossing one is the square the chassis is standing on and the memory of what it
+saw going in. A contact that walks past a field does not find what is in it,
+and neither does the operator.
+
+All three merge, so a field is as big as it is painted and the log says what
+size the unit walked into. Around them, **Dirt** (`d`), **Grass** (`g`),
+**Path** (`p`) and **Tire tracks** (`r`) are ordinary ground: they stop nothing,
+and what they are for is telling the operator where it is standing, because a
+dome with no landmark in it is the easiest place on a map to be lost. A
+**Pond** (`P`) is a tank wall's opposite number out here — one body, as big as
+it is painted, that sight crosses and the chassis does not.
 
 The editor's **Survey** panel flags the things that break a map: a spawn inside
 a wall — or on a pit or a breach, which is a run that ends or falls through the
