@@ -33,7 +33,7 @@ ISO.register({
     "107,5": {"label":""},
     "108,5": {"label":""},
     "109,5": {"label":""},
-    "111,5": {"title":"TUNNEL ACCESS ROUTE","text":"All Agricultural Domes are equipped with Tunnel Access routes or TARs that connect each dome. While TARs are legal to use, It is generally not recommended to use them without a flashlight and proper safety equipment.","desktop":false,"files":[],"card":"","cardsub":"","circuit":""},
+    "111,5": {"title":"TUNNEL ACCESS ROUTE","text":"All Agricultural Domes are equipped with Tunnel Access routes or TARs that connect each dome. While TARs are legal to use, it is generally not recommended to use them without a flashlight and proper safety equipment. Additionally, all TARs are protected with extensive security measures.","desktop":false,"files":[],"card":"","cardsub":"","circuit":""},
     "112,5": {"dest":"TunnelAccessRoute","arrive":"","fade":true,"card":"","cardsub":"","label":""},
     "113,5": {"range":2,"armed":true,"objective":"","label":"","circuit":""},
     "115,5": {"label":""},
