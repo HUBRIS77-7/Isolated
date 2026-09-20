@@ -28,6 +28,10 @@ canvas{display:block}
 .title .sub{margin-top:14px;color:var(--mdim);font-size:13px;letter-spacing:.38em;text-transform:uppercase}
 .title .press{margin-top:48px;font-size:14px;letter-spacing:.32em;animation:blink 1.6s steps(1) infinite}
 .title .press b{color:var(--amber)}
+.title .resume{margin-top:14px;font-size:12px;letter-spacing:.24em;color:var(--mdim);cursor:pointer}
+.title .resume b{color:var(--amber)}
+.title .resume:hover{color:var(--mfg)}
+.title .resume[hidden]{display:none}
 .corner{position:absolute;top:22px;right:26px;color:var(--mdim);font-size:12px;letter-spacing:.2em;text-align:right;line-height:1.8;transition:opacity .6s}
 #menu.leaving .title{opacity:0;transform:translateY(30px)}
 #menu.leaving .corner{opacity:0}
@@ -219,6 +223,8 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
     <h1>ISOLATION</h1>
     <div class="sub">A Collection</div>
     <div class="press">PRESS <b>ANY KEY</b></div>
+    <!-- only up when a run has been written down at a seam -->
+    <div class="resume" id="resume" hidden>OR <b>[C]</b> TO CONTINUE — <span id="resumeAt"></span></div>
   </div>
 </section>
 
@@ -469,6 +475,16 @@ if(CONFIG.menuIdleVideo){
   mv.play().then(()=>{usingVideo=true;mc.style.display='none'}).catch(()=>{mv.style.display='none'});
   mv.onerror=()=>{usingVideo=false;mv.style.display='none';mc.style.display='block'};
 }
+/* The record the title screen is about to begin from, or null for a new run.
+   Both take the same dive; what is waiting on the far side of it differs. */
+let resuming=null;
+function continueRun(){
+  if(state!=='menu')return;
+  const rec=SAVE.recent();
+  if(!rec)return;
+  resuming=rec;
+  startGame();
+}
 function startGame(){
   if(state!=='menu')return;
   state='dive';$('#menu').classList.add('leaving');
@@ -479,7 +495,20 @@ function startGame(){
 function finishIntro(){
   const fl=$('#flash');fl.style.opacity=.9;
   setTimeout(()=>{fl.style.opacity=0;$('#menu').classList.add('off')},110);
-  setTimeout(()=>{$('#menu').style.display='none';mv.pause();startPoem()},750);
+  setTimeout(()=>{
+    $('#menu').style.display='none';mv.pause();
+    /* a record whose deck has since gone out of index.html cannot be begun
+       from, so the run starts from the top rather than from nothing */
+    const rec=resuming;resuming=null;
+    if(!(rec&&resumeRun(rec)))startPoem();
+  },750);
+}
+/* The continue line, which is only there when there is something to continue. */
+function showResume(){
+  const rec=SAVE.recent();
+  if(!rec)return;
+  $('#resumeAt').textContent=String(rec.name||rec.deckName||'').toUpperCase();
+  $('#resume').hidden=false;
 }
 
 /* =========================================================
@@ -729,7 +758,7 @@ const tramOn=(x,y)=>world.tramAt.get(K(x,y))||null;
    is where the unit set down on the deck it is standing on — its landing
    record here, and where [R] re-initialises it. */
 const decks=new Map();
-const START_DECK=MAP.id;                     // the deck the run began on
+let START_DECK=MAP.id;                       // the deck the run began on
 const level={entry:{x:MAP.spawn.x, y:MAP.spawn.y}};
 function stashDeck(){
   decks.set(MAP.id,{open:new Set(world.open), spent:new Set(world.spent),
@@ -755,6 +784,156 @@ function restoreDeck(d){
   sight.live.clear(); sight.seen.clear();     // optical memory does not ride the car
   level.entry={x:d.entry.x, y:d.entry.y};
   indexTrams();
+}
+
+/* ---------- chapters, and where a run is kept ----------
+   A run is not written down square by square. It is written down at the
+   seams: a deck whose map declares a `chapter` is an intermission — the car
+   between one chapter and the next — and crossing into one keeps the run.
+   Nothing else does. What lies between two seams is played in one sitting,
+   and a chapter is begun again from its car rather than picked up halfway
+   along a deck with the doors where the operator left them.
+
+   What is kept is what the game already says outlives the chassis: the name
+   the operator registered, what the unit has been fitted with, what filing
+   has given way, what words a run has already ended on, and whatever is in
+   the manipulator. The decks are not. A chapter starts as its author drew
+   it, every door shut and every fuse back in its clip, because the decks
+   behind the seam are not the decks in front of it.
+
+   One record per seam, kept under the deck that is the seam, so the record
+   of Chapter One is still there once Chapter Two has been reached. The
+   chapter select screen has not been drawn yet; when it is, SAVE.chapters()
+   is the list it puts on the screen and SAVE.resume(deck) is what a row
+   does when it is picked. */
+const SAVE_KEY='iso.save', SAVE_V=1;
+const SAVE={
+  /* Everything written down, or nothing. A record from an older build, or
+     one the browser has mangled, reads as no record at all: a run that
+     cannot be begun again honestly is better not offered. */
+  read(){
+    try{
+      const raw=localStorage.getItem(SAVE_KEY);
+      if(!raw)return null;
+      const d=JSON.parse(raw);
+      if(!d||d.v!==SAVE_V||!d.chapters||typeof d.chapters!=='object')return null;
+      return d;
+    }catch(e){return null}
+  },
+  /* A private window, a full store, a browser told to keep nothing: none of
+     these end the run, they only mean it is not written down. */
+  write(d){try{localStorage.setItem(SAVE_KEY,JSON.stringify(d));return true}catch(e){return false}},
+  clear(){try{localStorage.removeItem(SAVE_KEY)}catch(e){}},
+  /* One seam's record — null if this run has never crossed it, or if the
+     deck it names is no longer registered in index.html. */
+  at(deck){
+    const d=SAVE.read();
+    const r=d&&d.chapters[deck];
+    return (r&&ISO.MAPS[r.deck])?r:null;
+  },
+  /* Every chapter reached, in the order the chapters run. This is what a
+     select screen lists: each row already carries its number, its name, the
+     deck it begins on and the `at` it was last written, which is the whole
+     of what such a screen needs — including which row to put the cursor on. */
+  chapters(){
+    const d=SAVE.read();
+    if(!d)return [];
+    return Object.keys(d.chapters).map(k=>d.chapters[k])
+      .filter(r=>r&&ISO.MAPS[r.deck])
+      .sort((a,b)=>(a.n|0)-(b.n|0)||(a.deck<b.deck?-1:1));
+  },
+  /* The furthest the run got, which is what the menu offers. Furthest, not
+     latest: going back to read Chapter One again does not undo Chapter Two. */
+  recent(){
+    const all=SAVE.chapters();
+    return all.length?all[all.length-1]:null;
+  },
+  /* Begin a chapter. From the menu it takes the same dive the title screen
+     takes; from anywhere else it cuts straight in. */
+  resume(deck){
+    const rec=SAVE.at(deck);
+    if(!rec)return false;
+    if(state==='menu'){resuming=rec;startGame();return true}
+    return resumeRun(rec);
+  }
+};
+
+/* Crossing into a seam. Called once the unit is standing on the far deck, so
+   what goes down is the run as it arrives — the sealed file on the car is
+   still sealed, and beginning the chapter again begins it with the reading
+   still to do. */
+function keepChapter(){
+  const c=ISO.chapterOf(MAP);
+  if(!c)return false;
+  const d=SAVE.read()||{v:SAVE_V,chapters:{}};
+  d.chapters[MAP.id]={
+    deck:MAP.id, n:c.n, name:c.name, deckName:MAP.name||MAP.id, at:Date.now(),
+    player:{first:PLAYER.first, middle:PLAYER.middle, last:PLAYER.last,
+            full:PLAYER.full, creator:isCreatorName},
+    abilities:[...game.abilities],
+    cracked:[...desk.cracked],
+    cards:[...cardShown],
+    carry:game.carry.map(it=>Object.assign({},it))
+  };
+  if(!SAVE.write(d)){
+    say('RECORD NOT WRITTEN — NO STORE ANSWERS. THIS RUN IS THE ONLY COPY.','alert');
+    return false;
+  }
+  say('RUN RECORDED.','b');
+  say(String(c.name).toUpperCase()+' BEGINS FROM THIS CAR.','dim');
+  return true;
+}
+
+/* Beginning a chapter from its seam. The decks behind it are not restored,
+   because they were never kept: the unit is put in the car at the head of
+   the chapter carrying what it carried in, and everything in front of it is
+   as its author drew it. */
+function resumeRun(rec){
+  const deck=rec&&ISO.MAPS[rec.deck];
+  if(!deck)return false;
+  const p=rec.player||{};
+  PLAYER={first:p.first||'', middle:p.middle||'', last:p.last||'',
+          full:p.full||[p.first,p.middle,p.last].filter(Boolean).join(' ')};
+  isCreatorName=!!p.creator;
+  MAP=deck;COLS=MAP.w;ROWS=MAP.h;
+  /* the run begins here now, so this is the deck [R] calls the landing */
+  START_DECK=MAP.id;
+  decks.clear();
+  buildWorld();
+  level.entry={x:MAP.spawn.x, y:MAP.spawn.y};
+  game.px=game.fx=MAP.spawn.x;game.py=game.fy=MAP.spawn.y;
+  game.mt=1;game.bt=1;game.arc=0;game.sink=0;game.face='down';
+  game.dead=false;game.beacon=null;game.stir=-1e9;
+  game.dirs.clear();game.toldAbout.clear();
+  game.visited.clear();game.visited.set(K(game.px,game.py),performance.now());
+  view.ready=false;
+  /* what crossed the seam with the unit */
+  game.abilities=new Set(rec.abilities||[]);
+  desk.cracked=new Set(rec.cracked||[]);
+  cardShown.clear();(rec.cards||[]).forEach(w=>cardShown.add(w));
+  game.carry=(rec.carry||[]).slice(0,ISO.CARRY);
+  cancelJump();closeTerminal();closeFusebox();closeDesk();
+  syncAbilities();syncCarry();
+  /* the calibration script ran in the prologue and does not run twice */
+  game.step=3;
+  state='console';show('#console');
+  logEl.innerHTML='';
+  $('#feed').classList.add('on');
+  /* the four axes read as calibrated, the way they do for the rest of a run
+     the prologue ran in — and no more lit than that */
+  $('#keys').classList.add('on');
+  Object.keys(DIRV).forEach(litKey);
+  game.active=true;
+  say('<RECOVERY UNIT 07 — RECORD RECOVERED>','',6,200);
+  say('NAME ON FILE: '+(PLAYER.full||'UNREGISTERED').toUpperCase(),'dim',6,120);
+  say(String(rec.name||'').toUpperCase()+'. RESUMING.','b',8,300);
+  say('DECK REGISTERED: '+String(MAP.name||MAP.id).toUpperCase(),'b');
+  const fitted=[...game.abilities].map(id=>(ISO.ABILITIES[id]||{}).name||id).filter(Boolean);
+  if(fitted.length)say('FITTED: '+fitted.join(', ').toUpperCase(),'dim');
+  if(game.carry.length)say('MANIPULATOR HOLDS '+game.carry.length+'.','dim');
+  if(ISO.osOf(MAP).length)say('LOCAL STORE MOUNTED. [O] brings it up.','b');
+  objective('Explore.');refreshObjective();
+  return true;
 }
 
 /* ---------- power ----------
@@ -1288,6 +1467,9 @@ function travelTo(deck,want,how,square){
   /* a beacon picked on the deck behind us means nothing here */
   if(game.step===2)game.beacon=pickBeacon();
   checkFooting();arrived();
+  /* and if what the unit crossed into is a seam, that is where the run is
+     written down — the only place it is */
+  keepChapter();
 }
 
 /* ---------- falling through the deck ----------
@@ -2514,7 +2696,13 @@ addEventListener('keydown',e=>{
   /* the card takes every key there is: while it is up there is nothing else
      on the screen for one to mean */
   if(card.on){e.preventDefault();if(!e.repeat&&card.go)card.go();return}
-  if(state==='menu'){e.preventDefault();startGame();return}
+  if(state==='menu'){
+    e.preventDefault();
+    /* every other key begins a new run, which is how the prologue is played:
+       it is in front of the first seam, so nothing was ever kept at it */
+    if(e.code==='KeyC'&&SAVE.recent())continueRun();else startGame();
+    return;
+  }
   if(state==='dive'){if(dive)dive.speed=3;return}
   if(state==='poem'){if(e.code==='Enter'||e.code==='Space'||e.code==='NumpadEnter'){e.preventDefault();endPoem()}return}
   const dir=KEYMAP[e.code];
@@ -2602,6 +2790,8 @@ addEventListener('keyup',e=>{
 });
 addEventListener('blur',()=>{held=[];cancelJump()});
 $('#menu').addEventListener('pointerdown',startGame);
+$('#resume').addEventListener('pointerdown',e=>{e.stopPropagation();continueRun()});
+showResume();
 $('#poem').addEventListener('pointerdown',endPoem);
 $('#nameHintR').style.cursor='pointer';$('#nameHintR').addEventListener('click',()=>state==='name'&&confirmNaming());
 $('#nameHintL').style.cursor='pointer';$('#nameHintL').addEventListener('click',()=>state==='name'&&reviseNaming());
