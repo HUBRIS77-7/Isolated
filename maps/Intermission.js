@@ -11,6 +11,7 @@ ISO.register({
   "h": 13,
   "spawn": {"x": 1, "y": 6},
   "beacons": [],
+  "carriage": true,
   "os": {
     "card": "THE CAR STOPS",
     "cardsub": "Chapter One — the deck beyond it is not yet built",
@@ -27,7 +28,6 @@ ISO.register({
   },
   "props": {
     "11,0": {"title":"CAR 14 — FLOOR INDICATOR","text":"SERVICE CAR 14\n----\nDEPARTED: WATER TREATMENT, LOWER DECK\nDESCENDING.\n----\nDOORS: SEALED FOR TRANSIT\nCALL PLATE: NO ANSWER UNTIL THE CAR IS STOPPED\n----\nThe indicator counts nothing. Whatever deck this car is passing, it is not one the board has a number for.","desktop":false,"files":[],"card":"","cardsub":"","circuit":""},
-    "0,6": {"dest":"WaterTreatmentBottom","arrive":"WATER-TREATMENT-EXIT","fade":true,"card":"","cardsub":"","label":"WATER-TREATMENT-EXIT","circuit":""},
     "22,6": {"title":"CAR 14 — MAINTENANCE PANEL","text":"MAINTENANCE PANEL, SERVICE CAR 14\n----\nNO FAULTS LOGGED. NO FAULTS LOGGABLE: THE PANEL WAS NEVER WIRED TO ANYTHING BUT ITSELF.\n----\nThere is nothing on this glass worth the walk. Whatever the unit has to read on the way down, it brought with it. [O] brings the local store up.","desktop":false,"files":[],"card":"","cardsub":"","circuit":""},
     "13,8": {"title":"HANDWRITTEN NOTE","text":"Whoever reads this after me: the lift only runs the one way once the pumps are down. Sit tight in the hold.\nIt is not a long wait. It only feels like one.\nIf you have got something to read, read it."}
   },
@@ -38,7 +38,7 @@ ISO.register({
     "#=====================#",
     "#=====================#",
     "#=====================#",
-    "^=====================c",
+    "#=====================c",
     "#=====================#",
     "#============n========#",
     "#====================,#",

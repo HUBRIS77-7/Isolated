@@ -100,6 +100,8 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
           <input type="number" id="mUdx" style="width:56px" title="Where that deck's 0,0 sits in this one">
           <input type="number" id="mUdy" style="width:56px" title="Where that deck's 0,0 sits in this one">
           <span class="dim">x / y</span></div>
+        <div class="row"><label><input type="checkbox" id="mCar"
+          title="This deck is the inside of a car. An elevator calling it needs no elevator drawn here to come out at"> is a carriage</label></div>
       </div>
 
       <div class="sec">
@@ -216,6 +218,7 @@ function setMap(m, resetView){
   $('#mName').value = map.name; $('#mId').value = map.id;
   $('#mW').value = map.w; $('#mH').value = map.h;
   showUnder();
+  $('#mCar').checked = !!map.carriage;
   if(resetView !== false) fit();
   changed(false);
 }
@@ -1002,6 +1005,9 @@ function writeUnder(){
   map.under = deck ? {deck, dx:parseInt($('#mUdx').value,10)|0, dy:parseInt($('#mUdy').value,10)|0} : null;
   changed(); showUnder();
 }
+/* A deck that is the inside of a car, rather than a deck with one parked on
+   it: nothing to draw, and a ride into it sets the unit down on its spawn. */
+$('#mCar').onchange = ()=>{ pushUndo(); map.carriage = $('#mCar').checked; changed() };
 $('#mUnder').onchange = writeUnder;
 $('#mUdx').onchange   = writeUnder;
 $('#mUdy').onchange   = writeUnder;

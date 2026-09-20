@@ -601,6 +601,7 @@ function makeMap(opts){
     w, h,
     spawn: opts.spawn || {x:w>>1, y:h>>1},
     beacons: opts.beacons || [],
+    carriage: !!opts.carriage,
     under: opts.under || null,
     rows: opts.rows || Array.from({length:h}, ()=>fill.repeat(w)),
     props: opts.props || {},
@@ -620,6 +621,10 @@ function normalize(map){
   map.w = w; map.h = h; map.rows = rows;
   map.spawn = clampPt(map.spawn || {x:0,y:0}, w, h);
   map.beacons = (map.beacons||[]).map(p=>clampPt(p,w,h));
+  /* a deck that is a carriage in its own right — the inside of a car, rather
+     than a deck with one parked on it. It needs no car drawn on it, because
+     the unit riding in is already aboard the moment the deck loads */
+  map.carriage = !!map.carriage;
   /* the deck this one is stacked on: an id and where its origin sits in this
      deck's own squares, so two decks of different sizes still line up */
   const u = map.under;
@@ -823,8 +828,11 @@ function linkLanding(map, kind, want, from){
   const end = (want && ends.find(c => c.label === want))
            || (from && ends.find(c => c.dest === from))
            || ends[0] || null;
-  return end ? {x:end.x, y:end.y, car:true}
-             : {x:map.spawn.x, y:map.spawn.y, car:false};
+  if(end) return {x:end.x, y:end.y, car:true};
+  /* a deck that is the carriage has none drawn on it to step into: the unit
+     rides in already aboard, so its landing record is the car */
+  if(kind === 'lift' && map.carriage) return {x:map.spawn.x, y:map.spawn.y, car:true};
+  return {x:map.spawn.x, y:map.spawn.y, car:false};
 }
 /* What the log and the survey call a link of this kind — read off the block
    itself, so a new way between decks names itself along with everything else. */
@@ -1105,8 +1113,10 @@ function audit(map){
         out.issues.push(t.name+where+' comes out at a '+noun+' stencilled "'+p.arrive+
                         '", which deck "'+p.dest+'" has none of.');
       /* a flight of steps with no answering flight over there is a route that
-         only runs one way, which is almost never what an author drew */
-      else if(known && MAPS[p.dest] && !links(MAPS[p.dest], t.link.kind).length)
+         only runs one way, which is almost never what an author drew — unless
+         the far deck is the carriage, which has no carriage inside it */
+      else if(known && MAPS[p.dest] && !links(MAPS[p.dest], t.link.kind).length &&
+              !(t.link.kind === 'lift' && MAPS[p.dest].carriage))
         out.issues.push(t.name+where+' comes out on deck "'+p.dest+'", which has no '+noun+
                         ' to come out at. The unit is set down at that deck\'s landing record.');
     }
@@ -1266,6 +1276,7 @@ function toJSON(map){
     '  "w": '+map.w+',\n  "h": '+map.h+',\n'+
     '  "spawn": {"x": '+map.spawn.x+', "y": '+map.spawn.y+'},\n'+
     '  "beacons": ['+map.beacons.map(b=>'{"x": '+b.x+', "y": '+b.y+'}').join(', ')+'],\n'+
+    (map.carriage ? '  "carriage": true,\n' : '')+
     (map.under ? '  "under": {"deck": '+JSON.stringify(map.under.deck)+
                  ', "dx": '+map.under.dx+', "dy": '+map.under.dy+'},\n' : '')+
     (map.os ? '  "os": {\n'+

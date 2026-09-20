@@ -42,6 +42,9 @@ ISO.register({
                                      // reachable tile ≥6 steps away. A car
                                      // or a flight of steps counts as a
                                      // beacon spot too.
+  "carriage": true,                  // this deck IS the inside of a car rather
+                                     //   than a deck with one parked on it.
+                                     //   Draw no `^` on it. See Decks
   "os": {"card": "", "cardsub": "",  // the unit's own store on this deck, which
          "files": []},               //   [O] brings up. Leave it out and [O]
                                      //   says it is empty. See Desktops
@@ -523,6 +526,16 @@ deck under it while you work.
 
 A car is also a landing beacon spot, the way a signal beacon is, so the opening
 calibration may send the unit to one.
+
+### A deck that is the car
+
+Sometimes the car is not a tile on the deck — it is the deck. A map with
+`"carriage": true` is the inside of one, and it has no `^` drawn on it, because
+there is nothing in there to step into: the doors are already shut. A car
+elsewhere that calls it sets the unit down on its `spawn`, aboard, and Survey
+does not count the missing car against either end. Nothing rides back out —
+whatever ends the segment does that — so it is the shape for a crossing the
+unit spends time inside rather than passes through.
 
 ### The screen going black between them
 
