@@ -86,6 +86,10 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
 /* poem */
 #poemText p{opacity:0;transition:opacity .9s}
 #poemText p.on{opacity:1}
+/* the same screen, held on the black a link is already making rather than
+   shown on its own: it sits over the fade, and the console stays where it was
+   behind both of them until the words are done */
+#poem.held{z-index:46;background:#000}
 
 /* name picker */
 .cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:6px 0 16px}
@@ -339,6 +343,7 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
 <script src="maps/WaterTreatmentTop.js"></script>
 <script src="maps/WaterTreatmentBottom.js"></script>
 <script src="maps/Intermission.js"></script>
+<script src="maps/AgriculturalDome12Fields.js"></script>
 
 <script>
 /* =========================================================
@@ -362,6 +367,24 @@ const POEM = [
   'And barely helpful.',
   'So who am I?',
 ];
+
+/* A deck may open on a poem the way the run does, keyed here by the deck's id.
+   The unit crosses on a link marked `fade`, the deck is swapped in behind the
+   black, and the words are read out on that same black before it lifts — once
+   in a run, the way a card is. Written the same way as POEM above: one string
+   per line, '' for a stanza break, and the first line is the heading. */
+const POEMS = {
+  AgriculturalDome12Fields: [
+    'FIELD',
+    '',
+    'Fields of glistening wheat under a ceiling that pretends to be sky.',
+    'Yet.',
+    'Not a sky.',
+    'Nor a field.',
+    'And nothing down here is glistening.',
+    'So where have I come to rest?',
+  ],
+};
 
 /* Names are never shown while choosing — only their meanings. */
 const NAMES = {
@@ -388,6 +411,8 @@ let isCreatorName = false; // true when the player builds "Cody Taylor Gillespie
 
 const $ = s => document.querySelector(s);
 let state = 'menu'; // menu -> dive -> poem -> name -> console
+                    // and back to 'poem' for a deck that opens on one,
+                    // which returns to 'console' when the words are done
 
 // in-world timestamp for the terminal headers
 (()=>{const d=new Date();const s=`${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')} ${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}.${d.getFullYear()+311}`;
@@ -529,10 +554,21 @@ function showResume(){
    POEM
    ========================================================= */
 let poemTimers=[];
-function startPoem(){
-  state='poem';show('#poem');
+/* what the poem gives way to when it is done, and what was on the screen
+   before it, for the poem that is held on a black rather than shown on its own */
+const poem={done:null, was:null};
+/* Read a poem out, a line at a time. `onBlack` is for a poem that belongs to a
+   deck: the screen it is on goes over the black a link was already making and
+   nothing under it is taken down, so the console is still there when the words
+   are gone. Enter, Space or a press anywhere skips to the end of it. */
+function playPoem(lines,done,onBlack){
+  poemTimers.forEach(clearTimeout);poemTimers=[];
+  poem.done=done||startNaming;poem.was=onBlack?state:null;
+  state='poem';
+  const el=$('#poem');
+  if(onBlack)el.classList.add('held','show');else{el.classList.remove('held');show('#poem')}
   const box=$('#poemText');box.innerHTML='';
-  POEM.forEach((line,i)=>{
+  lines.forEach((line,i)=>{
     const p=document.createElement('p');
     if(line===''){p.innerHTML='&nbsp;';p.style.marginBottom='0'} else p.textContent=line;
     if(i===0)p.className='b';
@@ -540,12 +576,34 @@ function startPoem(){
     box.appendChild(p);
     poemTimers.push(setTimeout(()=>p.classList.add('on'),300+i*CONFIG.poemLineMs));
   });
-  poemTimers.push(setTimeout(endPoem,300+POEM.length*CONFIG.poemLineMs+CONFIG.poemHoldMs));
+  poemTimers.push(setTimeout(endPoem,300+lines.length*CONFIG.poemLineMs+CONFIG.poemHoldMs));
 }
+/* The one the run opens on, which the name register follows. */
+function startPoem(){playPoem(POEM,startNaming)}
 function endPoem(){
   if(state!=='poem')return;
   poemTimers.forEach(clearTimeout);poemTimers=[];
-  startNaming();
+  const el=$('#poem'), go=poem.done;
+  poem.done=null;
+  /* a held poem leaves the screen the way it found it — the black is not the
+     poem's to lift, it belongs to the crossing that made it */
+  if(el.classList.contains('held')){el.classList.remove('held','show');state=poem.was||'console'}
+  poem.was=null;
+  go&&go();
+}
+/* ---------- a poem a deck holds the black for ----------
+   The words POEMS files under the deck the unit has just come down on, read
+   out on the black the crossing made, with the deck waiting behind it. Once in
+   a run, the way a card is: a deck may be crossed into twice and does not
+   introduce itself twice. Answers false when the deck has nothing to say, and
+   then the black lifts the way it always did. */
+const poemShown=new Set();
+function holdPoem(done){
+  const lines=MAP&&POEMS[MAP.id];
+  if(!lines||!lines.length||poemShown.has(MAP.id))return false;
+  poemShown.add(MAP.id);
+  playPoem(lines,done,true);
+  return true;
 }
 
 /* =========================================================
@@ -887,6 +945,7 @@ function keepChapter(){
     abilities:[...game.abilities],
     cracked:[...desk.cracked],
     cards:[...cardShown],
+    poems:[...poemShown],
     carry:game.carry.map(it=>Object.assign({},it))
   };
   if(!SAVE.write(d)){
@@ -925,6 +984,7 @@ function resumeRun(rec){
   game.abilities=new Set(rec.abilities||[]);
   desk.cracked=new Set(rec.cracked||[]);
   cardShown.clear();(rec.cards||[]).forEach(w=>cardShown.add(w));
+  poemShown.clear();(rec.poems||[]).forEach(id=>poemShown.add(id));
   game.carry=(rec.carry||[]).slice(0,ISO.CARRY);
   cancelJump();closeTerminal();closeFusebox();closeDesk();
   syncAbilities();syncCarry();
@@ -2111,8 +2171,10 @@ function fadeThrough(run,card){
   setTimeout(()=>{
     run&&run();
     /* a card holds the black it was already making, and the far deck waits
-       behind it for as long as the operator takes to read */
-    if(card&&showCard(card,lift))return;
+       behind it for as long as the operator takes to read — and a deck with a
+       poem filed under it holds that same black again, to read it out on */
+    if(card&&showCard(card,()=>{if(!holdPoem(lift))lift()}))return;
+    if(holdPoem(lift))return;
     /* the far deck gets a moment to draw behind the black before it lifts */
     setTimeout(lift,450);
   },900);

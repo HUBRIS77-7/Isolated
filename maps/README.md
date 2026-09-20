@@ -585,6 +585,58 @@ A card is words, and nothing more: it is not where the run is kept. That is
 the deck's `chapter`, and it is written on the way in rather than on the way
 out — see **Chapters**.
 
+### A poem held on that black
+
+The run opens on a poem, on the same terminal the rest of the game is read
+through. A deck can open on one too. Where a card is a few words a crossing
+**ends** on, a poem is what the deck on the far side has to **say for itself**
+before it is looked at: the unit crosses, the deck is swapped in behind the
+black, and the poem is read out on that same black, a line at a time, with the
+deck waiting behind it. Enter, Space or a press anywhere skips to the end of
+it; nothing else answers while it is up, and the world on the far side is not
+running yet, so nothing walks about while the operator is reading.
+
+A poem is not a map field, because it is prose rather than a setting. It lives
+in `index.html`, next to the one the run opens on, filed under the id of the
+deck it belongs to:
+
+```js
+const POEMS = {
+  AgriculturalDome12Fields: [
+    'FIELD',
+    '',
+    'Fields of glistening wheat under a ceiling that pretends to be sky.',
+    'Yet.',
+    ...
+  ],
+};
+```
+
+One string per line, `''` for a stanza break, and the first line is the
+heading. `CONFIG.poemLineMs` is how long the lines take to arrive and
+`CONFIG.poemHoldMs` is how long the last one is held — both shared with the
+opening poem, so the two read at the same pace.
+
+Like a card, a poem wants a black to be written on, so it reads on a crossing
+whose `fade` is on and on no other — a cut has nothing to hold. Any kind of
+crossing will do: a car, a flight of steps or a **breach**, which is the one
+that matters, because a deck the unit falls into is a deck it did not choose
+and has never seen.
+
+```js
+"37,7": {"dest":"AgriculturalDome12Fields", "fade":true}
+```
+
+And like a card, each poem is read **once in a run**: a deck may be crossed
+into twice and does not introduce itself twice. A card and a poem on the same
+crossing both read, in that order — the words the last deck ended on, then the
+words the next one begins with.
+
+A poem is filed under a deck id, so the deck has to be registered in
+`index.html` for the crossing to reach it at all. A breach naming a deck that
+is not in the record is still a hole with nothing under it, and the fall ends
+the run the way it always did.
+
 ## A flight of steps instead of a car
 
 A **Stairway** (`s`) is the same route without the machinery. It joins two
@@ -734,6 +786,7 @@ things `[R]` does not take away:
 * what the unit has been fitted with,
 * what filing has given way, by console and file,
 * what words a run has already ended on, so a card is not shown twice,
+* which decks have already read their poem out, for the same reason,
 * and whatever is in the manipulator.
 
 The decks are **not** kept. A chapter begins as its author drew it: every door
