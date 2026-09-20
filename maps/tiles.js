@@ -100,32 +100,37 @@ const JUMP = 4;
 /* ---------- contacts ----------
    Whatever else is moving about on a deck. A contact is not a tile: the square
    it was painted on is only where it starts, and from the moment the run
-   begins it is somewhere else. The tile says which kind it is and everything
-   about how that kind behaves is read from here, so a second creature costs
-   one entry here and one tile below.
-     moves  — what sets it going. 'clock': a beat of its own, so it walks
-              whether the unit does or not. 'motion': one square for every
-              square the unit covers, and not a step while the unit holds
-              still — which is the whole of the defence against one
-     step   — seconds a step takes. For a clock mover it is also how often
-              one comes; for a motion-keyed one it is only how long the step
-              is drawn taking
+   begins it is somewhere else. Nor does it live on the grid the way a block
+   does — it holds a real position, in tiles rather than in squares, and
+   crosses the ground at its own speed. The grid is only what it steers by.
+   The tile says which kind it is and everything about how that kind behaves
+   is read from here, so a second creature costs one entry here and one tile
+   below.
+     moves  — what sets it going. 'clock': a pace of its own, so it walks
+              whether the unit does or not. 'motion': it is given exactly as
+              much ground to cover as the unit covers, and is still while the
+              unit is still — which is the whole of the defence against one
+     speed  — tiles a second it crosses the deck at. For a motion-keyed one
+              this is only how quickly it spends what the unit's own movement
+              has given it, never how far it gets
      wake   — squares of walkable route at which it takes an interest. It
               holds that interest a good way past the same number before
               losing it again, so a contact does not switch on and off while
               the unit paces the edge of its range
      keep   — how close it will come. 0 reaches the unit; 3 paces it three
-              squares back and shuffles about rather than crowding closer
+              squares back and will not be crowded closer than that
      kills  — what the log says when it reaches the unit, or false for one
               that never does — a contact that only ever follows
      notice — the line the first reading of one writes
-     glyph, fill, line — how it draws, on the feed and on the tracker alike */
+     fill, line, glyph — how it draws: a body, its edge, and the mark it
+              carries. Neither of them is drawn as a square, because neither
+              of them stands on one */
 const FOES = {
-  stalker: {id:'stalker', name:'Stalker', moves:'clock', step:.2,
+  stalker: {id:'stalker', name:'Stalker', moves:'clock', speed:5,
             wake:18, keep:3, kills:false, glyph:'\u03a8',
             fill:'rgba(255,180,74,.18)', line:'rgba(255,180,74,.85)',
             notice:'CONTACT. Something is keeping pace with the unit. It comes no closer.'},
-  hunter:  {id:'hunter',  name:'Hunter',  moves:'motion', step:.12,
+  hunter:  {id:'hunter',  name:'Hunter',  moves:'motion', speed:9,
             wake:14, keep:0, glyph:'\u039b',
             kills:'CONTACT CLOSED THE LAST SQUARE. CHASSIS OPENED.',
             fill:'rgba(255,59,47,.2)', line:'rgba(255,59,47,.9)',

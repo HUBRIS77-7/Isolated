@@ -1409,15 +1409,27 @@ function checkFooting(){
    worked out here, out of the entry in ISO.FOES its mark named. There are two
    kinds so far and the difference between them is the whole of what each is
    for: one paces the unit and never closes, and one is keyed to movement —
-   it takes a square for every square the unit takes, and not one while the
-   unit holds still. */
+   it is given exactly as much ground to cover as the unit covers, and is
+   still while the unit is still.
+
+   Neither of them lives on the grid the way the unit does. A contact holds a
+   real position — `rx`, `ry`, in tiles — and crosses the deck at its own
+   speed; the grid is only what it steers by. `x`, `y` is the square it is
+   making for, and it chooses the next one the moment it arrives, so what the
+   feed draws is something walking rather than something jumping from square
+   to square. */
 function makeFoe(kind,x,y,p){
   const d=ISO.FOES[kind];
-  return {kind, x, y, fx:x, fy:y, mt:1, beat:0, awake:false, met:false,
+  return {kind, x, y, rx:x, ry:y, credit:0, vis:0, awake:false, met:false,
           moved:-1e9, wake:((p&&p.wake)|0)||d.wake, label:(p&&p.label)||''};
 }
 const foeDef=f=>ISO.FOES[f.kind]||{};
-const foeAt=(x,y)=>world.foes.find(f=>f.x===x&&f.y===y)||null;
+/* The square a contact counts as being in: the one it is making for, and the
+   one it is actually standing over. It holds both while it is between them,
+   so nothing else walks through it on the way past. */
+const foeIn=(f,x,y)=>(f.x===x&&f.y===y)||
+                     (Math.round(f.rx)===x&&Math.round(f.ry)===y);
+const foeAt=(x,y)=>world.foes.find(f=>foeIn(f,x,y))||null;
 /* Ground a contact will put a foot on: whatever the unit could stand on, less
    anything that would end it there. A contact is no better over a pit than
    the chassis is. */
@@ -1465,27 +1477,56 @@ function foeAwake(f){
   }else if(here===undefined||here>f.wake*1.6)f.awake=false;
   return f.awake;
 }
-/* One step, for one contact. Down the sweep to close, up it to back off, and
-   across it where the ground allows, which is how one that keeps its distance
-   works its way round a corner rather than standing at it. A contact already
-   at the distance it keeps has nowhere it wants to be: it holds still until
-   the unit moves and the reading changes, which is also why a tracker reads
-   an empty screen for as long as the unit stands still. */
-function foeStep(f){
+/* Where it goes next, chosen when it arrives and not before. Down the sweep
+   to close, up it to back off, and across it where the ground allows, which
+   is how one that keeps its distance works its way round a corner rather than
+   standing at it. A contact already at the distance it keeps has nowhere it
+   wants to be: it comes to rest and stays there until the unit moves and the
+   reading changes, which is also why a tracker reads an empty screen for as
+   long as the unit stands still. Answers whether it found anywhere to go. */
+function foeAim(f){
   const d=foeDef(f), reach=foeFlow(), here=reach.get(K(f.x,f.y));
-  if(here===undefined)return;                          // nothing joins it to the unit
+  if(here===undefined)return false;                    // nothing joins it to the unit
   const keep=d.keep|0, want=here>keep?-1:here<keep?1:0, opts=[];
   for(const dir in DIRV){
     const nx=f.x+DIRV[dir][0], ny=f.y+DIRV[dir][1], v=reach.get(K(nx,ny));
     if(v===undefined||!foeGround(nx,ny)||foeAt(nx,ny))continue;
     if(v===0&&!d.kills)continue;                       // one that never closes never arrives
-    if(want<0?v<here:want>0?v>here:v===here)opts.push([nx,ny,v]);
+    if(want<0?v<here:want>0?v>here:v===here)opts.push([nx,ny]);
   }
-  if(!opts.length)return;                              // hemmed in: it stands where it is
-  const [nx,ny,v]=opts[Math.random()*opts.length|0];
-  f.fx=f.x;f.fy=f.y;f.x=nx;f.y=ny;f.mt=0;f.moved=performance.now();
-  if(v===0&&d.kills)die(d.kills);
+  if(!opts.length)return false;                        // hemmed in: it stands where it is
+  const [nx,ny]=opts[Math.random()*opts.length|0];
+  f.x=nx;f.y=ny;
+  return true;
 }
+/* Ground crossed, rather than squares taken. A contact walks towards the
+   square it is making for at its own speed and picks the next one the instant
+   it gets there, so it keeps going in one motion for as long as it has
+   somewhere to be. One keyed to the unit's movement spends a ration instead:
+   it is handed a tile of it for every tile the unit covers, and when that runs
+   out it stops wherever it happens to be — between squares as readily as on
+   one. */
+function foeAdvance(f,dt,awake){
+  const d=foeDef(f), motion=d.moves==='motion';
+  let budget=(d.speed||5)*dt;
+  if(motion)budget=Math.min(budget,f.credit);
+  for(let guard=0;budget>1e-5&&guard<8;guard++){
+    const dx=f.x-f.rx, dy=f.y-f.ry, gap=Math.hypot(dx,dy);
+    if(gap<1e-4){                                      // arrived, so choose again
+      f.rx=f.x;f.ry=f.y;
+      if(!awake||!foeAim(f))break;
+      continue;
+    }
+    const go=Math.min(budget,gap);
+    f.rx+=dx/gap*go; f.ry+=dy/gap*go;
+    budget-=go;
+    if(motion)f.credit=Math.max(0,f.credit-go);
+    f.moved=performance.now();                         // in motion: the tracker has it
+  }
+}
+/* Close enough to have reached it. Real positions, not squares — a contact
+   that never quite steps onto the unit still gets there. */
+const foeOnUnit=f=>Math.abs(f.rx-game.px)<.55&&Math.abs(f.ry-game.py)<.55;
 /* Asked to give ground: it takes whichever square it can reach that is
    furthest from the unit. A contact that never closes would rather be
    anywhere than touched, and one with nowhere left to go stands its ground. */
@@ -1500,7 +1541,11 @@ function foeShove(f){
   if(!opts.length)return false;
   opts.sort((a,b)=>b[2]-a[2]);
   const [nx,ny]=opts[0];
-  f.fx=f.x;f.fy=f.y;f.x=nx;f.y=ny;f.mt=0;f.moved=performance.now();
+  f.x=nx;f.y=ny;
+  /* it flinches out of the square rather than waiting to be walked through */
+  f.rx+=(nx-f.rx)*.4; f.ry+=(ny-f.ry)*.4;
+  f.credit=Math.max(f.credit,1);                       // enough to finish giving ground
+  f.moved=performance.now();
   return true;
 }
 /* A contact standing in the square the unit is moving into. One that never
@@ -1517,32 +1562,29 @@ function contactInWay(nx,ny,dx,dy){
   if(n-game.edgeLog>2500){game.edgeLog=n;say('Something is standing in the square. It does not give ground.','alert')}
   return true;
 }
-/* The ones that walk to a beat of their own, advanced with the rest of the
-   deck. The interpolation runs for all of them, because a contact keyed to
-   movement still has to be drawn crossing the square it took. */
+/* Every contact on the deck, advanced with everything else that moves on it.
+   One that is keyed to the unit's movement is advanced here too — it simply
+   has nothing to spend until the unit hands it something. `vis` is how much
+   of it the optics currently have, eased rather than switched, so one crossing
+   the edge of what the unit can see fades instead of blinking. */
+const FOE_FADE=.16;                        // seconds a contact takes to come up or go
 function updateFoes(dt){
-  const stopped=!game.active||game.dead;
+  const stopped=!game.active||game.dead, k=Math.min(1,dt/FOE_FADE);
   for(const f of world.foes){
-    const d=foeDef(f), step=d.step||.2;
-    if(f.mt<1)f.mt=Math.min(1,f.mt+dt/step);
-    if(stopped||d.moves!=='clock')continue;
-    f.beat+=dt;
-    if(f.beat<step)continue;
-    f.beat=0;
-    if(foeAwake(f))foeStep(f);
-    if(game.dead)return;
+    f.vis=lerp(f.vis, sight.live.has(K(Math.round(f.rx),Math.round(f.ry)))?1:0, k);
+    if(stopped)continue;
+    foeAdvance(f,dt,foeAwake(f));
+    if(foeDef(f).kills&&foeOnUnit(f)){die(foeDef(f).kills);return}
   }
 }
-/* The unit moved. Whatever is keyed to movement rather than to a clock moves
-   with it — one square for one square, which is why holding still is the
-   only thing that works on one. */
+/* The unit covered a tile of deck. Whatever is keyed to that is handed the
+   same tile to cover — one for one, which is why holding still is the only
+   thing that works on one. It spends it in its own time, which is what makes
+   the thing read as a lunge rather than a hop. */
 function foesOnMove(){
   if(game.dead)return;
-  for(const f of world.foes){
-    if(foeDef(f).moves!=='motion')continue;
-    if(foeAwake(f))foeStep(f);
-    if(game.dead)return;
-  }
+  for(const f of world.foes)
+    if(foeDef(f).moves==='motion'&&foeAwake(f))f.credit+=1;
 }
 
 /* ---------- the motion tracker ----------
@@ -1551,7 +1593,7 @@ function foesOnMove(){
    and a contact standing still is an empty screen. It cannot say what any of
    them is — only how far off it is, and which way. */
 const TRACK_RANGE=20;                      // squares the tracker resolves
-const TRACK_HOLD=2.8;                      // seconds a return is held after the step that made it
+const TRACK_HOLD=1.8;                      // seconds a return is held after the movement that made it
 const tracker={on:false, told:false};
 const mo=$('#motion'), mox=mo.getContext('2d');
 function toggleTracker(){
@@ -1600,7 +1642,7 @@ function drawTracker(now){
   for(const f of world.foes){
     const age=(now-f.moved)/1000;
     if(age>TRACK_HOLD)continue;
-    const dx=f.x-game.px, dy=f.y-game.py, d=Math.hypot(dx,dy);
+    const dx=f.rx-game.px, dy=f.ry-game.py, d=Math.hypot(dx,dy);
     if(d>TRACK_RANGE)continue;
     live++; if(d<nd)nd=d;
     const al=Math.max(0,1-age/TRACK_HOLD), bx=cx+dx*px, by=cy+dy*px;
@@ -1826,7 +1868,7 @@ function drawFeed(now,dt){
 
   drawRails(ox,oy,tile,D,now);
   drawTrams(ox,oy,tile,D,now);
-  drawFoes(ox,oy,tile,D);
+  drawFoes(ox,oy,tile,D,now);
   world.lit.forEach((when,k)=>{                       // a control answering a press
     const age=(now-when)/450;
     if(age>1)return void world.lit.delete(k);
@@ -1934,21 +1976,41 @@ function drawAim(ox,oy,tile,D){
    contact is never held on the record the way ground is: it has moved by the
    time the reading would be redrawn, so a remembered one would be a lie. The
    tracker is the instrument that reads through structure, and what it reads
-   is movement rather than shapes. */
-function drawFoes(ox,oy,tile,D){
+   is movement rather than shapes.
+
+   Nothing here is drawn on the grid. A contact sits wherever its real
+   position puts it — as often across the line between two squares as inside
+   one — and it is drawn round, because everything the deck is built out of
+   is square and none of this was built. */
+function drawFoes(ox,oy,tile,D,now){
   for(const f of world.foes){
-    if(!sight.live.has(K(f.x,f.y)))continue;
-    const d=foeDef(f), e=ease(Math.min(1,f.mt));
-    const cx=ox+(lerp(f.fx,f.x,e)+.5)*tile, cy=oy+(lerp(f.fy,f.y,e)+.5)*tile, sz=tile*.58;
+    if(f.vis<=.01)continue;
+    const d=foeDef(f), a=Math.min(1,f.vis);
+    const cx=ox+(f.rx+.5)*tile, cy=oy+(f.ry+.5)*tile, r=tile*.3;
+    const ring=()=>fx.beginPath();
+    /* a soft edge first: a body under the optics rather than a plate */
+    fx.globalAlpha=a*.45;
     fx.fillStyle=d.fill||'rgba(255,59,47,.2)';
-    fx.fillRect(cx-sz/2,cy-sz/2,sz,sz);
+    ring();fx.arc(cx,cy,r*1.55,0,6.283);fx.fill();
+    fx.globalAlpha=a;
+    fx.fillStyle='#050103';
+    ring();fx.arc(cx,cy,r,0,6.283);fx.fill();
+    fx.fillStyle=d.fill||'rgba(255,59,47,.2)';
+    ring();fx.arc(cx,cy,r,0,6.283);fx.fill();
     fx.strokeStyle=d.line||'rgba(255,59,47,.9)';fx.lineWidth=Math.max(1.5,1.5*D);
-    fx.strokeRect(cx-sz/2+.5,cy-sz/2+.5,sz,sz);
-    if(tile>=14&&d.glyph){
-      fx.fillStyle=d.line;fx.font=Math.round(tile*.56)+'px "Courier Prime", monospace';
+    ring();fx.arc(cx,cy,r,0,6.283);fx.stroke();
+    /* and a ring going off it, so something that is walking still reads as
+       something walking in the moment it happens to be standing still */
+    const p=((now/1000)*.55+(f.rx+f.ry)*.11)%1;
+    fx.globalAlpha=a*(1-p)*.45;
+    ring();fx.arc(cx,cy,r*(1+p),0,6.283);fx.stroke();
+    fx.globalAlpha=a;
+    if(tile>=16&&d.glyph){
+      fx.fillStyle=d.line;fx.font=Math.round(tile*.42)+'px "Courier Prime", monospace';
       fx.textAlign='center';fx.textBaseline='middle';
-      fx.fillText(d.glyph,cx,cy+tile*.04);
+      fx.fillText(d.glyph,cx,cy+tile*.02);
     }
+    fx.globalAlpha=1;
   }
 }
 

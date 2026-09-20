@@ -348,16 +348,24 @@ without walking to the station that hands it over. More than one is a list:
 A **contact** is the one thing on a deck the record will not hold still for.
 It is placed like a block and is not one: the square is a starting mark, the
 run builds the creature on it, and the mark is plain ground from then on — so
-putting one down never changes what a route is. Each of them walks a route the
-way the unit does, over ground the unit could stand on and no better over a
-pit than the chassis is, and each keeps whatever it changed about a deck when
-the unit rides away and comes back. `[R]` puts them back on their marks along
-with everything else.
+putting one down never changes what a route is. It walks over ground the unit
+could stand on and is no better over a pit than the chassis is, and it keeps
+whatever it changed about a deck when the unit rides away and comes back.
+`[R]` puts them back on their marks along with everything else.
+
+Nothing about a contact is square. The unit stands in one square at a time and
+a contact does not: it holds a real position on the deck, in tiles, and
+crosses the ground at its own `speed` in tiles a second, choosing the next
+square to steer for the moment it reaches the last one. So it is as often
+across the line between two squares as inside one, and it is drawn round
+rather than as a plate — everything the deck is built out of is square, and
+none of this was built. It is also why one that is stopped can be stopped
+halfway.
 
 | Char | Kind    | Moves | Closes | What it is |
 |------|---------|-------|--------|------------|
-| `E`  | Stalker | On a beat of its own, but only while the range is wrong | Never | It closes to three squares, holds there, gives ground rather than be touched, and follows for as long as the unit is inside its range. It cannot hurt the unit at all |
-| `e`  | Hunter  | One square for every square the unit covers | Onto the unit, which ends the run | It does not move while the unit does not. Holding still is the whole of the defence against one; a jump buys three squares, because it takes one step for the four the servos cover |
+| `E`  | Stalker | At a pace of its own, whenever the range is wrong | Never | It closes to three squares, holds there, gives ground rather than be touched, and follows for as long as the unit is inside its range. It cannot hurt the unit at all |
+| `e`  | Hunter  | It is handed a tile of ground to cover for every tile the unit covers | Onto the unit, which ends the run | It is still while the unit is still — and stops where it stands, between squares as readily as on one. Holding still is the whole of the defence against one; a jump buys three squares, because it is handed one for the four the servos cover |
 
 Both of them take an interest once the unit is within `wake` squares of
 walkable route — not of open air, so a contact on the far side of a sealed
@@ -369,6 +377,13 @@ it: a contact is never held on the record the way ground is, because it has
 moved by the time the reading would be redrawn. Reading one through a wall is
 what the tracker is for.
 
+What either of them can reach is worked out square by square even though it
+does not move square by square: a hunter reaches the unit when the unit's own
+move leaves it one square away along the deck — orthogonally, the way the
+route is counted — so stepping diagonally clear of one that is beside the unit
+is a step it cannot answer. The lunge that follows is drawn as a lunge, but
+what it can cross was settled the moment the unit moved.
+
 The two of them are a pair on purpose. The stalker is harmless and always
 moving, so it is never off the tracker while the unit walks; the hunter is
 lethal and moves only when the unit does, so it is never on the tracker while
@@ -376,8 +391,9 @@ the unit is still. An operator who has learned to tell one return from the
 other has learned the whole of the instrument.
 
 To add a creature, add one entry to `FOES` in `tiles.js` and one tile that
-names it in `foe`. Everything else — how fast it walks, how far it notices,
-how close it comes, whether it kills, how it draws — is read from that entry.
+names it in `foe`. Everything else — how fast it crosses the deck, how far it
+notices, how close it comes, whether it kills, how it draws — is read from
+that entry.
 
 ## Beacons that steer
 
