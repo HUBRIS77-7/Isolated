@@ -108,6 +108,8 @@ button.picking{background:var(--amber);color:#000;border-color:var(--amber)}
           <span class="dim">x / y</span></div>
         <div class="row"><label><input type="checkbox" id="mCar"
           title="This deck is the inside of a car. An elevator calling it needs no elevator drawn here to come out at"> is a carriage</label></div>
+        <div class="row"><label><input type="checkbox" id="mDark"
+          title="Nothing lights this deck. The unit sees two squares around itself unless a chassis floodlamp is fitted and struck with [F]"> is dark</label></div>
         <div class="row"><span class="dim">chapter</span>
           <input type="number" id="mChN" style="width:56px" min="0"
             title="Which chapter this seam opens. Orders the rows a chapter select would show">
@@ -273,6 +275,7 @@ function setMap(m, resetView){
   $('#mW').value = map.w; $('#mH').value = map.h;
   showUnder();
   $('#mCar').checked = !!map.carriage;
+  $('#mDark').checked = !!map.dark;
   $('#mChN').value = map.chapter ? map.chapter.n : '';
   $('#mChName').value = map.chapter ? map.chapter.name : '';
   if(resetView !== false) fit();
@@ -1113,6 +1116,10 @@ function writeUnder(){
 /* A deck that is the inside of a car, rather than a deck with one parked on
    it: nothing to draw, and a ride into it sets the unit down on its spawn. */
 $('#mCar').onchange = ()=>{ pushUndo(); map.carriage = $('#mCar').checked; changed() };
+/* A deck with nothing lighting it. The canvas still draws the whole of it —
+   the editor is a drawing board, not the feed — but the run closes sight to
+   the couple of squares the chassis throws, unless a floodlamp is struck. */
+$('#mDark').onchange = ()=>{ pushUndo(); map.dark = $('#mDark').checked; changed() };
 /* The seam between two chapters. Naming the chapter this deck opens makes it
    an intermission: the game writes the run down on crossing into it, and a
    chapter select would list it. Clear the name and it is ground again. */

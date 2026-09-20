@@ -294,7 +294,7 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
         <div class="box" id="objWrap"><h4>&lt;Objective&gt;</h4>
           <div id="obj" class="dim">—</div>
           <div id="carry"></div>
-          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div><div class="key" id="keyTrack" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">M</div><div class="key" id="keyStore" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">O</div></div>
+          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div><div class="key" id="keyTrack" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">M</div><div class="key" id="keyLamp" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">F</div><div class="key" id="keyStore" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">O</div></div>
         </div>
       </div>
     </div>
@@ -1039,6 +1039,7 @@ function resumeRun(rec){
   const fitted=[...game.abilities].map(id=>(ISO.ABILITIES[id]||{}).name||id).filter(Boolean);
   if(fitted.length)say('FITTED: '+fitted.join(', ').toUpperCase(),'dim');
   if(game.carry.length)say('MANIPULATOR HOLDS '+game.carry.length+'.','dim');
+  reportDark();
   if(ISO.osOf(MAP).length)say('LOCAL STORE MOUNTED. [O] brings it up.','b');
   objective('Explore.');refreshObjective();
   return true;
@@ -1124,10 +1125,18 @@ function tramBlocked(c){
    sight of is held as the last reading for a few seconds and then let go, so
    the map the operator reads is always something the unit really looked at. */
 const SIGHT=9;                   // tiles the optics resolve
+const DARK_SIGHT=2;              // and how little of that is left on an unlit deck
 const LINGER=5;                  // seconds a lost square is held on the record
 const FADE=1.4;                  // seconds it then takes to go
 const MEMORY=.45;                // how bright a held square draws
 const sight={live:new Set(), seen:new Map()};
+/* A deck an author marked dark has nothing on it to read by. The optics are
+   unchanged — there is simply no light out there for them — so what they
+   resolve closes to the couple of squares the chassis throws for itself,
+   and a struck floodlamp opens it back up to the full rating. */
+const lamp={on:false, told:false};   // whether the lamp is struck — see [F], below
+const darkDeck=()=>!!MAP.dark;
+const sightRange=()=>(darkDeck()&&!lamp.on)?DARK_SIGHT:SIGHT;
 
 /* Sight stops at whatever a body stops at: structure, a door still shut, a
    block tall enough to stand behind. Mesh, consoles and low surfaces are
@@ -1148,23 +1157,23 @@ function blocksSight(x,y){
    can see a square, something standing on that square could see the unit. */
 const OCTANTS=[[1,0,0,1],[0,1,1,0],[0,-1,1,0],[-1,0,0,1],
                [-1,0,0,-1],[0,-1,-1,0],[0,1,-1,0],[1,0,0,-1]];
-function castOctant(out,cx,cy,row,start,end,xx,xy,yx,yy){
+function castOctant(out,cx,cy,row,start,end,xx,xy,yx,yy,rad){
   if(start<end)return;
   let blocked=false,next=start;
-  for(let j=row;j<=SIGHT&&!blocked;j++){
+  for(let j=row;j<=rad&&!blocked;j++){
     const dy=-j;
     for(let dx=-j;dx<=0;dx++){
       const l=(dx-.5)/(dy+.5), r=(dx+.5)/(dy-.5);
       if(start<r)continue;
       if(end>l)break;
       const x=cx+dx*xx+dy*xy, y=cy+dx*yx+dy*yy;
-      if(dx*dx+dy*dy<=SIGHT*SIGHT&&ISO.inside(MAP,x,y))out.add(K(x,y));
+      if(dx*dx+dy*dy<=rad*rad&&ISO.inside(MAP,x,y))out.add(K(x,y));
       if(blocked){
         if(blocksSight(x,y)){next=r;continue}
         blocked=false;start=next;
-      }else if(blocksSight(x,y)&&j<SIGHT){
+      }else if(blocksSight(x,y)&&j<rad){
         blocked=true;
-        castOctant(out,cx,cy,j+1,start,l,xx,xy,yx,yy);
+        castOctant(out,cx,cy,j+1,start,l,xx,xy,yx,yy,rad);
         next=r;
       }
     }
@@ -1173,10 +1182,11 @@ function castOctant(out,cx,cy,row,start,end,xx,xy,yx,yy){
 /* Rebuilt every frame: a door driven open or a platform pulling away changes
    what the unit can see without it having moved a tile. */
 function look(now){
+  const rad=sightRange();
   sight.live.clear();
   sight.live.add(K(game.px,game.py));
   for(const [xx,xy,yx,yy] of OCTANTS)
-    castOctant(sight.live,game.px,game.py,1,1,0,xx,xy,yx,yy);
+    castOctant(sight.live,game.px,game.py,1,1,0,xx,xy,yx,yy,rad);
   sight.live.forEach(k=>sight.seen.set(k,now));
 }
 /* Full while it is held, then gone. One curve, so a platform the unit has
@@ -1190,7 +1200,7 @@ function memAlpha(when,now){
 function sightAlpha(x,y,now){
   const k=K(x,y);
   if(sight.live.has(k))
-    return 1-.28*Math.min(1,Math.hypot(x-game.px,y-game.py)/SIGHT);
+    return 1-.28*Math.min(1,Math.hypot(x-game.px,y-game.py)/sightRange());
   const when=sight.seen.get(k);
   if(when===undefined)return 0;
   const a=memAlpha(when,now);
@@ -1268,17 +1278,21 @@ function grantAbility(id,tag){
   return true;
 }
 function syncAbilities(){
-  const j=game.abilities.has('jump'), m=game.abilities.has('motion');
+  const j=game.abilities.has('jump'), m=game.abilities.has('motion'),
+        l=game.abilities.has('flashlight');
   /* the store is the deck's rather than the chassis's, so this is re-read
      every time the ground under the unit changes */
   const o=ISO.osOf(MAP).length>0;
   $('#keyJump').style.display=j?'':'none';
   $('#keyTrack').style.display=m?'':'none';
+  $('#keyLamp').style.display=l?'':'none';
   $('#keyStore').style.display=o?'':'none';
   $('#dpad').classList.toggle('canjump',j);
   $('#footHint').textContent='WASD/Arrows to Move · [E] to Interact'+
     (j?' · [SPACE] to Jump':'')+(m?' · [M] for the Tracker':'')+
+    (l?' · [F] for the Lamp':'')+
     (o?' · [O] for the Store':'');
+  syncLamp();
 }
 
 function startConsole(){
@@ -1293,6 +1307,7 @@ function startConsole(){
   say(`Name Registered Identified: ${PLAYER.full.toUpperCase()}. UNIT COMPUTATIONAL STATUS NOTICED. MISSION STILL WITHIN ACCEPTABLE PARAMETERS OF SUSTAINMENT`,'',18,400);
   say('CONTINUE','',45,700).then(()=>{game.active=true;game.step=0;objective('Move.')});
   say('Move with [W][A][S][D] or the arrow keys.');
+  reportDark();
   if(ISO.osOf(MAP).length)say('LOCAL STORE MOUNTED. [O] brings it up.','b');
 }
 
@@ -1677,6 +1692,7 @@ function travelTo(deck,want,how,square){
   say('DECK REGISTERED: '+String(MAP.name||MAP.id).toUpperCase(),'b');
   /* the keys the unit has on this deck are not the keys it had on the last */
   syncAbilities();
+  reportDark();
   if(ISO.osOf(MAP).length)say('LOCAL STORE MOUNTED. [O] brings it up.','b');
   if(how==='drop'){
     if(!land.spot)say('Nothing stencilled under the breach. Set down at the deck\'s landing record.','dim');
@@ -1750,6 +1766,7 @@ $('#carry').addEventListener('pointerdown',e=>{e.preventDefault();dropItem()});
 /* the tracker is raised and stowed by tapping as well as by [M] — the chip
    in the key row while it is down, its own footer while it is up */
 $('#keyTrack').addEventListener('pointerdown',e=>{e.preventDefault();toggleTracker()});
+$('#keyLamp').addEventListener('pointerdown',e=>{e.preventDefault();toggleLamp()});
 $('#keyStore').addEventListener('pointerdown',e=>{e.preventDefault();desk.on?closeDesk():openStore()});
 $('#motionFoot').addEventListener('pointerdown',e=>{e.preventDefault();toggleTracker()});
 $('#motionFoot').style.cursor='pointer';
@@ -2295,6 +2312,45 @@ function drawTracker(now){
   $('#motionNote').textContent=live
     ? live+' RETURN'+(live>1?'S':'')+' · NEAREST '+String(Math.round(nd)).padStart(2,'0')
     : 'NO MOTION';
+}
+
+/* ---------- [F]: the floodlamp ----------
+   The other package that changes what can be read rather than what the
+   chassis can do, and the plainer of the two: a lamp on the housing, struck
+   and killed with the same key. On a deck with light on it there is nothing
+   for it to add — the optics were already reading as far as they are rated
+   to. On a dark one it is the whole difference between feeling along two
+   squares of plating and seeing the room. It stays struck across a car and
+   across a re-initialise: it is fitted to the chassis, not to the deck. */
+function toggleLamp(){
+  if(!game.abilities.has('flashlight')){
+    const n=performance.now();
+    if(n-game.useLog>2500){game.useLog=n;say('No illumination package fitted. There is no lamp to strike.','dim')}
+    return;
+  }
+  lamp.on=!lamp.on;
+  syncLamp();
+  if(lamp.on){
+    say(darkDeck()?'Floodlamp struck. The deck opens out to the full rating.'
+                  :'Floodlamp struck. Nothing here it was not already reading.','dim');
+    if(!lamp.told){lamp.told=true;say('[F] kills it again.','dim')}
+  }else if(darkDeck()){
+    say('Floodlamp out. Sight closes to what the chassis lights for itself.','alert');
+  }else{
+    say('Floodlamp out.','dim');
+  }
+}
+/* The chip in the key row is the lamp's own indicator: lit while it burns. */
+function syncLamp(){
+  $('#keyLamp').classList.toggle('lit',lamp.on);
+}
+/* Crossing onto an unlit deck, or off one. Said once on arrival rather than
+   every frame, because it is a fact about the deck and not about the unit. */
+function reportDark(){
+  if(!darkDeck())return;
+  say('NO DECK LIGHTING REGISTERED. OPTICAL RANGE '+DARK_SIGHT+'.','alert');
+  if(game.abilities.has('flashlight')&&!lamp.on)say('Floodlamp is fitted and out. [F] strikes it.','dim');
+  else if(!game.abilities.has('flashlight'))say('Nothing fitted throws light. The unit feels its way.','dim');
 }
 
 /* ---------- the screen going out ----------
@@ -3072,6 +3128,7 @@ addEventListener('keydown',e=>{
     }
     if(e.code==='KeyE'){e.preventDefault();if(!e.repeat)interact();return}
     if(e.code==='KeyM'){e.preventDefault();if(!e.repeat)toggleTracker();return}
+    if(e.code==='KeyF'){e.preventDefault();if(!e.repeat)toggleLamp();return}
     if(e.code==='KeyO'){e.preventDefault();if(!e.repeat)openStore();return}
     if(e.code==='KeyQ'){e.preventDefault();if(!e.repeat)dropItem();return}
     if(e.code==='Escape'&&term.on){e.preventDefault();closeTerminal();return}

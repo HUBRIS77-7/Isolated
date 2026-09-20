@@ -45,6 +45,10 @@ ISO.register({
   "carriage": true,                  // this deck IS the inside of a car rather
                                      //   than a deck with one parked on it.
                                      //   Draw no `^` on it. See Decks
+  "dark": true,                      // nothing lights this deck: sight closes
+                                     //   to two squares unless the unit has a
+                                     //   floodlamp struck. See A deck with
+                                     //   nothing lighting it
   "chapter": {"n": 1,                // this deck is the intermission that opens
               "name": "Chapter One"},//   chapter 1, and crossing into it is
                                      //   where the run is kept. Leave it out
@@ -362,12 +366,13 @@ station hands over whatever it was stocked with and is spent from then on. An
 ability outlives a re-initialise — the chassis is rebuilt, the package is not —
 so `[R]` after a fall costs progress on the map and nothing else.
 
-There are two packages so far:
+There are three packages so far:
 
 | Ability | Stocked as | What it does |
 |---------|------------|--------------|
 | `jump`  | Vault servos | Hold `[SPACE]` to wind up, release to leap |
 | `motion`| Motion tracker | `[M]` raises a screen that reads movement through structure |
+| `flashlight` | Chassis floodlamp | `[F]` strikes a lamp on the housing, and `[F]` kills it |
 
 The jump is held, not tapped. The longer the wind-up, the further it carries —
 one square, two, three, or the four the servos are rated for — and the movement
@@ -406,11 +411,49 @@ or not, the tracker is usually reading something. That is the point of it: the
 operator learns the difference between a return that wanders and a return that
 closes.
 
+The **chassis floodlamp** is the third, and the plainest: a lamp on the
+housing, struck and killed with the same key. `[F]` turns it on, `[F]` turns it
+off — or a tap on the `F` chip in the key row, which lights while the lamp
+burns. It stays struck across a car and across `[R]`: it is fitted to the
+chassis, not to the deck.
+
+On a deck with light on it the lamp adds nothing. The optics were already
+reading the nine squares they are rated for, and striking the lamp says so. It
+is on a deck marked `dark` that it is the whole of the difference — see below.
+
 To add an ability, add one entry to `ABILITIES` in `tiles.js`. Every station's
 picker in the editor is built from that list. `index.html?abilities=jump` fits
 one before the run starts, which is how a map built around a jump is playtested
 without walking to the station that hands it over. More than one is a list:
-`?abilities=jump,motion`.
+`?abilities=jump,motion,flashlight`.
+
+## A deck with nothing lighting it
+
+A deck whose record carries `"dark": true` — the **is dark** box in the
+editor's RECORD panel — has no light on it at all. Nothing about the chassis
+changes: the optics are the same optics, the line of sight is worked out the
+same way, and what is solid still stops it. There is simply nothing out there
+for them to read, so what they resolve closes from nine squares to **two**, and
+the rest of the deck is walked into rather than looked at.
+
+The last reading is still held the way it always is: a square the unit has
+lit and left stays on the record for five seconds and then fades. So a dark
+deck is not crossed blind — it is crossed by memory, two squares at a time,
+and the memory runs out behind the unit.
+
+A **chassis floodlamp** undoes all of it. With the lamp struck the deck reads
+at the full nine squares, exactly as a lit deck does; kill it and sight closes
+again where the unit stands. That is the whole of the modifier: a dark deck is
+a deck the operator wants a lamp on, and one an author can make the unit cross
+without one if that is what the deck is for.
+
+Crossing onto a dark deck says so in the log, and says whether anything fitted
+throws light. The editor's survey says so too: mark a deck dark with no station
+anywhere in the record stocking a floodlamp and it flags it, the same way it
+flags a lock with no key cut for it. That is a note about the record, not an
+error — a dark deck with no lamp in the game is a deck crossed two squares at a
+time, which is a perfectly good thing to build, and playtesting one with a lamp
+in hand is `index.html?map=my-dark-deck&abilities=flashlight`.
 
 ## What else is walking about
 

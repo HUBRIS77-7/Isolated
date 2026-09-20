@@ -103,6 +103,9 @@ const ABILITIES = {
   motion: {id:'motion', name:'Motion tracker',
          fitted:'SENSOR PACKAGE FITTED: DOPPLER MOTION TRACKER.',
          hint:'[M] raises the tracker. It reads movement through structure \u2014 and only movement. Anything holding still reads as nothing at all.'},
+  flashlight: {id:'flashlight', name:'Chassis floodlamp',
+         fitted:'ILLUMINATION PACKAGE FITTED: CHASSIS FLOODLAMP.',
+         hint:'[F] strikes the lamp and [F] kills it. On a deck with nothing lighting it, that is the difference between two squares of ground and the whole of what the optics are rated for.'},
 };
 const ABILITY_OPTS = Object.keys(ABILITIES).map(k=>({value:k, label:ABILITIES[k].name}));
 /* Squares a fully wound-up jump clears. The game and the survey both read it
@@ -832,6 +835,7 @@ function makeMap(opts){
     spawn: opts.spawn || {x:w>>1, y:h>>1},
     beacons: opts.beacons || [],
     carriage: !!opts.carriage,
+    dark: !!opts.dark,
     under: opts.under || null,
     rows: opts.rows || Array.from({length:h}, ()=>fill.repeat(w)),
     props: opts.props || {},
@@ -855,6 +859,11 @@ function normalize(map){
      than a deck with one parked on it. It needs no car drawn on it, because
      the unit riding in is already aboard the moment the deck loads */
   map.carriage = !!map.carriage;
+  /* a deck with nothing lighting it. The optics are the same optics; there is
+     simply nothing out there for them to read, so sight closes to the couple
+     of squares the chassis lights for itself and the rest of the deck is
+     walked into rather than looked at. A floodlamp opens it back up. */
+  map.dark = !!map.dark;
   /* a deck that is the seam between two chapters: the intermission the unit
      crosses to get from one into the next, and the only place a run is
      written down. `n` is the order the chapters run in and `name` is what
@@ -1271,6 +1280,18 @@ function audit(map){
                       ', but no other deck crosses into it, so the run is never written down here. '+
                       'Point a car, a flight of steps or a breach at it.');
   }
+  /* a dark deck asks for a lamp the way a locked door asks for a key: the
+     unit can cross it without one, two squares at a time, but an author who
+     meant it to be crossed with one wants to know the record holds none */
+  if(map.dark){
+    const lamped = m => { for(let y=0;y<m.h;y++)for(let x=0;x<m.w;x++){
+      const p = propsAt(m,x,y) || {};
+      if(at(m,x,y).press === 'station' && p.ability === 'flashlight') return true;
+    } return false };
+    if(!lamped(map) && !Object.keys(MAPS).some(id => id !== map.id && lamped(MAPS[id])))
+      out.issues.push('This deck is dark, and no modification station anywhere in the record '+
+                      'stocks a floodlamp. The unit crosses it two squares at a time.');
+  }
   for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++) if(walkable(map,x,y)) out.walkable++;
   const under = bodyAt(map, map.spawn.x, map.spawn.y);
   if(!walkable(map, map.spawn.x, map.spawn.y))
@@ -1597,6 +1618,7 @@ function toJSON(map){
     '  "spawn": {"x": '+map.spawn.x+', "y": '+map.spawn.y+'},\n'+
     '  "beacons": ['+map.beacons.map(b=>'{"x": '+b.x+', "y": '+b.y+'}').join(', ')+'],\n'+
     (map.carriage ? '  "carriage": true,\n' : '')+
+    (map.dark ? '  "dark": true,\n' : '')+
     (map.chapter ? '  "chapter": {"n": '+map.chapter.n+
                    ', "name": '+JSON.stringify(map.chapter.name)+'},\n' : '')+
     (map.under ? '  "under": {"deck": '+JSON.stringify(map.under.deck)+
