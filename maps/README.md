@@ -109,6 +109,9 @@ ISO.register({
 | `n`  | Note      | yes  | `[E]` reads it. Paper: it needs no circuit   |
 | `E`  | Stalker   | yes  | Where a contact starts, not a block. It paces the unit and never closes |
 | `e`  | Hunter    | yes  | Where a contact starts. It hunts by movement, it closes, and it will not pass a doorway |
+| `<`  | Sentry turret | yes | Where an emplacement stands. It never moves, and it fires on anything not of its own side |
+| `z`  | Security drone | yes | Where a contact starts. It follows the unit, lifts it off the deck and carries it somewhere else |
+| `0`  | Block     | yes  | Where a contact starts, and the middle of it. Three tiles by three, sliding, and it kills what it arrives over |
 | `d`  | Dirt      | yes  | Open earth                                   |
 | `g`  | Grass     | yes  |                                              |
 | `p`  | Path      | yes  | Beaten track                                 |
@@ -135,6 +138,14 @@ ISO.register({
 | `&`  | Tomatoes  | yes  | Crop. Slower to cross                        |
 | `y`  | Hay bale  | no   | Touching copies stack as one. Low enough to read over |
 | `j`  | Scarecrow | no   | Decoration. Sight passes over it             |
+| `J`  | Command Desk | no | Three tiles long; turns with its `dir`. Low enough to read over |
+| `-`  | Command Blockade | no | A bar down across the way. Nothing on it answers `[E]`: a control lifts it, on a wall or filed on a console. Touching copies lift together |
+| `(`  | Command Sandbags | no | Touching copies stack as one. Low enough to read over |
+| `q`  | Command Relay | no | `[E]` reads it. A mast with a console in its foot: everything a terminal is, desktop and all |
+| `l`  | Command Antenna | no | Three tiles by three; turns with its `dir`. Transmits through walls while it is live, the way a beacon does |
+| `[`  | Command Elevator | yes | A car to another deck, and the command deck's own. `[E]` rides it, and so does a button |
+| `N`  | Command Signage | no | `[E]` reads it. Paint on steel: it needs no circuit |
+| `I`  | Command Terminal | no | `[E]` opens it. Everything a terminal is, in command blue |
 
 To add a tile type, add one entry to `TILES` in `tiles.js`. It shows up in the
 editor palette on its own and the game obeys it straight away — walkability,
@@ -211,11 +222,23 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Car, Windmill | `label`   | Stencilled name                                |
 | Bed, Sofa, Table | `dir`  | Which way it runs                              |
 | Scarecrow | `label`       | Stencilled name                                |
+| Command Desk, Command Antenna | `dir` | Which way it runs, so which tiles it covers |
+| Command Desk, Command Antenna, Command Relay | `label` | Stencilled name |
+| Command Blockade | `open`    | Starts lifted rather than down                 |
+| Command Blockade | `locked`  | Nothing lifts it — no control, and there is no `[E]` on one either |
+| Command Antenna | `range`, `armed`, `objective` | Read exactly as a signal beacon's are |
+| Command Relay, Command Terminal | `title`, `text`, `desktop`, `files`, `card`, `cardsub` | Read exactly as a terminal's are |
+| Command Signage | `title`, `text` | What the board says                       |
+| Command Elevator | `dest`, `arrive`, `label`, `fade`, `card`, `cardsub` | Read exactly as an elevator's are |
+| Sentry turret | `label`      | Name shown in the message log                  |
+| Security drone, Block | `wake` | Squares of route at which it takes an interest |
+| Security drone, Block | `range` | Squares from its mark it will wander. `0` — the default — turns it loose on the whole deck |
+| Security drone, Block | `label` | Name shown in the message log                |
 | *anything powered* | `circuit` | The circuit it waits on. Blank — the default — means it is live from the start |
 
 The palette is filed under headings — **Ground**, **Open land**, **Structure**,
 **Buildings**, **Controls**, **Transit**, **Fixtures**, **Furnishings**, **Farm**,
-**Remains**, **Unit & kit**, **Contacts** — and each heading folds away with a
+**Remains**, **Unit & kit**, **Command deck**, **Contacts** — and each heading folds away with a
 click, so a room is laid out from the six or seven blocks it actually uses
 rather than from a list of thirty. Which headings are folded is kept between
 visits, like the draft is. The number keys still reach the first ten blocks
@@ -500,6 +523,9 @@ halfway.
 |------|---------|-------|--------|------------|
 | `E`  | Stalker | At a pace of its own, whenever the range is wrong | Never | It closes to three squares, holds there, and follows for as long as the unit is inside its range. It cannot hurt the unit at all — and it is shy: walk up on it, or walk into it, and it breaks and runs |
 | `e`  | Hunter  | At a pace of its own, always — wandering or hunting | Onto the unit, and strikes it if it is moving, which ends the run | It hunts by movement and nothing else: it finds the unit by it, loses the unit without it, and can only strike a unit that has it. Holding still is the whole of the defence — but it has to be done early. It is barred from doorways |
+| `<`  | Sentry turret | Never. It is bolted where it was painted | It does not have to: it shoots | Command side. It lays onto anything not of its own side — a stalker, a hunter, a block — and onto the unit whatever happens, and puts a round through it. What it never fires at is a security drone |
+| `z`  | Security drone | At a pace of its own, always | Onto the unit, and lifts it | Command side, and it cannot end a run. It takes hold of the chassis, carries it off, and sets it down wherever it was going. The movement keys become the struggle while it has hold |
+| `0`  | Block | Along one heading until the whole of it is stopped | It does not steer: it arrives | Three tiles by three of freight. Whatever it comes over is under it, and that ends the run. It needs the whole of its body's width, so a doorway is somewhere it can never be |
 
 ### Hunting by movement
 
@@ -571,6 +597,109 @@ To add a creature, add one entry to `FOES` in `tiles.js` and one tile that
 names it in `foe`. Everything else — how fast it crosses the deck, how far it
 notices, how close it comes, whether it kills, how it draws — is read from
 that entry.
+
+### Sides, and who fires at whom
+
+The stalker and the hunter came aboard on their own and belong to nobody. The
+two things the command deck left running do not: a `side` in `FOES` says whose
+a contact is, and both the turret and the drone are `command`.
+
+What reads a side is a gun. **It fires on anything whose side is not its own,
+and on the unit whatever happens** — so a turret and a drone stand in the same
+room and leave each other alone, while a stalker that wanders across the same
+room does not get to the other side of it. Nothing else in the vocabulary
+consults a side, which is the whole of the rule: two things of one side never
+trade rounds, and everything else is a target.
+
+That makes an emplacement a piece of ground rather than a creature. A room
+with a turret in it is a room the operator can walk something *into* — lead a
+hunter past one and the hunter is the turret's problem, which is the only way
+in the game to be rid of one.
+
+### An emplacement, rather than a contact — the turret
+
+A **Sentry turret** (`<`) is painted like a contact and behaves like nothing
+else that is. It crosses no ground at all: it is bolted where the mark was
+put, it has no `wake` and no `range` because neither means anything to
+something that never walks, and a route past one is exactly the route it
+always was, except that the turret is standing in it and will not give
+ground.
+
+What it does instead is lay onto whatever it can see and put a round through
+it. The line has to be as clear as a reading would be — **what stops sight
+stops a round**, and what sight crosses (mesh, a console, a desk, sandbags) it
+fires straight over. Because the optics are symmetric, a barrel the operator
+can watch coming round is a barrel coming round onto the unit: the swing, and
+the `warm` it holds a mark for before firing, are the whole of the warning
+anything gets.
+
+| Setting | Means |
+|---------|-------|
+| `gun.range` | Tiles it reaches |
+| `gun.warm`  | Seconds it holds a mark before the round goes |
+| `gun.cool`  | Seconds between rounds |
+| `gun.spin`  | Radians a second it lays round onto a new mark |
+| `hull`      | Rounds it takes to put *it* down — a turret is worth three |
+
+A round takes `hull` off whatever it hits, and what runs out of hull is off
+the deck. The unit has no hull: a round that reaches it ends the run.
+
+The tracker reads movement, and a turret does not move — **so nothing on a
+deck is more dangerous to walk up on, and none of it shows on the screen.**
+Corners, doorways and anything solid are the answer to one; so is the other
+end of a long room, because `gun.range` runs out.
+
+### Picked up, and put down somewhere else — the drone
+
+A **Security drone** (`z`) follows like a hunter and cannot end a run. It
+takes hold of the chassis instead and carries it about the deck for
+`carries.hold` seconds — a leg at a time, picking somewhere new each time it
+arrives — and sets it down wherever that runs out. Seven to twenty squares of
+deck, in practice, and quite possibly the far side of a door the unit spent
+five minutes getting through. Walking into one is every bit the invitation
+that letting it come to you is.
+
+While it has hold, the movement keys stop being movement and become the
+**struggle**: press them and the grip gives, `carries.struggle` presses and it
+breaks where the unit hangs. Holding a key down does nothing — the struggle
+counts presses, so shaking one off is the operator doing something rather than
+leaning on an arrow key. `[E]` and the jump answer nothing at all while the
+deck is not under the chassis.
+
+Everything else still runs. The tracker stays up and still reads, the lamp
+stays struck, and **being carried reads as movement** to anything that hunts by
+it — so a deck with a drone and a hunter on it is a deck where being picked up
+is what gets the unit found.
+
+It sets the unit down on ground it could have walked to: a drone is no better
+over a pit than the chassis is, so it never drops anything into one, and with
+nowhere worth carrying the unit to it does not lift at all. Once it lets go it
+keeps `carries.rest` seconds of distance before it will come in again, and it
+is command side, so the turret in the corner never touches it.
+
+### Nine squares of it — the block
+
+A **Block** (`0`) is three tiles by three of freight that stopped answering
+whatever used to steer it. The mark is the **middle** of it, so the eight
+squares round the mark have to be ground it can hold — Survey says so when
+they are not.
+
+It does not steer and it does not chase. It takes a heading and runs along it
+until the whole of its body is stopped, then it takes another; noticing the
+unit changes only which heading it picks when it next has to pick one, and how
+fast it runs. Whatever it arrives over is under it, and that is the run.
+
+Because it needs the whole of its width, **a doorway is somewhere a block can
+never be**, and so is anything a wall comes within a tile of. A deck built
+with one on it is a deck with pockets in it — and crossing the open part of
+that deck is a matter of watching which way the thing is pointed, which the
+feed draws as a bar across its leading face.
+
+`range` holds one to a stretch of deck the way it holds anything else, and it
+holds it the way a block understands: the edge of the range is something it
+**turns at**, exactly as it turns at a wall. So a block given a range of four
+works a bay nine squares across and never comes out of it, and one left at `0`
+has the run of everything its body fits down.
 
 ## Beacons that steer
 
@@ -1253,6 +1382,79 @@ deck, and a lock is in the manipulator or it is not.
 Survey checks a lock the way it checks a fusebox way: a door whose key is
 placed on no deck in the record is a door that never opens, and it says so.
 
+## The command deck
+
+Eight blocks that are the same eight blocks as everywhere else on the ship — a
+desk, a barrier, a console, a car — built to a standard nobody applied
+anywhere below. They are a family rather than a blue coat of paint on the old
+ones because they are read together: a deck laid out of these is a deck the
+crew ran the ship from, and the operator is meant to know that from the colour
+before it has pressed anything.
+
+The colour is the whole of the convention. Plating is green, controls are
+amber, transit is mint, timber is brown — and nothing else on the ship is
+blue, so blue reads as command and nothing else does. Three shades of it,
+declared once in `tiles.js` and shared out: the **deep** blue of structure,
+the **blue** of a working surface, and the **pale** blue of glass and painted
+lettering.
+
+| Block | Blue | What it is |
+|-------|------|------------|
+| **Command Desk** (`J`) | working | Three tiles of console run, turned with its `dir` the way an ordinary desk is. Solid, and low enough to read over |
+| **Command Blockade** (`-`) | deep | A bar down across the way. As wide as it is painted, and one body: touching copies lift together |
+| **Command Sandbags** (`(`) | deep | Filled bags, as big as the stack is painted. Solid, and low enough to read over — cover for whatever is behind them as much as for the unit |
+| **Command Relay** (`q`) | pale | A mast with a console in its foot. Everything a terminal is |
+| **Command Antenna** (`l`) | working | Three tiles by three of dish and mast, turned with its `dir`. It transmits |
+| **Command Elevator** (`[`) | pale | A car, and the command deck's own |
+| **Command Signage** (`N`) | pale | A painted board. Read like a sign: paint needs no circuit |
+| **Command Terminal** (`I`) | working | The glass the deck was actually run from |
+
+### The bar, and the two things that lift it
+
+A **Command Blockade** has no handle. There is no `[E]` on one, the way there
+is on a cargo gate: it is dropped and lifted from somewhere else, which is the
+whole of what a blockade is for. Two things reach it, and they are the same
+thing twice —
+
+* a **Button** (`b`) on a wall, wired to it with **Pick ▸** like any other, and
+* a **control filed on a console** — an `app` on a Command Terminal's or a
+  Command Relay's desktop, which is a button that lives on the glass.
+
+Both drive it through the same driver, so a bank of them opens as one press
+and the log collapses to one line. Survey asks for one or the other, exactly
+as it asks for a bulkhead, and reports a blockade nothing lifts. Painted from
+several tiles it is **one body**: a line run to any tile of it lifts the whole,
+and `locked` anywhere means locked everywhere.
+
+### The mast that transmits
+
+A **Command Antenna** carries a beacon's settings and behaves like one: while
+its circuit is live it transmits, the unit reads it **through structure**, it
+borrows the objective line if it has been given one, and it goes quiet once
+the unit is within its `range` and there is nothing left to steer by. `[R]`
+arms it again with everything else.
+
+Which makes it the thing a command deck is navigated by. A dome has a
+windmill; a command deck has three tiles by three of dish, transmitting from
+wherever the author wanted the unit to end up.
+
+### The rest of it
+
+Nothing else in the family is new behaviour, and that is deliberate.
+
+* A **Command Relay** and a **Command Terminal** are terminals: `title` and
+  `text` for a plain record, or a `desktop` with `files` on it — documents,
+  images, sealed files and controls — and a `card` for filing that ends a
+  segment. A console that is dark is a console that never opens, so a relay on
+  a circuit with no fuse in it is a mast the unit has walked to for nothing.
+* A **Command Elevator** is a car, and it pairs with an ordinary one: a shaft
+  is a shaft, so `[` at this end and `^` at the other is one route with one
+  name stencilled on both.
+* A **Command Signage** is a sign, and **Command Sandbags** are a hay bale in
+  a different coat — as big as they are painted, solid, and low enough that
+  sight crosses them. Which is worth knowing where there is a turret about:
+  cover that reads clear is cover the gun fires over.
+
 ## A field to walk into
 
 Crop is the one ground the unit can walk into that costs it something. **Wheat**
@@ -1284,7 +1486,8 @@ opens, a tram whose rail runs into a wall, a vent with no far end or one that
 comes out inside a wall, a station stocked with nothing, a beacon that spawn
 already stands inside the range of, a car whose deck is not one the game will
 have, a breach with nothing registered under it or nothing stencilled to come
-down at, and a forklift, desk or body with nowhere to lie. On power it flags a fusebox that feeds nothing, a way stencilled with no
+down at, a forklift, desk or body with nowhere to lie, and a contact bigger
+than a square whose mark has not the room to stand it up in. On power it flags a fusebox that feeds nothing, a way stencilled with no
 circuit, a way that feeds a circuit nothing on the deck is on, a way whose fuse
 is placed on no deck at all, and a block waiting on a circuit no box on its
 deck feeds — the one that would otherwise look exactly like a block that

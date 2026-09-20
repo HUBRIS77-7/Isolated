@@ -809,6 +809,10 @@ const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
                  on the square its mark was painted on and has not been there
                  since. */
               foes:[],
+              /* rounds in the air. A shot is resolved the instant it is
+                 fired — what lives in here is the tracer, which is the only
+                 part of it the operator ever sees */
+              shots:[],
               /* bumped whenever the ground itself changes under a route —
                  a door driven, a deck rebuilt. What is counting on it is the
                  cached sweep, which must not be reused across a change it
@@ -822,6 +826,7 @@ function buildWorld(){
   world.open.clear(); world.trams.length=0; world.lit.clear();
   world.spent.clear(); world.beacons.clear();
   world.ways.clear(); world.drops.clear(); world.foes.length=0; world.rev++;
+  world.shots.length=0; game.held=null; game.struggle=0;
   world.slides.clear(); world.unlocked.clear();
   sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
@@ -885,6 +890,9 @@ function restoreDeck(d){
   /* a deck is left standing as it was, and whatever was following the unit
      across it is still standing where it stopped */
   world.foes=d.foes.map(foeCopy);
+  /* a round in the air belongs to the deck it was fired on, and nothing that
+     has hold of the unit keeps hold of it across a crossing */
+  world.shots.length=0; game.held=null; game.struggle=0;
   world.rev++;
   world.lit.clear();
   sight.live.clear(); sight.seen.clear();     // optical memory does not ride the car
@@ -1212,6 +1220,8 @@ const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,mdu
   active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0,toldAbout:new Set(),
   face:'down',dead:false,sink:0,useLog:0,baseObj:'',
   stir:-1e9,                    // when the chassis last covered ground, for whatever hunts by it
+  held:null,                    // the drone that has the chassis off the deck, if one has
+  struggle:0,                   // and how much the operator has worked against its grip
   abilities:new Set(),          // what a modification station has fitted so far
   carry:[],                     // small objects in the manipulator, newest last
   arc:0};                       // squares the move in flight is covering, if it is a jump
@@ -1343,7 +1353,11 @@ function checkBeacons(){
    belong to it, not to the chassis. */
 const uiOpen=()=>term.on||fuse.on||desk.on;
 function tryMove(dir){
-  if(!game.active||game.dead||uiOpen()||game.mt<1)return;
+  if(!game.active||game.dead||uiOpen())return;
+  /* nothing the keys say to the motors reaches the deck while the deck is not
+     under the chassis: the same key works against the grip instead */
+  if(game.held)return void struggleAt(dir);
+  if(game.mt<1)return;
   game.face=dir;
   const [dx,dy]=DIRV[dir],nx=game.px+dx,ny=game.py+dy,t=bodyDef(nx,ny);
   if(contactInWay(nx,ny,dx,dy))return;
@@ -1369,6 +1383,7 @@ function tryMove(dir){
    winding up rather than walking the unit off the edge it is lining up on. */
 function startJump(){
   if(!game.active||game.dead||uiOpen())return;
+  if(game.held)return void heldLine('The legs wind up against nothing. There is no deck under them.');
   if(!game.abilities.has('jump')){
     const n=performance.now();
     if(n-game.useLog>2500){game.useLog=n;say('No mobility package fitted. The legs will not wind up.','dim')}
@@ -1413,6 +1428,12 @@ function releaseJump(){
   if(t.deadly&&!tramOn(nx,ny))die(t.deadly);
 }
 
+/* One line about being carried, no more often than the log will bear it. */
+function heldLine(text){
+  const n=performance.now();
+  if(n-game.useLog>2500){game.useLog=n;say(text,'dim')}
+}
+
 /* ---------- [E]: buttons and terminals ----------
    The tile being faced answers first; otherwise anything else within reach. */
 function inReach(){
@@ -1425,6 +1446,7 @@ function interact(){
   if(term.on)return closeTerminal();
   if(fuse.on)return closeFusebox();
   if(!game.active||game.dead)return;
+  if(game.held)return void heldLine('Nothing is within reach of a manipulator this far off the deck.');
   litKey('use');
   for(const [x,y] of inReach()){
     /* something set down is lifted before anything built into the deck */
@@ -1685,7 +1707,7 @@ function travelTo(deck,want,how,square){
   level.entry={x:land.x, y:land.y};
   cancelJump();closeTerminal();closeFusebox();closeDesk();
   game.px=game.fx=land.x;game.py=game.fy=land.y;
-  game.mt=1;game.bt=1;game.arc=0;game.sink=0;
+  game.mt=1;game.bt=1;game.arc=0;game.sink=0;game.held=null;game.struggle=0;
   game.visited.clear();game.visited.set(K(land.x,land.y),performance.now());
   view.ready=false;                        // the camera does not fly between decks
   say(how==='drop'?'FALL ARRESTED. CHASSIS READS INTACT.':'TRANSIT LINK ENGAGED.','b');
@@ -1949,21 +1971,49 @@ function checkFooting(){
 /* A contact, copied off a deck or back onto one. The route it is walking is a
    list of its own, so it is copied rather than shared — a deck put away
    must not go on being walked by the contact the unit took away with it. */
-const foeCopy=f=>Object.assign({},f,{path:f.path?f.path.slice():null});
+/* What it was laid onto is not copied: a mark is a live reference to
+   something standing on the deck being put away, and it is worked out again
+   the first frame the deck is back. */
+const foeCopy=f=>Object.assign({},f,{path:f.path?f.path.slice():null, aim:null});
 function makeFoe(kind,x,y,p){
   const d=ISO.FOES[kind];
   return {kind, x, y, rx:x, ry:y, hx:x, hy:y, vis:0, met:false,
-          mood:'roam', path:null, rest:Math.random()*1.5, flee:0, wary:0, said:-1e9,
+          /* an emplacement has one mood and holds it: it watches */
+          mood:d.fixed?'watch':'roam',
+          path:null, rest:Math.random()*1.5, flee:0, wary:0, said:-1e9,
           moved:-1e9, wake:((p&&p.wake)|0)||d.wake, range:(p&&p.range)|0,
-          label:(p&&p.label)||''};
+          label:(p&&p.label)||'',
+          hull:d.hull||1,             // rounds it takes to put down
+          face:Math.random()*6.283,   // where a gun is laid, in radians
+          aim:null, warm:0, cool:0,   // what it has, how long it has held it, and its rate
+          dir:null};                  // the heading something that slides is running on
 }
 const foeDef=f=>ISO.FOES[f.kind]||{};
+/* Squares either side of its middle. Everything that walks is 0 — one square,
+   the way the chassis is — and a block is 1, which is three tiles by three. */
+const foeSpan=f=>foeDef(f).bulk|0;
 /* The square a contact counts as being in: the one it is making for, and the
    one it is actually standing over. It holds both while it is between them,
-   so nothing else walks through it on the way past. */
-const foeIn=(f,x,y)=>(f.x===x&&f.y===y)||
-                     (Math.round(f.rx)===x&&Math.round(f.ry)===y);
+   so nothing else walks through it on the way past — and something with bulk
+   holds every square of its body, because all of it is in the way. */
+function foeIn(f,x,y){
+  const b=foeSpan(f);
+  return (Math.abs(f.x-x)<=b&&Math.abs(f.y-y)<=b)||
+         (Math.abs(Math.round(f.rx)-x)<=b&&Math.abs(Math.round(f.ry)-y)<=b);
+}
 const foeAt=(x,y)=>world.foes.find(f=>foeIn(f,x,y))||null;
+/* Whether the optics have any part of one. A block is read the moment a
+   corner of it comes round a bulkhead, rather than when its middle does. */
+function foeSeen(f){
+  const b=foeSpan(f), cx=Math.round(f.rx), cy=Math.round(f.ry);
+  for(let j=-b;j<=b;j++)for(let i=-b;i<=b;i++)
+    if(sight.live.has(K(cx+i,cy+j)))return true;
+  return false;
+}
+/* Whether the unit is under it. Real positions rather than squares, and a
+   little short of the body's true edge, so a block reads as having run over
+   the chassis rather than as having brushed past it. */
+const foeOver=(f,x,y)=>Math.abs(f.rx-x)<=foeSpan(f)+.4&&Math.abs(f.ry-y)<=foeSpan(f)+.4;
 /* Ground a contact will put a foot on: whatever the unit could stand on, less
    anything that would end it there. A contact is no better over a pit than
    the chassis is, and it will not set foot on a rail at all — neither on
@@ -1974,13 +2024,23 @@ const foeAt=(x,y)=>world.foes.find(f=>foeIn(f,x,y))||null;
    Something barred from doorways cannot leave the room it is in by the door,
    which makes a threshold the one piece of architecture it has no answer to —
    and makes where an author puts a door part of what a deck is. */
-function foeGround(x,y,f){
+function foeStands(x,y,f){
   if(!ISO.inside(MAP,x,y)||!walkableAt(x,y))return false;
   if(tileDef(x,y).signal==='move')return false;
   const t=bodyDef(x,y);
   if(t.deadly||t.fall)return false;
   const bars=f&&foeDef(f).bars;
   return !bars||bars.indexOf(t.id)<0;
+}
+/* And the whole of it, for something bigger than a square: a block does not
+   fit down a corridor two tiles wide, and the sweep it steers by is worked
+   out of exactly this, so it never sets out along a route it cannot take. */
+function foeGround(x,y,f){
+  const b=foeSpan(f);
+  if(!b)return foeStands(x,y,f);
+  for(let j=-b;j<=b;j++)for(let i=-b;i<=b;i++)
+    if(!foeStands(x+i,y+j,f))return false;
+  return true;
 }
 /* One breadth-first sweep out from the unit, shared by every contact of a
    kind: each of them reads its own square off it and steps to whichever
@@ -2027,9 +2087,13 @@ const STRIKE_HOLD=.5;                       // and how long it stays something w
    it is the whole of the answer to something that hunts by movement. */
 const stirring=within=>performance.now()-game.stir<within*1000;
 function foeMood(f,dt){
-  const d=foeDef(f), here=foeFlow(f).get(K(f.x,f.y));
+  const d=foeDef(f);
   if(f.rest>0)f.rest=Math.max(0,f.rest-dt);
   if(f.wary>0)f.wary=Math.max(0,f.wary-dt);
+  /* an emplacement is never in any other mood, and something that has the
+     unit off the deck is not looking for anything */
+  if(d.fixed||f.mood==='carry')return;
+  const here=foeFlow(f).get(K(f.x,f.y));
   if(f.mood==='scatter'){
     f.flee-=dt;
     /* far enough, or run out of fright */
@@ -2119,7 +2183,8 @@ function foeAimRoam(f){
   const n=f.path.shift();
   /* the route was worked out a while ago: a door may have shut across it, or
      the unit may be standing in it now */
-  const gone=!n||!foeGround(n.x,n.y,f)||foeAt(n.x,n.y)||(n.x===game.px&&n.y===game.py)||
+  const gone=!n||!foeGround(n.x,n.y,f)||foeAt(n.x,n.y)||
+             (f.mood!=='carry'&&n.x===game.px&&n.y===game.py)||
              Math.abs(n.x-f.x)+Math.abs(n.y-f.y)!==1;
   if(!f.path.length){f.path=null;f.rest=.7+Math.random()*2.2}
   if(gone){f.path=null;f.rest=Math.max(f.rest,.3);return false}
@@ -2143,7 +2208,7 @@ function foeAimUnit(f,flee){
   for(const dir in DIRV){
     const nx=f.x+DIRV[dir][0], ny=f.y+DIRV[dir][1], v=reach.get(K(nx,ny));
     if(v===undefined||!foeGround(nx,ny,f)||foeAt(nx,ny))continue;
-    if(v===0&&!d.kills)continue;                       // one that never closes never arrives
+    if(v===0&&!d.kills&&!d.carries)continue;           // one with no business on the square never arrives
     if(want<0?v<here:want>0?v>here:v===here)opts.push([nx,ny]);
     else if(flee&&v===here)level.push([nx,ny]);        // cornered: sidle rather than freeze
   }
@@ -2153,7 +2218,8 @@ function foeAimUnit(f,flee){
   f.x=nx;f.y=ny;
   return true;
 }
-const foeAim=f=>f.mood==='roam'?foeAimRoam(f):foeAimUnit(f,f.mood==='scatter');
+const foeAim=f=>(f.mood==='roam'||f.mood==='carry')?foeAimRoam(f)
+                                                   :foeAimUnit(f,f.mood==='scatter');
 /* Ground crossed, rather than squares taken. A contact walks towards the
    square it is making for at whatever its mood moves it at, and picks the
    next one the instant it gets there, so it keeps going in one motion for as
@@ -2161,8 +2227,11 @@ const foeAim=f=>f.mood==='roam'?foeAimRoam(f):foeAimUnit(f,f.mood==='scatter');
    here waits on the unit for permission to walk. */
 function foeAdvance(f,dt){
   const d=foeDef(f), fast=d.speed||5;
+  if(d.fixed)return;                                   // bolted where it was painted
+  if(d.slides)return foeSlide(f,dt);                   // it runs a heading rather than a route
   const speed=f.mood==='roam'?(d.prowl||fast*.55)
              :f.mood==='scatter'?fast*(d.bolt||2)
+             :f.mood==='carry'?fast*.8                 // it labours with the chassis under it
              :fast;
   let budget=speed*dt;
   for(let guard=0;budget>1e-5&&guard<8;guard++){
@@ -2185,6 +2254,7 @@ const foeOnUnit=f=>Math.abs(f.rx-game.px)<.55&&Math.abs(f.ry-game.py)<.55;
    furthest from the unit. A contact that never closes would rather be
    anywhere than touched, and one with nowhere left to go stands its ground. */
 function foeShove(f){
+  if(foeDef(f).fixed)return false;                     // it is bolted down: it gives nothing
   const reach=foeFlow(f), far=k=>{const v=reach.get(k);return v===undefined?99:v}, opts=[];
   for(const dir in DIRV){
     const nx=f.x+DIRV[dir][0], ny=f.y+DIRV[dir][1];
@@ -2201,6 +2271,228 @@ function foeShove(f){
   f.moved=performance.now();
   return true;
 }
+/* ---------- nine squares of it ----------
+   A block does not steer. It takes a heading and runs along it until
+   something stops the whole of its body, and then it takes another — so it is
+   a thing to be out of the way of rather than a thing to hide from, and the
+   operator's answer to one is a doorway, a corner, or any square its three
+   tiles cannot reach. What noticing the unit changes is not that it chases:
+   it is which heading it picks when it next has to pick one. */
+function foeSlide(f,dt){
+  const d=foeDef(f);
+  if(!f.dir)f.dir=slideDir(f);
+  const speed=f.mood==='follow'?(d.speed||4.4):(d.prowl||3);
+  let budget=speed*dt;
+  for(let guard=0;budget>1e-5&&guard<8;guard++){
+    const dx=f.x-f.rx, dy=f.y-f.ry, gap=Math.hypot(dx,dy);
+    if(gap<1e-4){                                      // square reached: carry on, or turn
+      f.rx=f.x;f.ry=f.y;
+      if(f.rest>0)break;                               // stalled against something
+      const v=DIRV[f.dir];
+      if(v&&foeGround(f.x+v[0],f.y+v[1],f)&&slideLeash(f,v[0],v[1])){
+        f.x+=v[0];f.y+=v[1];continue;
+      }
+      const turn=slideDir(f);
+      if(!turn){f.rest=.6;break}                       // wedged: it grinds and waits
+      f.dir=turn;
+      continue;
+    }
+    const go=Math.min(budget,gap);
+    f.rx+=dx/gap*go; f.ry+=dy/gap*go;
+    budget-=go;
+    f.moved=performance.now();
+  }
+}
+/* A block given a range holds a stretch of deck the way anything else given
+   one does — but it holds it by running rather than by choosing where to
+   walk, so the edge of its range is something it turns at the way it turns at
+   a wall. A square further from the mark than the range is a square it will
+   not take; one already outside it may only move back toward the mark, which
+   is how a block shoved off its stretch finds its way home. */
+function slideLeash(f,dx,dy){
+  if(!(f.range>0))return true;
+  const home=(x,y)=>Math.max(Math.abs(x-f.hx),Math.abs(y-f.hy));
+  const at=home(f.x,f.y), to=home(f.x+dx,f.y+dy);
+  return to<=f.range||to<at;
+}
+/* Which way it takes off next. Any heading the whole body fits down, weighted:
+   the one that lines the unit up if it has noticed one, the one it has just
+   come off last of all. Straight back the way it came is allowed — a block
+   working a bay end to end is what a block does. */
+function slideDir(f){
+  const back=f.dir?{up:'down',down:'up',left:'right',right:'left'}[f.dir]:null;
+  const opts=[];
+  let total=0;
+  for(const dir in DIRV){
+    const [dx,dy]=DIRV[dir];
+    if(!foeGround(f.x+dx,f.y+dy,f)||!slideLeash(f,dx,dy))continue;
+    let w=1;
+    if(f.mood==='follow'){
+      const tx=game.px-f.x, ty=game.py-f.y;
+      const along=dx?Math.sign(tx)===dx:Math.sign(ty)===dy;
+      const lined=dx?Math.abs(ty)<=foeSpan(f):Math.abs(tx)<=foeSpan(f);
+      if(along)w=lined?6:2.5;
+    }
+    if(dir===f.dir)w*=.15;                             // it has only just been stopped that way
+    else if(dir===back)w*=.6;
+    opts.push([dir,w]);total+=w;
+  }
+  if(!opts.length)return null;
+  let r=Math.random()*total;
+  for(const [dir,w] of opts){r-=w;if(r<=0)return dir}
+  return opts[opts.length-1][0];
+}
+
+/* ---------- the emplacement, and what it fires at ----------
+   A turret crosses no ground at all. What it does instead is lay onto
+   whatever it can see and put a round through it — anything whose side is not
+   its own, and the unit whatever happens. The drone is command side, which is
+   the whole of why the two of them stand in the same room and leave each
+   other alone, and why walking a stalker past a turret is a way of getting
+   rid of a stalker. */
+const GUN_LAY=.22;                         // radians of lay it fires inside
+const SHOT_LIFE=.22;                       // seconds a tracer is drawn for
+/* A clear line between two points, worked out the way sight is: what stops a
+   round is what would stop a reading. Mesh, a console and a desk are all
+   fired straight over. */
+function clearShot(x0,y0,x1,y1){
+  const dx=x1-x0, dy=y1-y0, n=Math.ceil(Math.hypot(dx,dy)*3);
+  const ax=Math.round(x0), ay=Math.round(y0), bx=Math.round(x1), by=Math.round(y1);
+  for(let i=1;i<n;i++){
+    const x=Math.round(x0+dx*i/n), y=Math.round(y0+dy*i/n);
+    if((x===ax&&y===ay)||(x===bx&&y===by))continue;
+    if(blocksSight(x,y))return false;
+  }
+  return true;
+}
+/* The nearest thing in range it has a line to. `o` is the contact, or null
+   for the unit — a gun has no more opinion about which of them is which than
+   the tracker has. */
+function gunMark(f){
+  const g=foeDef(f).gun, side=foeDef(f).side||'';
+  if(!g)return null;
+  const marks=[];
+  for(const o of world.foes){
+    if(o===f)continue;
+    if((foeDef(o).side||'')===side&&side)continue;     // its own side: never
+    marks.push({o, x:o.rx, y:o.ry});
+  }
+  if(game.active&&!game.dead)marks.push({o:null, x:game.px, y:game.py});
+  let best=null, bd=Infinity;
+  for(const m of marks){
+    const d=Math.hypot(m.x-f.rx, m.y-f.ry);
+    if(d>g.range||d>=bd)continue;
+    if(!clearShot(f.rx,f.ry,m.x,m.y))continue;
+    bd=d;best=m;
+  }
+  return best;
+}
+/* One turret, one frame: come round onto whatever it has, hold it long enough
+   to be sure of it, and fire. The lay is the whole of the warning anything
+   gets — and because sight is symmetric, a unit that can see the barrel
+   swinging onto it is a unit the barrel is swinging onto. */
+function foeGun(f,dt){
+  const d=foeDef(f), g=d.gun;
+  if(!g)return;
+  f.cool=Math.max(0,f.cool-dt);
+  const mark=gunMark(f);
+  if(!mark){f.aim=null;f.warm=0;return}
+  const want=Math.atan2(mark.y-f.ry, mark.x-f.rx);
+  const turn=((want-f.face+Math.PI*3)%(Math.PI*2))-Math.PI, step=(g.spin||2.6)*dt;
+  f.face+=Math.abs(turn)<=step?turn:Math.sign(turn)*step;
+  f.aim=mark;
+  if(!mark.o&&!f.met){f.met=true;if(d.notice)say(d.notice,'alert')}
+  if(Math.abs(turn)>GUN_LAY){f.warm=0;return}          // still coming round
+  f.warm+=dt;
+  if(f.warm<(g.warm||.8)||f.cool>0)return;
+  f.warm=0;f.cool=g.cool||1.5;
+  world.shots.push({x0:f.rx, y0:f.ry, x1:mark.x, y1:mark.y, t:0});
+  if(mark.o)hurtFoe(mark.o,1);
+  else die(d.shot||'ROUND THROUGH THE CHASSIS.');
+}
+/* A round into something. What it takes is `hull`, and what is left of one
+   that runs out is nothing: it is off the deck, and the log says so only if
+   the unit was looking at it — a thing shot in the dark is simply a thing
+   that stops being on the tracker. */
+function hurtFoe(o,n){
+  o.hull-=n;
+  if(o.hull>0)return;
+  const i=world.foes.indexOf(o);
+  if(i>=0)world.foes.splice(i,1);
+  if(game.held===o)return releaseUnit('THE DRONE COMES APART. THE UNIT DROPS ONTO THE DECK.');
+  const d=foeDef(o);
+  if(d.felled&&foeSeen(o))say(d.felled,'b');
+}
+
+/* ---------- picked up, and put down somewhere else ----------
+   A drone does not strike the unit and cannot end the run. What it does is
+   worse in a slower way: it takes hold of the chassis, carries it off, and
+   sets it down wherever it happened to be going — which may be the far side
+   of a door the unit spent the last five minutes getting through.
+
+   While it has hold, the movement keys stop being movement and become the
+   struggle: enough of them and the grip breaks where the unit hangs. Being
+   carried still reads as movement to anything that hunts by it, so a deck
+   with a drone and a hunter on it is a deck where being picked up is what
+   gets the unit found. */
+function grabUnit(f){
+  if(game.held||!game.active||game.dead)return;
+  /* it picks the unit up in order to take it somewhere. With nowhere worth
+     going it does not lift at all, rather than lifting and setting down on
+     the same square — which would be a line in the log and nothing else */
+  const trip=foeRoute(f);
+  if(!trip){f.rest=.9;f.wary=3;return}
+  game.held=f;game.struggle=0;
+  f.mood='carry';f.path=trip;f.rest=0;f.wary=0;f.carried=0;
+  cancelJump();closeTerminal();closeFusebox();closeDesk();
+  const d=foeDef(f);
+  say(d.grabs||'THE UNIT IS OFF THE DECK.','alert');
+  say('The movement keys work against the grip now. Enough of them and it lets go.','dim');
+}
+/* Whatever had hold of the unit, no longer holding it: it goes back to
+   looking, and keeps its distance a while first. The run ending is the other
+   way this happens, and it happens the same way — nothing is left standing
+   there with its arms out. */
+function letGo(f){
+  if(!f)return;
+  const d=foeDef(f);
+  game.held=null;game.struggle=0;
+  f.mood='roam';f.path=null;f.rest=.6;
+  f.wary=(d.carries&&d.carries.rest)||7;
+}
+function releaseUnit(line){
+  const f=game.held;
+  if(!f)return;
+  const d=foeDef(f);
+  letGo(f);
+  say(line||d.drops||'SET DOWN.','b');
+  arrived();                                           // wherever it left the unit is a square to read
+  checkFooting();
+}
+/* The chassis goes where the drone goes. It is not a step — nothing was
+   walked — so it does not read the square it passes over; what it does read
+   is a beacon, because a transmitter does not care how the unit arrived. */
+function carriedBy(f){
+  game.stir=performance.now();                         // carried is moving, to whatever hunts by it
+  const nx=Math.round(f.rx), ny=Math.round(f.ry);
+  if(!ISO.inside(MAP,nx,ny)||(nx===game.px&&ny===game.py))return;
+  game.fx=game.px;game.fy=game.py;
+  game.px=nx;game.py=ny;game.mt=0;game.mdur=.12;game.arc=0;
+  game.visited.set(K(nx,ny),performance.now());
+  checkBeacons();
+}
+/* One movement key, worked against the grip rather than against the deck.
+   True means the key was spent on the struggle and is not a step. */
+function struggleAt(dir){
+  if(!game.held)return false;
+  const f=game.held, need=(foeDef(f).carries&&foeDef(f).carries.struggle)||8;
+  game.struggle++;game.face=dir;litKey(dir);
+  if(game.struggle>=need)releaseUnit(foeDef(f).shaken);
+  else if(game.struggle===Math.ceil(need/2))
+    say('The grip gives a little. Keep at it.','dim');
+  return true;
+}
+
 /* A contact standing in the square the unit is moving into. One that never
    closes gives ground rather than be touched — and a shy one takes being
    walked into as every bit the reason to run that being walked up to is. One
@@ -2211,6 +2503,9 @@ function contactInWay(nx,ny,dx,dy){
   if(!f)return false;
   const d=foeDef(f);
   if(d.kills){die(d.kills);return true}
+  /* walking up to something that wants to pick the unit up is every bit the
+     invitation letting it come to you is */
+  if(d.carries&&!game.held&&f.mood==='follow'&&f.wary<=0){grabUnit(f);return true}
   if(d.shy)foeScatter(f);
   if(foeShove(f))return false;
   game.bx=dx;game.by=dy;game.bt=0;
@@ -2227,13 +2522,38 @@ function contactInWay(nx,ny,dx,dy){
 const FOE_FADE=.16;                        // seconds a contact takes to come up or go
 function updateFoes(dt){
   const stopped=!game.active||game.dead, k=Math.min(1,dt/FOE_FADE);
-  for(const f of world.foes){
-    f.vis=lerp(f.vis, sight.live.has(K(Math.round(f.rx),Math.round(f.ry)))?1:0, k);
+  /* the tracers first: a round is resolved the instant it is fired, and what
+     is left in here is only how long the line stays drawn */
+  for(let i=world.shots.length-1;i>=0;i--)
+    if((world.shots[i].t+=dt)>SHOT_LIFE)world.shots.splice(i,1);
+  /* a copy, because a round fired this frame can take something off the deck
+     in the middle of the sweep */
+  for(const f of world.foes.slice()){
+    if(world.foes.indexOf(f)<0)continue;               // put down before its turn came
+    const d=foeDef(f);
+    f.vis=lerp(f.vis, foeSeen(f)?1:0, k);
     if(stopped)continue;
     foeMood(f,dt);
+    if(d.gun)foeGun(f,dt);
+    if(game.dead)return;
     foeAdvance(f,dt);
-    if(f.mood==='follow'&&foeDef(f).kills&&foeOnUnit(f)&&foeStrikes(f)){
-      die(foeDef(f).kills);return;
+    /* nine squares of freight does not strike the unit: it arrives over it */
+    if(d.bulk&&d.kills&&foeOver(f,game.px,game.py)){die(d.kills);return}
+    if(game.held===f){
+      carriedBy(f);
+      f.carried+=dt;
+      /* the leg it was walking has run out. It has the unit for `hold`
+         seconds in all, so it picks another and carries on until that is
+         spent — and where that leaves the unit is wherever it had got to */
+      if(!f.path&&f.rest>0){
+        const more=f.carried<((d.carries&&d.carries.hold)||5)&&foeRoute(f);
+        if(more){f.path=more;f.rest=0}else releaseUnit();
+      }
+      continue;
+    }
+    if(f.mood==='follow'&&d.carries&&!game.held&&f.wary<=0&&foeOnUnit(f)){grabUnit(f);continue}
+    if(f.mood==='follow'&&d.kills&&!d.bulk&&foeOnUnit(f)&&foeStrikes(f)){
+      die(d.kills);return;
     }
   }
 }
@@ -2697,6 +3017,7 @@ function deskPress(){
 function die(reason){
   if(game.dead)return;
   game.dead=true;game.active=false;game.sink=0;closeTerminal();closeFusebox();closeDesk();cancelJump();
+  letGo(game.held);
   say(reason,'alert');
   say('CHASSIS UNRECOVERABLE. SIGNAL LOST.','alert');
   objective('SIGNAL LOST. [R] to re-initialise.',true);
@@ -2851,6 +3172,7 @@ function drawFeed(now,dt){
   drawRails(ox,oy,tile,D,now);
   drawTrams(ox,oy,tile,D,now);
   drawFoes(ox,oy,tile,D,now);
+  drawShots(ox,oy,tile,D);
   world.lit.forEach((when,k)=>{                       // a control answering a press
     const age=(now-when)/450;
     if(age>1)return void world.lit.delete(k);
@@ -2969,6 +3291,10 @@ function drawFoes(ox,oy,tile,D,now){
     if(f.vis<=.01)continue;
     const d=foeDef(f), a=Math.min(1,f.vis);
     const cx=ox+(f.rx+.5)*tile, cy=oy+(f.ry+.5)*tile, r=tile*.3;
+    /* something that covers a room is drawn as the room it covers. It is the
+       one contact on a deck that is square, because it is the one that was
+       built rather than born */
+    if(d.bulk){drawBulk(f,d,cx,cy,tile,D,a);continue}
     const ring=()=>fx.beginPath();
     /* a soft edge first: a body under the optics rather than a plate */
     fx.globalAlpha=a*.45;
@@ -2992,7 +3318,79 @@ function drawFoes(ox,oy,tile,D,now){
       fx.textAlign='center';fx.textBaseline='middle';
       fx.fillText(d.glyph,cx,cy+tile*.02);
     }
+    /* the barrel, and the line it is laid down. Sight is symmetric, so a
+       barrel the operator can watch coming round is a barrel coming round
+       onto the unit — which is the whole of the warning a turret gives */
+    if(d.gun){
+      const len=tile*(f.aim?.86:.62);
+      fx.strokeStyle=f.aim?'rgba(255,59,47,'+a+')':d.line;
+      fx.lineWidth=Math.max(2,2.4*D);
+      ring();fx.moveTo(cx,cy);
+      fx.lineTo(cx+Math.cos(f.face)*len,cy+Math.sin(f.face)*len);fx.stroke();
+      if(f.aim){
+        const hold=Math.min(1,f.warm/((d.gun.warm||.8)));
+        fx.setLineDash([3*D,4*D]);
+        fx.strokeStyle='rgba(255,59,47,'+(a*(.2+.5*hold))+')';fx.lineWidth=Math.max(1,D);
+        ring();fx.moveTo(cx,cy);
+        fx.lineTo(ox+(f.aim.x+.5)*tile,oy+(f.aim.y+.5)*tile);fx.stroke();
+        fx.setLineDash([]);
+      }
+    }
+    /* and the grip, while it has the chassis: a short tether that says what
+       is carrying what */
+    if(game.held===f){
+      fx.strokeStyle='rgba(96,170,255,'+a+')';fx.lineWidth=Math.max(1.5,1.5*D);
+      ring();fx.moveTo(cx,cy);
+      fx.lineTo(ox+(lerp(game.fx,game.px,ease(game.mt))+.5)*tile,
+                oy+(lerp(game.fy,game.py,ease(game.mt))+.5)*tile);
+      fx.stroke();
+    }
     fx.globalAlpha=1;
+  }
+}
+/* A block: a slab as wide as its body, with a bar across the face it is
+   running at. Nothing about it is soft, because nothing about it is alive. */
+function drawBulk(f,d,cx,cy,tile,D,a){
+  const s=(foeSpan(f)*2+1)*tile*.94;
+  fx.globalAlpha=a*.4;
+  fx.fillStyle=d.fill;fx.fillRect(cx-s/2-3*D,cy-s/2-3*D,s+6*D,s+6*D);
+  fx.globalAlpha=a;
+  fx.fillStyle='#050103';fx.fillRect(cx-s/2,cy-s/2,s,s);
+  fx.fillStyle=d.fill;fx.fillRect(cx-s/2,cy-s/2,s,s);
+  fx.strokeStyle=d.line;fx.lineWidth=Math.max(2,2*D);
+  fx.strokeRect(cx-s/2+.5,cy-s/2+.5,s-1,s-1);
+  const v=DIRV[f.dir];
+  if(v){
+    const hx=cx+v[0]*s*.42, hy=cy+v[1]*s*.42;
+    fx.lineWidth=Math.max(3,3.5*D);
+    fx.beginPath();
+    fx.moveTo(hx-v[1]*s*.36,hy-v[0]*s*.36);
+    fx.lineTo(hx+v[1]*s*.36,hy+v[0]*s*.36);
+    fx.stroke();
+  }
+  if(tile>=14&&d.glyph){
+    fx.fillStyle=d.line;fx.font=Math.round(tile*.5)+'px "Courier Prime", monospace';
+    fx.textAlign='center';fx.textBaseline='middle';
+    fx.fillText(d.glyph,cx,cy+tile*.02);
+  }
+  fx.globalAlpha=1;
+}
+/* Rounds, for as long as one is worth drawing. A tracer is drawn where either
+   end of it is somewhere the unit can see: a round fired out of the dark
+   registers as the line it left, which is all an operator would get. */
+function drawShots(ox,oy,tile,D){
+  for(const sh of world.shots){
+    const a=Math.max(0,1-sh.t/SHOT_LIFE);
+    if(!sight.live.has(K(Math.round(sh.x0),Math.round(sh.y0)))&&
+       !sight.live.has(K(Math.round(sh.x1),Math.round(sh.y1))))continue;
+    fx.strokeStyle='rgba(255,180,74,'+(a*.9)+')';
+    fx.lineWidth=Math.max(1.5,2*D*a);
+    fx.beginPath();
+    fx.moveTo(ox+(sh.x0+.5)*tile,oy+(sh.y0+.5)*tile);
+    fx.lineTo(ox+(sh.x1+.5)*tile,oy+(sh.y1+.5)*tile);
+    fx.stroke();
+    fx.fillStyle='rgba(255,230,180,'+a+')';
+    fx.beginPath();fx.arc(ox+(sh.x1+.5)*tile,oy+(sh.y1+.5)*tile,tile*.12*a+D,0,6.283);fx.fill();
   }
 }
 
@@ -3175,7 +3573,12 @@ function loop(now){
   if((state==='menu'||state==='dive')&&!usingVideo)drawMenu(now,dt);
   if(state==='console'){
     updateTrams(dt);updateSlides(dt);checkFooting();updateFoes(dt);
-    if(held.length&&now>=repeatAt&&game.mt>=1&&!jump.on){tryMove(held[held.length-1]);repeatAt=now+125}
+    /* a key held down walks the unit; it does not work against a grip. The
+       struggle counts presses, so a drone is shaken off by an operator doing
+       something rather than by one leaning on an arrow key */
+    if(held.length&&now>=repeatAt&&game.mt>=1&&!jump.on&&!game.held){
+      tryMove(held[held.length-1]);repeatAt=now+125;
+    }
     drawFeed(now,dt);
     if(tracker.on)drawTracker(now);
   }
