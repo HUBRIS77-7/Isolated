@@ -720,7 +720,7 @@ if(typeof ISO==='undefined'){
     cluster:(m,x,y)=>({cells:[{x,y}],x0:x,y0:y,x1:x,y1:y,w:1,h:1}),
     tramPath:(m,x,y)=>[{x,y}], key:(x,y)=>x+','+y,
     vaultable:(m,x,y)=>ISO.at(m,x,y).walk, ABILITIES:{}, JUMP:4, FOES:{},
-    FUSES:{}, ITEMS:{}, CATS:[], CARRY:6,
+    FUSES:{}, KEYS:{}, ITEMS:{}, CATS:[], CARRY:6,
     circuitOf:()=>'', waysOf:()=>[], boxes:()=>[], circuitFed:()=>false, itemAt:()=>null,
     lifts:()=>[], liftLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), register:m=>m,
     links:()=>[], linkLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), linkNoun:()=>'link',
@@ -781,6 +781,15 @@ const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
               ways:new Map(),
               /* small objects the unit has set down, by the square they lie on */
               drops:new Map(),
+              /* gates that are running rather than switching: one job per
+                 body, holding the tiles left to open or shut and how far
+                 through the current one it is. A gate is only ever in here
+                 while it is actually moving */
+              slides:new Map(),
+              /* locks that have been turned. A key turns one once and the
+                 door is an ordinary door from then on — which is why this is
+                 kept per deck alongside the doors it opens */
+              unlocked:new Set(),
               /* whatever else is walking about on this deck. Each one started
                  on the square its mark was painted on and has not been there
                  since. */
@@ -793,10 +802,12 @@ const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
                  the same on both sides of that. */
               rev:0};
 const TRAM_STEP=.34;                       // seconds the platform takes per tile
+const SLIDE_STEP=.26;                      // seconds a running gate takes per tile
 function buildWorld(){
   world.open.clear(); world.trams.length=0; world.lit.clear();
   world.spent.clear(); world.beacons.clear();
   world.ways.clear(); world.drops.clear(); world.foes.length=0; world.rev++;
+  world.slides.clear(); world.unlocked.clear();
   sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
     const t=tileDef(x,y), p=propsOf(x,y);
@@ -835,6 +846,11 @@ const level={entry:{x:MAP.spawn.x, y:MAP.spawn.y}};
 function stashDeck(){
   decks.set(MAP.id,{open:new Set(world.open), spent:new Set(world.spent),
                     beacons:new Map(world.beacons),
+                    /* a gate caught half-way is put away half-way, still
+                       running, and goes on running when the deck comes back */
+                    slides:new Map([...world.slides].map(([k,s])=>
+                      [k,Object.assign({},s,{cells:s.cells.slice()})])),
+                    unlocked:new Set(world.unlocked),
                     ways:new Map([...world.ways].map(([k,w])=>[k,w.map(o=>Object.assign({},o))])),
                     drops:new Map(world.drops),
                     trams:world.trams.map(t=>Object.assign({},t)),
@@ -847,6 +863,9 @@ function restoreDeck(d){
   /* a deck keeps the fuses that were seated on it, and whatever was set down */
   world.ways=new Map([...d.ways].map(([k,w])=>[k,w.map(o=>Object.assign({},o))]));
   world.drops=new Map(d.drops);
+  world.slides=new Map([...(d.slides||[])].map(([k,s])=>
+    [k,Object.assign({},s,{cells:s.cells.slice()})]));
+  world.unlocked=new Set(d.unlocked||[]);
   world.trams=d.trams.map(t=>Object.assign({},t));
   /* a deck is left standing as it was, and whatever was following the unit
      across it is still standing where it stopped */
@@ -1104,6 +1123,9 @@ function blocksSight(x,y){
   if(tramOn(x,y))return false;                         // the platform is floor
   const f=ISO.coveredBy(MAP,x,y), ax=f?f.x:x, ay=f?f.y:y, t=tileDef(ax,ay);
   if(t.signal==='toggle')return !world.open.has(K(ax,ay));
+  /* standing crop: the unit walks into it and reads nothing out of it, which
+     is the only ground on a deck that is walkable and opaque at once */
+  if(t.dense)return true;
   return !(t.walk||t.clear);
 }
 
@@ -1386,6 +1408,7 @@ function interact(){
     if(t.press==='terminal')return openTerminal(x,y);
     if(t.press==='note')return readNote(x,y);
     if(t.press==='gate')return driveGate(x,y);
+    if(t.press==='keydoor')return useKeyDoor(x,y);
     if(t.press==='vent')return useVent(x,y);
     if(t.press==='station')return useStation(x,y);
     if(t.press==='lift')return useLift(x,y);
@@ -1404,7 +1427,8 @@ function driveAll(targets,tag){
   for(const c of targets||[]){
     if(!ISO.inside(MAP,c.x,c.y))continue;          // a line drawn off the record
     const t=tileDef(c.x,c.y);
-    const r=t.signal==='toggle'?driveDoor(c.x,c.y,tag)
+    const r=t.slide            ?driveSlide(c.x,c.y,tag)
+           :t.signal==='toggle'?driveDoor(c.x,c.y,tag)
            :t.signal==='move'  ?callTram(c.x,c.y,tag)
            :t.signal==='lift'  ?rideLift(c.x,c.y,tag,true):null;
     if(r&&!lines.some(l=>l.text===r.text))lines.push(r);
@@ -1435,6 +1459,10 @@ function driveDoor(x,y,tag){
   /* one body, one answer: a lock anywhere in it locks the whole door */
   if(cells.some(c=>propsOf(c.x,c.y).locked))
     return {text:name+tag+' is locked. It does not answer.',cls:'dim'};
+  /* a keyed door is held by its lock rather than by its circuit, so a control
+     wired to one presses against the lock exactly as the chassis does */
+  if(t.keyed&&!world.unlocked.has(K(x,y)))
+    return {text:name+tag+' is locked. The signal reaches it; the lock does not answer to one.',cls:'dim'};
   if(cells.some(c=>!world.open.has(K(c.x,c.y)))){
     cells.forEach(c=>world.open.add(K(c.x,c.y)));
     world.rev++;
@@ -1450,6 +1478,103 @@ function driveGate(x,y){
   world.lit.set(K(x,y),performance.now());
   const r=driveDoor(x,y,'');
   if(r)say(r.text,r.cls);
+}
+
+/* ---------- a gate that runs ----------
+   A bulkhead is shut or open the instant it is signalled. A gate that says
+   `slide` is neither for as long as it takes to cross itself: the press
+   starts it and the deck goes on without it, a tile at a time, from the end
+   its `dir` points at toward the far one. Nothing else about it is special —
+   every tile it has opened is an opened tile, so a unit can walk in behind
+   the leading edge while the rest of it is still running, and what it reads,
+   what it stops and what it hides all follow from the same `world.open` the
+   doors use.
+
+   Signalling one that is already running turns it round from where it stands,
+   which is what a control on a gate this size is for. */
+const slideOrder=(cells,dir)=>{
+  const [dx,dy]=DIRV[dir]||DIRV.right;
+  return cells.slice().sort((a,b)=>(a.x*dx+a.y*dy)-(b.x*dx+b.y*dy));
+};
+function driveSlide(x,y,tag){
+  const t=tileDef(x,y), body=ISO.cluster(MAP,x,y), name=t.name, cells=body.cells;
+  const dead=cells.find(c=>!powered(c.x,c.y));
+  if(dead)return {text:deadLine(name,dead.x,dead.y,tag),cls:'dim'};
+  if(cells.some(c=>propsOf(c.x,c.y).locked))
+    return {text:name+tag+' is locked. It does not answer.',cls:'dim'};
+  /* one body, one track: the tile the body starts at carries the direction
+     the whole of it runs in */
+  const head=cells.reduce((a,b)=>(b.y<a.y||(b.y===a.y&&b.x<a.x))?b:a);
+  const k=K(head.x,head.y), run=world.slides.get(k);
+  const opening=run?!run.open:cells.some(c=>!world.open.has(K(c.x,c.y)));
+  if(!opening&&cells.some(c=>game.px===c.x&&game.py===c.y))
+    return {text:name+tag+' is obstructed. It holds open.',cls:'dim'};
+  const order=slideOrder(cells,propsOf(head.x,head.y).dir);
+  /* whichever way it is going, it opens from the end it is pointed at and
+     shuts back the way it came */
+  const want=opening?order.filter(c=>!world.open.has(K(c.x,c.y)))
+                    :order.filter(c=>world.open.has(K(c.x,c.y))).reverse();
+  if(!want.length)
+    return {text:name+tag+(opening?' already stands open.':' already stands shut.'),cls:'dim'};
+  world.slides.set(k,{cells:want, i:0, t:0, open:opening, name, tag});
+  return {text:name+tag+(opening?' runs open.':' runs shut.'),cls:opening?undefined:'dim'};
+}
+/* One tile at a time, and the deck plays on while it crosses. */
+function updateSlides(dt){
+  for(const [k,run] of [...world.slides]){
+    const lead=run.cells[run.i];
+    /* the supply pulled while it was under way: it stops where it stands */
+    if(!powered(lead.x,lead.y)){
+      world.slides.delete(k);
+      say(run.name+run.tag+' stops where it stands. The supply is gone.','dim');
+      continue;
+    }
+    run.t+=dt;
+    while(run.t>=SLIDE_STEP&&run.i<run.cells.length){
+      const c=run.cells[run.i];
+      /* it will not close on the unit: it holds where it has got to */
+      if(!run.open&&game.px===c.x&&game.py===c.y){
+        world.slides.delete(k);
+        say(run.name+run.tag+' is obstructed. It holds where it stands.','dim');
+        run.i=run.cells.length;
+        break;
+      }
+      run.t-=SLIDE_STEP; run.i++;
+      if(run.open)world.open.add(K(c.x,c.y)); else world.open.delete(K(c.x,c.y));
+      world.lit.set(K(c.x,c.y),performance.now());
+      world.rev++;
+    }
+    if(run.i>=run.cells.length)world.slides.delete(k);
+  }
+}
+
+/* ---------- a lock, rather than a circuit ----------
+   The one block on a deck that asks the operator for something it has to have
+   found rather than for something it has to have powered. [E] tries whatever
+   is in the manipulator against the lock: the key it was cut for turns it and
+   nothing else does. The key is not spent — a turned lock stays turned, and
+   the key goes on opening every other door cut for it. */
+function useKeyDoor(x,y){
+  const k=K(x,y), t=tileDef(x,y), p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  world.lit.set(k,performance.now());
+  if(world.open.has(k)){
+    if(game.px===x&&game.py===y)
+      return say(t.name+tag+' cannot be swung with the unit standing in it.','dim');
+    world.open.delete(k); world.rev++;
+    return say(t.name+tag+' pulled shut.','dim');
+  }
+  if(!world.unlocked.has(k)){
+    const want=ISO.KEYS[p.opens]||null;
+    const held=game.carry.findIndex(it=>it.kind==='key'&&it.variant===p.opens);
+    if(held<0)
+      return say(t.name+tag+' is locked. It takes the '+
+                 (want?want.name.toLowerCase():'key it was cut for')+
+                 ', and the manipulator holds nothing that turns it.','dim');
+    world.unlocked.add(k);
+    say('The '+game.carry[held].name.toLowerCase()+' turns. The lock gives.','b');
+  }
+  world.open.add(k); world.rev++;
+  say(t.name+tag+' stands open.','dim');
 }
 
 /* ---------- vents ----------
@@ -2246,13 +2371,17 @@ function openTerminal(x,y){
    no circuit, so a note reads the same on a dark deck as on a live one, and
    what it says is whatever the author wrote on it. */
 function readNote(x,y){
-  const p=propsOf(x,y), title=p.title||'HANDWRITTEN NOTE';
+  const t=tileDef(x,y), p=propsOf(x,y), title=p.title||'HANDWRITTEN NOTE';
   world.lit.set(K(x,y),performance.now());
+  /* paper reads the same on a dark deck as on a live one. Glass does not:
+     a screen on a circuit nothing feeds has nothing on it to read */
+  if(t.powered&&!powered(x,y))return say(deadLine(t.name,x,y,p.label?' ['+p.label+']':''),'dim');
   term.on=true;
   $('#tinyTitle').textContent=title.toUpperCase();
   $('#tinyBody').innerHTML=String(p.text||'The ink has run. Nothing legible.')
     .split(/\n+/).map(l=>'<p>'+esc(l)+'</p>').join('');
-  $('#tinyNote').textContent='HANDWRITTEN \u00b7 NO POWER DRAW';
+  $('#tinyNote').textContent=t.powered?'LIVE SCREEN \u00b7 DRAWING POWER'
+                                     :'HANDWRITTEN \u00b7 NO POWER DRAW';
   $('#tiny').classList.add('note','on');
   if(!term.read.has(K(x,y))){term.read.add(K(x,y));say('Note reads: '+title+'.','dim')}
 }
@@ -2973,7 +3102,7 @@ function loop(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;
   if((state==='menu'||state==='dive')&&!usingVideo)drawMenu(now,dt);
   if(state==='console'){
-    updateTrams(dt);checkFooting();updateFoes(dt);
+    updateTrams(dt);updateSlides(dt);checkFooting();updateFoes(dt);
     if(held.length&&now>=repeatAt&&game.mt>=1&&!jump.on){tryMove(held[held.length-1]);repeatAt=now+125}
     drawFeed(now,dt);
     if(tracker.on)drawTracker(now);

@@ -29,7 +29,10 @@
              number, or the name of a per-instance field holding one, so a
              fixture can be a fixed two tiles long or sized copy by copy. It
              runs along the block's `dir`, so rotating it turns the footprint.
-   parts   — glyph per footprint cell (without it, `glyph` is stamped once)
+   parts   — glyph per footprint cell (without it, `glyph` is stamped once).
+             A flat list is one glyph per cell along the block's facing; a
+             list of lists is a row of them per cell across it, so a car
+             seven long and three wide is drawn cell by cell
    merge   — touching copies of the same block draw as one body, whose glyph
              repeats across every tile: an author builds something as big as
              they like out of ordinary tiles
@@ -42,6 +45,16 @@
    sized   — its log line reports how big the copy the unit found actually is
    slow    — the unit labours over it: how much longer than an ordinary step a
              move onto or off it takes. A body has to be climbed over
+   dense   — walkable, and sight stops in it all the same: standing crop is
+             ground the unit can walk into and read nothing out of, which
+             makes a field the one piece of cover on an open deck
+   slide   — a block that answers a signal by running rather than by
+             switching: it opens a tile at a time, from the end its `dir`
+             points at toward the far one, and shuts again in reverse
+   keyed   — it is held by a lock rather than by a circuit. Its `opens`
+             setting names the key that turns it, the unit has to be carrying
+             that key, and nothing else — no control, no [E] on its own —
+             will move it until the lock has been turned once
    link    — it joins two decks and the unit can be set down on it: {kind,
              noun}. `kind` is what it pairs with at the far end — a car comes
              out at a car and a flight of steps at a flight — and `noun` is
@@ -174,6 +187,20 @@ const FUSES = {
 };
 const FUSE_OPTS = Object.keys(FUSES).map(k=>({value:k, label:FUSES[k].name}));
 
+/* ---------- keys ----------
+   The other thing the unit carries that a block is keyed to. A fuse wakes a
+   circuit; a key turns a lock, and that is the whole difference between them:
+   a lock needs no power and asks nothing of the record beyond the one key cut
+   for it. A locked door names the key it takes and no other opens it, so a
+   new key costs one entry here — the editor's pickers are built from this
+   list the way the fusebox's are. */
+const KEYS = {
+  house: {id:'house', tag:'HOUSE', name:'Farmhouse key'},
+  barn:  {id:'barn',  tag:'BARN',  name:'Barn key'},
+  store: {id:'store', tag:'STORE', name:'Store key'},
+};
+const KEY_OPTS = Object.keys(KEYS).map(k=>({value:k, label:KEYS[k].name}));
+
 /* ---------- small objects ----------
    Anything loose enough for the unit to lift off the deck and carry. A tile
    says `take`: which kind of object it is holding, and which of its own
@@ -183,6 +210,7 @@ const FUSE_OPTS = Object.keys(FUSES).map(k=>({value:k, label:FUSES[k].name}));
      kinds — the variants it comes in, if it comes in any                   */
 const ITEMS = {
   fuse: {id:'fuse', name:'Fuse', tile:'f', kinds:FUSES},
+  key:  {id:'key',  name:'Key',  tile:'k', kinds:KEYS},
 };
 /* How many small objects the manipulator holds at once. */
 const CARRY = 6;
@@ -497,6 +525,178 @@ const TILES = {
         props:{wake:{type:'int',  label:'Takes an interest within', def:14, min:2, max:40},
                range:{type:'int', label:'Wanders within (0: the whole deck)', def:0, min:0, max:60},
                label:{type:'text', label:'Stencilled', def:''}}},
+
+  /* ---------- open land ----------
+     A dome is not a deck. What the unit crosses out here is ground rather
+     than plating, and it reads as ground: earth, growth, and the ruts
+     something with wheels left in it. None of it stops anything. What it does
+     is tell the operator where it is standing, because a field with no
+     landmark in it is the easiest place on a map to be lost. */
+  'd': {key:'d', id:'dirt',   name:'Dirt',        walk:true,
+        fill:'rgba(166,124,72,.13)',  line:'rgba(166,124,72,.32)',
+        enter:'Open earth underfoot. Turned once, and a long time ago.'},
+  'g': {key:'g', id:'grass',  name:'Grass',       walk:true,
+        fill:'rgba(120,200,96,.1)',   line:'rgba(120,200,96,.27)', glyph:'\u2591',
+        enter:'Growth underfoot. Something in this dome is still alive.'},
+  'p': {key:'p', id:'path',   name:'Path',        walk:true,
+        fill:'rgba(200,168,112,.16)', line:'rgba(200,168,112,.36)',
+        enter:'Beaten track. Something came this way often enough to wear it.'},
+  'r': {key:'r', id:'ruts',   name:'Tire tracks', walk:true,  merge:true,
+        fill:'rgba(166,124,72,.18)',  line:'rgba(200,168,112,.4)', glyph:'\u2550',
+        enter:'Tread pressed into the earth. Wide gauge. Nothing the chassis leaves.'},
+  '_': {key:'_', id:'boards', name:'Wooden floor',walk:true,
+        fill:'rgba(186,140,84,.14)',  line:'rgba(186,140,84,.36)', glyph:'\u2261',
+        enter:'Board floor. It gives under the chassis, and holds.'},
+  /* Water, drawn the way a tank is: touching copies are one body, so a pond
+     is exactly as big as it is painted. Sight crosses it — open water is the
+     one thing out here the unit can see all the way over — and the chassis
+     does not, because it is not sealed for it. */
+  'P': {key:'P', id:'pond',   name:'Pond',        walk:false, merge:true, sized:true, clear:true,
+        fill:'rgba(79,133,112,.34)',  line:'rgba(140,214,182,.55)', glyph:'\u2248',
+        bump:'Standing water. Depth unread. The chassis is not sealed for it.'},
+
+  /* ---------- what is built out of timber ----------
+     A farm is not a ship: its walls are boards, its windows are glass, and
+     the one door that matters is locked rather than sealed. */
+  'H': {key:'H', id:'timber', name:'Wooden wall', walk:false,
+        fill:'rgba(186,140,84,.22)',  line:'rgba(186,140,84,.52)', glyph:'\u2593',
+        bump:'Board wall. Dry timber, and no route through it.'},
+  'h': {key:'h', id:'rail',   name:'Wooden fencing', walk:false, clear:true,
+        fill:'rgba(186,140,84,.05)',  line:'rgba(186,140,84,.45)', glyph:'\u2016',
+        bump:'Post and rail. It holds, and the ground reads clear over it.'},
+  'i': {key:'i', id:'window', name:'Window',      walk:false, clear:true,
+        fill:'rgba(191,247,220,.1)',  line:'rgba(191,247,220,.5)',  glyph:'\u25eb',
+        bump:'Glazing, intact. The room reads clear through it and stays shut.'},
+  'Q': {key:'Q', id:'silo',   name:'Silo wall',   walk:false, merge:true, sized:true,
+        fill:'rgba(200,168,112,.3)',  line:'rgba(230,196,102,.6)',  glyph:'\u25a7',
+        bump:'Silo wall. Curved plate, riveted. Whatever it holds is overhead.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
+  /* A door with a lock rather than a circuit. `keyed` says the block is held
+     shut by something the unit has to be carrying: the key named in `opens`,
+     and no other. Nothing else will do it — a control wired to it presses
+     against the lock the same as the chassis does. Once the lock has been
+     turned the door is an ordinary door and stays turned. */
+  'K': {key:'K', id:'lockdoor', name:'Locked door', walk:false,
+        fill:'rgba(186,140,84,.26)',  line:'rgba(230,196,102,.62)', glyph:'\u25a5',
+        signal:'toggle', press:'keydoor', keyed:true,
+        bump:'Door, shut, and the lock turned. [E] tries the manipulator against it.',
+        open:{fill:'rgba(186,140,84,.06)', line:'rgba(186,140,84,.32)', glyph:'\u2595'},
+        props:{opens:{type:'pick', label:'Takes', def:'barn', opts:KEY_OPTS},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* The key itself: a small object, lifted and carried the way a fuse is. */
+  'k': {key:'k', id:'key',    name:'Key',         walk:true,  clear:true,
+        fill:'rgba(230,196,102,.1)',  line:'rgba(230,196,102,.5)',  glyph:'\u2310',
+        press:'take', take:{kind:'key', from:'opens'},
+        enter:'Something small on a hook by the door. [E] lifts it.',
+        spent:{fill:'rgba(230,196,102,.03)', line:'rgba(230,196,102,.2)', glyph:'\u25cc',
+               enter:'Empty hook. Whatever hung on it has been lifted.'},
+        props:{opens:{type:'pick', label:'Cut for', def:'barn', opts:KEY_OPTS},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* A board on a post. It is read the way a note is — paper and paint need no
+     circuit — but it stands in the way, which is the whole point of a sign. */
+  '?': {key:'?', id:'sign',   name:'Sign',        walk:false, clear:true,
+        fill:'rgba(230,196,102,.12)', line:'rgba(230,196,102,.5)',  glyph:'\u00a7',
+        press:'note',
+        bump:'Board on a post. [E] reads it.',
+        props:{title:{type:'text', label:'Header', def:'PAINTED SIGN'},
+               text:{type:'lines', label:'Text',   def:'The paint has gone. Nothing legible.'}}},
+  /* ---------- a gate that takes its time ----------
+     A cargo gate is open or shut the instant it is signalled. This one runs:
+     `slide` says the body opens a tile at a time, from the end it is pointed
+     at toward the far one, and shuts again the same way in reverse. It is as
+     wide as it is painted, it answers a control and nothing else — there is
+     no handle on a gate this size — and the unit can walk in behind it while
+     it is still running. */
+  '>': {key:'>', id:'slidegate', name:'Sliding gate', walk:false,
+        fill:'rgba(199,148,74,.2)',   line:'rgba(255,180,74,.6)',  glyph:'\u25a5',
+        signal:'toggle', slide:true, merge:true, powered:true,
+        bump:'Gate, shut across the way. It runs on a track. Find the control.',
+        open:{fill:'rgba(199,148,74,.05)', line:'rgba(255,180,74,.3)', glyph:'\u2595'},
+        lock:{fill:'rgba(199,148,74,.3)',  line:'rgba(255,180,74,.85)', glyph:'\u25a6',
+              bump:'Gate, shut across the way. Locked out. Nothing drives it.'},
+        props:{dir:{type:'dir',  label:'Runs open toward', def:'right'},
+               open:{type:'bool',label:'Starts open', def:false},
+               locked:{type:'bool', label:'Locked \u2014 cannot be driven', def:false}}},
+
+  /* ---------- what is parked, and what turns ---------- */
+  /* Seven tiles by three of ground vehicle. `parts` gives it a glyph per cell
+     rather than per tile along its length, so it is drawn as a body with
+     wheels at its corners rather than as a row of the same mark. It turns
+     with its `dir` like anything else that covers more than its own tile. */
+  'R': {key:'R', id:'car',    name:'Car',         walk:false,
+        foot:{len:7, wide:3},
+        parts:[['\u25cf','\u2550','\u2550','\u2550','\u2550','\u2550','\u25cf'],
+               ['\u2550','\u25ad','\u25ad','\u2550','\u25a6','\u25a6','\u2550'],
+               ['\u25cf','\u2550','\u2550','\u2550','\u2550','\u2550','\u25cf']],
+        fill:'rgba(255,180,74,.14)',  line:'rgba(255,180,74,.5)',
+        bump:'Ground car. Seven tiles of it, tyres flat and cell long dead.',
+        props:{dir:{type:'dir',  label:'Faces', def:'right'},
+               label:{type:'text',label:'Stencilled', def:''}}},
+  /* Three by three, and the only thing in the dome still doing its work. */
+  '@': {key:'@', id:'windmill', name:'Windmill',  walk:false,
+        foot:{len:3, wide:3},
+        parts:[['\u2572','\u2502','\u2571'],
+               ['\u2500','\u25c9','\u2500'],
+               ['\u2571','\u2502','\u2572']],
+        fill:'rgba(186,140,84,.16)',  line:'rgba(230,196,102,.58)',
+        bump:'Windmill. The sails are turning. Nothing else on this deck is.',
+        props:{dir:{type:'dir',  label:'Faces', def:'right'},
+               label:{type:'text',label:'Stencilled', def:''}}},
+
+  /* ---------- what furnishes a house ----------
+     All of it stops the unit and none of it stops sight: a room read from
+     overhead is its furniture, and furniture is low. */
+  'Z': {key:'Z', id:'bed',    name:'Bed',         walk:false, clear:true,
+        foot:{len:2}, parts:['\u25ad','\u2592'],
+        fill:'rgba(28,240,28,.1)',    line:'rgba(28,240,28,.34)',
+        bump:'Bed, made up. Whoever it was made up for is not in it.',
+        props:{dir:{type:'dir', label:'Runs', def:'right'}}},
+  'a': {key:'a', id:'chair',  name:'Chair',       walk:false, clear:true, glyph:'\u2293',
+        fill:'rgba(28,240,28,.11)',   line:'rgba(28,240,28,.36)',
+        bump:'Chair, pushed back from the table.'},
+  'U': {key:'U', id:'sofa',   name:'Sofa',        walk:false, clear:true,
+        foot:{len:2}, parts:['\u2293','\u2293'],
+        fill:'rgba(28,240,28,.12)',   line:'rgba(28,240,28,.38)',
+        bump:'Long seat. The upholstery has gone to powder.',
+        props:{dir:{type:'dir', label:'Runs', def:'right'}}},
+  't': {key:'t', id:'table',  name:'Table',       walk:false, clear:true,
+        foot:{len:2, wide:2},
+        parts:[['\u250c','\u2510'],['\u2514','\u2518']],
+        fill:'rgba(28,240,28,.1)',    line:'rgba(28,240,28,.34)',
+        bump:'Table. Places laid at it, and dust in every one of them.',
+        props:{dir:{type:'dir', label:'Runs', def:'right'}}},
+  /* Domestic glass. It is read like a note and it draws power like a console,
+     so a house with the circuit pulled has a screen in it saying nothing. */
+  'm': {key:'m', id:'screen', name:'Television',  walk:false, clear:true, glyph:'\u25a2',
+        fill:'rgba(191,247,220,.14)', line:'rgba(191,247,220,.55)',
+        press:'note', powered:true,
+        bump:'Domestic screen. [E] reads what is on it.',
+        props:{title:{type:'text', label:'Header',    def:'BROADCAST'},
+               text:{type:'lines',label:'On screen',  def:'Colour bars. Nothing behind them.'},
+               label:{type:'text',label:'Stencilled', def:''}}},
+
+  /* ---------- what is grown here ----------
+     Crop is ground the unit can walk into, and the only ground on a deck that
+     costs it something to cross. Corn is `dense`: it is walkable and sight
+     stops dead in it, so a field is cover — the unit cannot read out of it
+     and nothing reads into it. That is the whole of what a crop is for. */
+  '|': {key:'|', id:'corn',   name:'Corn stalk',  walk:true,  merge:true, sized:true,
+        dense:true, slow:1.5,
+        fill:'rgba(163,222,96,.14)',  line:'rgba(163,222,96,.42)', glyph:'\u2551',
+        enter:'Standing crop, well over the chassis. Nothing reads through it \u2014 in or out.'},
+  'w': {key:'w', id:'wheat',  name:'Wheat',       walk:true,  merge:true, sized:true, slow:1.2,
+        fill:'rgba(230,196,102,.13)', line:'rgba(230,196,102,.38)', glyph:'\u2592',
+        enter:'Cereal crop, waist high. It parts, and closes again behind the chassis.'},
+  '&': {key:'&', id:'tomato', name:'Tomatoes',    walk:true,  merge:true, slow:1.3,
+        fill:'rgba(255,59,47,.1)',    line:'rgba(255,120,80,.4)',  glyph:'\u25cb',
+        enter:'Staked vines. Fruit on them, and none of it picked.'},
+  'y': {key:'y', id:'hay',    name:'Hay bale',    walk:false, merge:true, sized:true, clear:true,
+        fill:'rgba(230,196,102,.18)', line:'rgba(230,196,102,.46)', glyph:'\u2263',
+        bump:'Baled straw. Too heavy to shift, low enough to read over.'},
+  'j': {key:'j', id:'scarecrow', name:'Scarecrow',walk:false, clear:true, glyph:'\u2020',
+        fill:'rgba(186,140,84,.12)',  line:'rgba(186,140,84,.48)',
+        bump:'Figure on a cross-post. Sacking, straw and a coat. It read as a contact until the optics resolved it.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
 };
 
 /* ---------- palette categories ----------
@@ -504,14 +704,18 @@ const TILES = {
    stays legible, not a second vocabulary. A tile named in none of them still
    shows up, under "Other", so adding a tile can never lose it. */
 const CATS = [
-  {id:'ground',    name:'Ground',     keys:' .,=+~!v/:'},
-  {id:'structure', name:'Structure',  keys:'#%oxWG'},
-  {id:'controls',  name:'Controls',   keys:'bcun'},
-  {id:'transit',   name:'Transit',    keys:'T^sVO'},
-  {id:'fixtures',  name:'Fixtures',   keys:'LBACFD'},
-  {id:'remains',   name:'Remains',    keys:';SXY'},
-  {id:'kit',       name:'Unit & kit', keys:'M*f'},
-  {id:'contacts',  name:'Contacts',  keys:'Ee'},
+  {id:'ground',    name:'Ground',      keys:' .,=+~!v/:'},
+  {id:'land',      name:'Open land',   keys:'dgpr_P'},
+  {id:'structure', name:'Structure',   keys:'#%oxWG'},
+  {id:'building',  name:'Buildings',   keys:'HhiQK>'},
+  {id:'controls',  name:'Controls',    keys:'bcun?'},
+  {id:'transit',   name:'Transit',     keys:'T^sVO'},
+  {id:'fixtures',  name:'Fixtures',    keys:'LBACFDR'},
+  {id:'home',      name:'Furnishings', keys:'ZaUtm'},
+  {id:'farm',      name:'Farm',        keys:'|w&yj@'},
+  {id:'remains',   name:'Remains',     keys:';SXY'},
+  {id:'kit',       name:'Unit & kit',  keys:'M*fk'},
+  {id:'contacts',  name:'Contacts',    keys:'Ee'},
 ];
 /* One setting, fitted to every block that runs on power. */
 for(const ch in TILES) if(TILES[ch].powered)
@@ -1132,9 +1336,12 @@ function audit(map){
     const c = circuitOf(map,x,y);
     if(c) onCircuit[c] = (onCircuit[c]|0) + 1;
   }
+  /* every small object placed anywhere in the record, by kind and variant:
+     a way with no fuse cut for it and a lock with no key cut for it are the
+     same mistake, and this is what both are checked against */
   const tally = m => { for(let y=0;y<m.h;y++)for(let x=0;x<m.w;x++){
     const it = itemAt(m,x,y);
-    if(it && it.kind === 'fuse' && it.variant) stock[it.variant] = (stock[it.variant]|0) + 1;
+    if(it && it.variant){ const k = it.kind+':'+it.variant; stock[k] = (stock[k]|0) + 1 }
   } };
   tally(map);
   for(const id in MAPS) if(id !== map.id) tally(MAPS[id]);
@@ -1222,7 +1429,18 @@ function audit(map){
       }
     }
     if(t.press === 'note' && !String(p.text||'').trim())
-      out.issues.push('Note'+where+' has nothing written on it.');
+      out.issues.push(t.name+where+' has nothing written on it.');
+    /* a lock is only as good as the key cut for it: a door whose key is on no
+       deck in the record is a door that never opens, and reads from the
+       canvas exactly like one that does */
+    if(t.keyed){
+      const want = KEYS[p.opens];
+      if(!want)
+        out.issues.push(t.name+where+' takes no key the record knows of.');
+      else if(!stock['key:'+p.opens])
+        out.issues.push(t.name+where+' takes the '+want.name.toLowerCase()+
+                        ', and no key of that cut is placed on any deck.');
+    }
     if(t.press === 'fusebox'){
       const ways = waysOf(map,x,y);
       if(!ways.length) out.issues.push('Fusebox'+where+' feeds nothing. Give it a way.');
@@ -1232,7 +1450,7 @@ function audit(map){
           out.issues.push('Fusebox'+where+way+' is stencilled with no circuit, so nothing reads from it.');
         else if(!onCircuit[w.circuit])
           out.issues.push('Fusebox'+where+' feeds circuit "'+w.circuit+'", which nothing on this deck is on.');
-        if(!stock[w.rating])
+        if(!stock['fuse:'+w.rating])
           out.issues.push('Fusebox'+where+way+' takes a '+((FUSES[w.rating]||{}).name || w.rating)+
                           ', and no fuse of that rating is placed on any deck.');
       });
@@ -1258,9 +1476,16 @@ function audit(map){
         out.issues.push('Vent'+where+' comes out inside '+at(map,d.x,d.y).name+
                         ' at '+d.x+','+d.y+'.');
     }
-    /* a gate the unit can drive itself does not need a control */
-    if(t.signal === 'toggle' && !t.press && !wired[pk(x,y)] && !p.locked)
-      out.issues.push(t.name+where+' has no button wired to it.');
+    /* a gate the unit can drive itself does not need a control. One that is
+       painted from several tiles is one body and one control: a line run to
+       any tile of it drives the whole, so the body is asked once, from the
+       tile it starts at, rather than tile by tile */
+    if(t.signal === 'toggle' && !t.press && !p.locked){
+      const body = t.merge ? cluster(map,x,y).cells : [{x, y}];
+      const head = body.reduce((a,b)=>(b.y<a.y || (b.y===a.y && b.x<a.x)) ? b : a);
+      if(head.x === x && head.y === y && !body.some(c=>wired[pk(c.x,c.y)]))
+        out.issues.push(t.name+where+' has no button wired to it.');
+    }
     if(t.signal && lockedShut(map,x,y) && wired[pk(x,y)])
       out.issues.push(t.name+where+' is locked, so the control wired to it cannot open it.');
     if(t.signal && t.merge){
@@ -1268,7 +1493,10 @@ function audit(map){
       const body = cluster(map,x,y);
       const head = body.cells.reduce((a,b)=>(b.y<a.y || (b.y===a.y && b.x<a.x)) ? b : a);
       const setting = c => { const q = propsAt(map,c.x,c.y) || {};
-                             return (q.locked?'L':'-')+(q.open?'O':'-') };
+                             /* a gate that runs answers with one direction as
+                                well as with one state */
+                             return (q.locked?'L':'-')+(q.open?'O':'-')+
+                                    (t.slide ? '/'+(q.dir||'') : '') };
       if(head.x===x && head.y===y && new Set(body.cells.map(setting)).size > 1)
         out.issues.push(t.name+where+' is one body, but its tiles are set differently. '+
                         'It answers as a whole: locked anywhere means locked.');
@@ -1468,6 +1696,13 @@ function paintCell(ctx, look, px, py, size, scale, join, glyph){
     ctx.fillText(glyph, px+size/2, py+size/2+size*.04);
   }
 }
+/* One cell's mark out of a block's `parts`: a flat list is read along the
+   block's facing, and a list of lists is read across it as well, so a car is
+   drawn cell by cell and a forklift still reads the way it always did. */
+function partGlyph(parts, i, j){
+  const row = parts[j];
+  return (Array.isArray(row) ? row[i] : parts[i]) || null;
+}
 /* An open block shows its open look; a block locked shut shows its locked one,
    which is how a gate nothing will ever move reads differently from one that
    is merely sealed. Open wins: a gate locked open is an opening. */
@@ -1496,7 +1731,7 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
     const t = at(map, f.x, f.y);
     const mine = (nx,ny) => { const g = partAt(map,nx,ny); return !!g && g.x===f.x && g.y===f.y };
     const join = {n:mine(x,y-1), s:mine(x,y+1), w:mine(x-1,y), e:mine(x+1,y)};
-    const glyph = t.parts ? (t.parts[f.i] || null)
+    const glyph = t.parts ? partGlyph(t.parts, f.i, f.j)
                           : ((f.i===0 && f.j===0) ? t.glyph : null);
     return paintCell(ctx, lookOf(t, state), px, py, size, scale, join, glyph);
   }
@@ -1511,7 +1746,7 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
   paintCell(ctx, lookOf(t, state), px, py, size, scale, null, t.glyph);
 }
 
-global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, ITEMS, CARRY,
+global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, KEYS, ITEMS, CARRY,
                circuitOf, waysOf, boxes, circuitFed, itemAt,
                FILE_KINDS, OS_SCHEMA, filesOf, osOf, osCard, foldersOf, inFolder,
                chapterOf, chapters,
