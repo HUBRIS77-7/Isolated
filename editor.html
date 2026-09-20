@@ -47,6 +47,12 @@ input[type=text]{width:100%}
 .slot{display:flex;gap:4px;align-items:center;margin-bottom:3px}
 .slot input[type=text]{flex:1;width:auto;min-width:0}
 .slot select{max-width:96px}
+/* a row with something written in it: the short fields stay on one line and
+   what was written gets the width of the pane under them */
+.slot.tall{flex-wrap:wrap;align-items:center;border:1px solid var(--gfaint);
+  padding:4px 5px;margin-bottom:5px}
+.slot.tall input[type=text]{flex:1 1 84px}
+.slot.tall textarea{flex:1 0 100%;min-height:96px;margin-top:2px}
 .sw{width:17px;height:17px;flex:none;border:1px solid var(--gdim);display:grid;place-items:center;font-size:12px;line-height:1}
 .k{color:var(--gdim);margin-left:auto;font-size:12px}
 .dim{color:var(--gdim)}
@@ -460,9 +466,18 @@ function field(key, spec, value){
       const n = document.createElement('span');
       n.className = 'dim'; n.textContent = (i+1);
       line.appendChild(n);
+      /* a row holding written matter is laid out down the pane rather than
+         across it: a desktop file is a name, a folder and a page of text */
+      if(Object.values(fields).some(f=>f.type === 'lines')) line.className = 'slot tall';
       for(const k in fields){
         const f = fields[k];
-        if(f.type === 'pick'){
+        if(f.type === 'lines'){
+          const ta = document.createElement('textarea');
+          ta.placeholder = f.label || k; ta.title = f.label || k;
+          ta.value = row[k] == null ? '' : row[k];
+          ta.onchange = ()=>put(i, k, ta.value);
+          line.appendChild(ta);
+        }else if(f.type === 'pick'){
           const sl = document.createElement('select');
           (f.opts || []).forEach(o=>{
             const n2 = document.createElement('option');
