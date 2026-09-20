@@ -603,12 +603,19 @@ const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
               /* whatever else is walking about on this deck. Each one started
                  on the square its mark was painted on and has not been there
                  since. */
-              foes:[]};
+              foes:[],
+              /* bumped whenever the ground itself changes under a route —
+                 a door driven, a deck rebuilt. What is counting on it is the
+                 cached sweep, which must not be reused across a change it
+                 cannot see: one control can open a door and shut another in
+                 the same press, and a tally of how many stand open would read
+                 the same on both sides of that. */
+              rev:0};
 const TRAM_STEP=.34;                       // seconds the platform takes per tile
 function buildWorld(){
   world.open.clear(); world.trams.length=0; world.lit.clear();
   world.spent.clear(); world.beacons.clear();
-  world.ways.clear(); world.drops.clear(); world.foes.length=0;
+  world.ways.clear(); world.drops.clear(); world.foes.length=0; world.rev++;
   sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
     const t=tileDef(x,y), p=propsOf(x,y);
@@ -663,6 +670,7 @@ function restoreDeck(d){
   /* a deck is left standing as it was, and whatever was following the unit
      across it is still standing where it stopped */
   world.foes=d.foes.map(foeCopy);
+  world.rev++;
   world.lit.clear();
   sight.live.clear(); sight.seen.clear();     // optical memory does not ride the car
   level.entry={x:d.entry.x, y:d.entry.y};
@@ -823,6 +831,7 @@ function sightAlpha(x,y,now){
 const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,mdur:.11,bx:0,by:0,bt:1,
   active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0,toldAbout:new Set(),
   face:'down',dead:false,sink:0,useLog:0,baseObj:'',
+  stir:-1e9,                    // when the chassis last covered ground, for whatever hunts by it
   abilities:new Set(),          // what a modification station has fitted so far
   carry:[],                     // small objects in the manipulator, newest last
   arc:0};                       // squares the move in flight is covering, if it is a jump
@@ -917,6 +926,7 @@ const DIRV={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
    deck, so every other way of moving clears it on its way past. */
 function stepTo(nx,ny,dur,arc){
   game.fx=game.px;game.fy=game.py;game.px=nx;game.py=ny;game.mt=0;game.mdur=dur;game.arc=arc|0;
+  game.stir=performance.now();               // something may be listening for exactly this
   game.visited.set(K(nx,ny),performance.now());
   arrived();
 }
@@ -925,7 +935,6 @@ function stepTo(nx,ny,dur,arc){
 function arrived(){
   checkBeacons();
   refreshObjective();
-  foesOnMove();
 }
 /* A beacon transmits until the unit is close enough to read it directly, and
    then there is nothing left to say. */
@@ -1081,11 +1090,13 @@ function driveDoor(x,y,tag){
     return {text:name+tag+' is locked. It does not answer.',cls:'dim'};
   if(cells.some(c=>!world.open.has(K(c.x,c.y)))){
     cells.forEach(c=>world.open.add(K(c.x,c.y)));
+    world.rev++;
     return {text:name+tag+' driven open.'};
   }
   if(cells.some(c=>game.px===c.x&&game.py===c.y))
     return {text:name+tag+' obstructed. It holds open.',cls:'dim'};
   cells.forEach(c=>world.open.delete(K(c.x,c.y)));
+  world.rev++;
   return {text:name+tag+' driven shut.',cls:'dim'};
 }
 function driveGate(x,y){
@@ -1430,7 +1441,7 @@ function checkFooting(){
 const foeCopy=f=>Object.assign({},f,{path:f.path?f.path.slice():null});
 function makeFoe(kind,x,y,p){
   const d=ISO.FOES[kind];
-  return {kind, x, y, rx:x, ry:y, hx:x, hy:y, credit:0, vis:0, met:false,
+  return {kind, x, y, rx:x, ry:y, hx:x, hy:y, vis:0, met:false,
           mood:'roam', path:null, rest:Math.random()*1.5, flee:0, wary:0, said:-1e9,
           moved:-1e9, wake:((p&&p.wake)|0)||d.wake, range:(p&&p.range)|0,
           label:(p&&p.label)||''};
@@ -1446,36 +1457,47 @@ const foeAt=(x,y)=>world.foes.find(f=>foeIn(f,x,y))||null;
    anything that would end it there. A contact is no better over a pit than
    the chassis is, and it will not set foot on a rail at all — neither on
    the platform nor on the span it has left. So a platform is ground only the
-   unit trusts, and riding one is a way off a deck nothing follows it onto. */
-function foeGround(x,y){
+   unit trusts, and riding one is a way off a deck nothing follows it onto.
+
+   A kind may also be barred from blocks the unit walks over without thinking.
+   Something barred from doorways cannot leave the room it is in by the door,
+   which makes a threshold the one piece of architecture it has no answer to —
+   and makes where an author puts a door part of what a deck is. */
+function foeGround(x,y,f){
   if(!ISO.inside(MAP,x,y)||!walkableAt(x,y))return false;
   if(tileDef(x,y).signal==='move')return false;
   const t=bodyDef(x,y);
-  return !t.deadly&&!t.fall;
+  if(t.deadly||t.fall)return false;
+  const bars=f&&foeDef(f).bars;
+  return !bars||bars.indexOf(t.id)<0;
 }
-/* One breadth-first sweep out from the unit, shared by every contact on the
-   deck: each of them reads its own square off it and steps to whichever
+/* One breadth-first sweep out from the unit, shared by every contact of a
+   kind: each of them reads its own square off it and steps to whichever
    neighbour reads one lower — or one higher, for the one that will not be
    crowded. It is rebuilt when the unit moves or the ground changes under it,
-   which is also the only time any of them has anything new to go on. */
+   which is also the only time any of them has anything new to go on. One per
+   kind rather than one for the deck, because two kinds do not agree about
+   what counts as ground: a doorway is a route to one of them and a wall to
+   the other, and a sweep that split the difference would be a lie to both. */
 const FOE_REACH=30;                        // squares the sweep runs out to
-let flow={key:'', d:new Map()};
-function foeFlow(){
-  const key=MAP.id+'|'+K(game.px,game.py)+'|'+world.open.size+'|'+
+const flows=new Map();
+function foeFlow(f){
+  const kind=f?f.kind:'', held=flows.get(kind);
+  const key=MAP.id+'|'+K(game.px,game.py)+'|'+world.rev+'|'+
             world.trams.map(t=>t.i).join(',');
-  if(flow.key===key)return flow.d;
+  if(held&&held.key===key)return held.d;
   const d=new Map(); let edge=[[game.px,game.py]];
   d.set(K(game.px,game.py),0);
   for(let r=1;r<=FOE_REACH&&edge.length;r++){
     const next=[];
     for(const [x,y] of edge)for(const dir in DIRV){
       const nx=x+DIRV[dir][0], ny=y+DIRV[dir][1], k=K(nx,ny);
-      if(d.has(k)||!foeGround(nx,ny))continue;
+      if(d.has(k)||!foeGround(nx,ny,f))continue;
       d.set(k,r); next.push([nx,ny]);
     }
     edge=next;
   }
-  flow={key, d};
+  flows.set(kind,{key, d});
   return d;
 }
 /* ---------- what mood it is in ----------
@@ -1487,8 +1509,14 @@ function foeFlow(){
    that it wanted. */
 const SCATTER_FOR=2.4;                     // seconds a thing that breaks keeps running
 const WARY_FOR=6;                          // and how long afterwards it will not come back in
+const TRAIL_HOLD=3.2;                      // seconds a stopped unit still reads as a trail
+const STRIKE_HOLD=.5;                       // and how long it stays something worth striking at
+/* Whether the chassis has covered ground lately enough to be found by it, or
+   hit. Standing still is not hiding from something that hunts by sight — but
+   it is the whole of the answer to something that hunts by movement. */
+const stirring=within=>performance.now()-game.stir<within*1000;
 function foeMood(f,dt){
-  const d=foeDef(f), here=foeFlow().get(K(f.x,f.y));
+  const d=foeDef(f), here=foeFlow(f).get(K(f.x,f.y));
   if(f.rest>0)f.rest=Math.max(0,f.rest-dt);
   if(f.wary>0)f.wary=Math.max(0,f.wary-dt);
   if(f.mood==='scatter'){
@@ -1500,14 +1528,21 @@ function foeMood(f,dt){
     }
     return;
   }
-  if(here!==undefined&&here<=f.wake){
+  /* one that hunts by movement has nothing to go on while the unit is still:
+     the trail goes cold where the unit stopped, and it goes back to looking */
+  const trail=d.hunts!=='motion'||stirring(TRAIL_HOLD);
+  if(trail&&here!==undefined&&here<=f.wake){
     if(f.mood!=='follow'){
       f.mood='follow'; f.path=null; f.rest=0;
       if(!f.met){f.met=true;say(d.notice,'alert')}
     }
     if(d.shy&&here<=d.shy)foeScatter(f);
-  }else if(here===undefined||here>f.wake*1.6){
-    if(f.mood!=='roam'){f.mood='roam';f.path=null;f.credit=0}
+  }else if(!trail||here===undefined||here>f.wake*1.6){
+    if(f.mood!=='roam'){
+      f.mood='roam'; f.path=null;
+      const n=performance.now();
+      if(!trail&&d.cools&&n-f.said>6000){f.said=n;say(d.cools,'dim')}
+    }
   }
 }
 /* Approached too closely, or walked into. It drops whatever it was doing and
@@ -1518,7 +1553,7 @@ function foeScatter(f){
   if(f.mood==='scatter')return;
   const d=foeDef(f), n=performance.now();
   f.mood='scatter'; f.flee=SCATTER_FOR; f.wary=WARY_FOR+Math.random()*3;
-  f.path=null; f.credit=0;
+  f.path=null;
   if(d.spooked&&n-f.said>5000){f.said=n;say(d.spooked,'dim')}
 }
 
@@ -1542,7 +1577,7 @@ function foeRoute(f){
     const next=[];
     for(const [x,y] of edge)for(const dir in DIRV){
       const nx=x+DIRV[dir][0], ny=y+DIRV[dir][1], k=K(nx,ny);
-      if(parent.has(k)||!foeGround(nx,ny))continue;
+      if(parent.has(k)||!foeGround(nx,ny,f))continue;
       parent.set(k,K(x,y)); next.push([nx,ny]);
       if(r<ROAM_MIN&&!out)continue;
       const h=home(nx,ny);
@@ -1573,7 +1608,7 @@ function foeAimRoam(f){
   const n=f.path.shift();
   /* the route was worked out a while ago: a door may have shut across it, or
      the unit may be standing in it now */
-  const gone=!n||!foeGround(n.x,n.y)||foeAt(n.x,n.y)||(n.x===game.px&&n.y===game.py)||
+  const gone=!n||!foeGround(n.x,n.y,f)||foeAt(n.x,n.y)||(n.x===game.px&&n.y===game.py)||
              Math.abs(n.x-f.x)+Math.abs(n.y-f.y)!==1;
   if(!f.path.length){f.path=null;f.rest=.7+Math.random()*2.2}
   if(gone){f.path=null;f.rest=Math.max(f.rest,.3);return false}
@@ -1587,7 +1622,7 @@ function foeAimRoam(f){
    nowhere it wants to be and comes to rest until the reading changes.
    Answers whether it found anywhere to go. */
 function foeAimUnit(f,flee){
-  const d=foeDef(f), reach=foeFlow(), here=reach.get(K(f.x,f.y));
+  const d=foeDef(f), reach=foeFlow(f), here=reach.get(K(f.x,f.y));
   if(here===undefined)return false;                    // nothing joins it to the unit
   /* one still rattled from the last approach holds the ground it ran for,
      rather than the ground it would ordinarily pace at */
@@ -1596,7 +1631,7 @@ function foeAimUnit(f,flee){
   const opts=[], level=[];
   for(const dir in DIRV){
     const nx=f.x+DIRV[dir][0], ny=f.y+DIRV[dir][1], v=reach.get(K(nx,ny));
-    if(v===undefined||!foeGround(nx,ny)||foeAt(nx,ny))continue;
+    if(v===undefined||!foeGround(nx,ny,f)||foeAt(nx,ny))continue;
     if(v===0&&!d.kills)continue;                       // one that never closes never arrives
     if(want<0?v<here:want>0?v>here:v===here)opts.push([nx,ny]);
     else if(flee&&v===here)level.push([nx,ny]);        // cornered: sidle rather than freeze
@@ -1611,20 +1646,14 @@ const foeAim=f=>f.mood==='roam'?foeAimRoam(f):foeAimUnit(f,f.mood==='scatter');
 /* Ground crossed, rather than squares taken. A contact walks towards the
    square it is making for at whatever its mood moves it at, and picks the
    next one the instant it gets there, so it keeps going in one motion for as
-   long as it has somewhere to be. Only a motion-keyed one that is following
-   spends a ration instead: it is handed a tile of it for every tile the unit
-   covers, and when that runs out it stops wherever it happens to be —
-   between squares as readily as on one. Wandering never touches the ration,
-   which is why one of them is still crossing the deck while the unit stands
-   and watches it. */
+   long as it has somewhere to be. There is no other kind of fuel: nothing
+   here waits on the unit for permission to walk. */
 function foeAdvance(f,dt){
   const d=foeDef(f), fast=d.speed||5;
-  const motion=f.mood==='follow'&&d.moves==='motion';
   const speed=f.mood==='roam'?(d.prowl||fast*.55)
              :f.mood==='scatter'?fast*(d.bolt||2)
              :fast;
   let budget=speed*dt;
-  if(motion)budget=Math.min(budget,f.credit);
   for(let guard=0;budget>1e-5&&guard<8;guard++){
     const dx=f.x-f.rx, dy=f.y-f.ry, gap=Math.hypot(dx,dy);
     if(gap<1e-4){                                      // arrived, so choose again
@@ -1635,7 +1664,6 @@ function foeAdvance(f,dt){
     const go=Math.min(budget,gap);
     f.rx+=dx/gap*go; f.ry+=dy/gap*go;
     budget-=go;
-    if(motion)f.credit=Math.max(0,f.credit-go);
     f.moved=performance.now();                         // in motion: the tracker has it
   }
 }
@@ -1646,10 +1674,10 @@ const foeOnUnit=f=>Math.abs(f.rx-game.px)<.55&&Math.abs(f.ry-game.py)<.55;
    furthest from the unit. A contact that never closes would rather be
    anywhere than touched, and one with nowhere left to go stands its ground. */
 function foeShove(f){
-  const reach=foeFlow(), far=k=>{const v=reach.get(k);return v===undefined?99:v}, opts=[];
+  const reach=foeFlow(f), far=k=>{const v=reach.get(k);return v===undefined?99:v}, opts=[];
   for(const dir in DIRV){
     const nx=f.x+DIRV[dir][0], ny=f.y+DIRV[dir][1];
-    if(!foeGround(nx,ny)||foeAt(nx,ny))continue;
+    if(!foeGround(nx,ny,f)||foeAt(nx,ny))continue;
     if(nx===game.px&&ny===game.py)continue;
     opts.push([nx,ny,far(K(nx,ny))]);
   }
@@ -1659,7 +1687,6 @@ function foeShove(f){
   f.x=nx;f.y=ny;f.path=null;
   /* it flinches out of the square rather than waiting to be walked through */
   f.rx+=(nx-f.rx)*.4; f.ry+=(ny-f.ry)*.4;
-  f.credit=Math.max(f.credit,1);                       // enough to finish giving ground
   f.moved=performance.now();
   return true;
 }
@@ -1694,19 +1721,18 @@ function updateFoes(dt){
     if(stopped)continue;
     foeMood(f,dt);
     foeAdvance(f,dt);
-    if(f.mood==='follow'&&foeDef(f).kills&&foeOnUnit(f)){die(foeDef(f).kills);return}
+    if(f.mood==='follow'&&foeDef(f).kills&&foeOnUnit(f)&&foeStrikes(f)){
+      die(foeDef(f).kills);return;
+    }
   }
 }
-/* The unit covered a tile of deck. Whatever is keyed to that and following is
-   handed the same tile to cover — one for one, which is why holding still
-   is the only thing that works on one. It spends it in its own time, which is
-   what makes the thing read as a lunge rather than a hop. One that has not
-   noticed the unit is wandering on its own time and wants nothing. */
-function foesOnMove(){
-  if(game.dead)return;
-  for(const f of world.foes)
-    if(foeDef(f).moves==='motion'&&f.mood==='follow')f.credit+=1;
-}
+/* Whether the thing standing over the unit does anything about it. One that
+   hunts by movement swings at movement: it has the unit under it either way,
+   and a chassis that holds absolutely still is a chassis it cannot place. So
+   it stands there, and a moment later the trail goes cold and it wanders off
+   — which is the whole of the defence, and only works if the unit stops
+   before it arrives rather than after. */
+const foeStrikes=f=>foeDef(f).hunts!=='motion'||stirring(STRIKE_HOLD);
 
 /* ---------- the motion tracker ----------
    A sensor package rather than a camera. It reads movement through structure

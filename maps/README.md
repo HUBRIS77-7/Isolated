@@ -93,7 +93,7 @@ ISO.register({
 | `O`  | Hull breach | yes | Three tiles by three. Walk in and the unit drops to the deck below — one way |
 | `n`  | Note      | yes  | `[E]` reads it. Paper: it needs no circuit   |
 | `E`  | Stalker   | yes  | Where a contact starts, not a block. It paces the unit and never closes |
-| `e`  | Hunter    | yes  | Where a contact starts. It moves only when the unit moves, and it closes |
+| `e`  | Hunter    | yes  | Where a contact starts. It hunts by movement, it closes, and it will not pass a doorway |
 
 To add a tile type, add one entry to `TILES` in `tiles.js`. It shows up in the
 editor palette on its own and the game obeys it straight away — walkability,
@@ -339,10 +339,10 @@ knows which of them is the dangerous one. The footer counts what is showing
 and gives the nearest range; `NO MOTION` means nothing has moved, which is not
 the same as nothing being there.
 
-Because a contact that has noticed nothing is out walking the deck anyway,
-the tracker is usually reading something. That is the point of it: the
-operator learns the difference between a return that wanders and a return
-that stops when they stop.
+Because every contact is out walking the deck whether it has noticed anything
+or not, the tracker is usually reading something. That is the point of it: the
+operator learns the difference between a return that wanders and a return that
+closes.
 
 To add an ability, add one entry to `ABILITIES` in `tiles.js`. Every station's
 picker in the editor is built from that list. `index.html?abilities=jump` fits
@@ -374,6 +374,14 @@ It will not step onto a platform, or onto the rail one runs along. A tram is
 ground only the unit trusts, which makes riding one a way off a deck that
 nothing follows it onto.
 
+A kind may also be barred outright from blocks the unit walks over without
+thinking, by naming their tile ids in `bars`. **A hunter is barred from
+doorways.** It cannot pass a `+` in either direction, wandering or hunting, so
+a room reached only through a door is a room no hunter ever enters and none
+ever leaves. That makes where an author puts a door part of what a deck is —
+and it is worth checking, before placing one, that a hunter shut in with no
+door-free way out is a hunter that was meant to stay there.
+
 Nothing about a contact is square. The unit stands in one square at a time and
 a contact does not: it holds a real position on the deck, in tiles, and
 crosses the ground at its own `speed` in tiles a second, choosing the next
@@ -386,7 +394,39 @@ halfway.
 | Char | Kind    | Moves | Closes | What it is |
 |------|---------|-------|--------|------------|
 | `E`  | Stalker | At a pace of its own, whenever the range is wrong | Never | It closes to three squares, holds there, and follows for as long as the unit is inside its range. It cannot hurt the unit at all — and it is shy: walk up on it, or walk into it, and it breaks and runs |
-| `e`  | Hunter  | Wandering, at a pace of its own. Following, it is handed a tile of ground to cover for every tile the unit covers | Onto the unit, which ends the run | Once it has noticed the unit it is still while the unit is still — and stops where it stands, between squares as readily as on one. Holding still is the whole of the defence against one; a jump buys three squares, because it is handed one for the four the servos cover |
+| `e`  | Hunter  | At a pace of its own, always — wandering or hunting | Onto the unit, and strikes it if it is moving, which ends the run | It hunts by movement and nothing else: it finds the unit by it, loses the unit without it, and can only strike a unit that has it. Holding still is the whole of the defence — but it has to be done early. It is barred from doorways |
+
+### Hunting by movement
+
+A contact with `hunts: 'motion'` in `FOES` — the hunter — has no other way
+of finding anything. That shows up in three places, and it is the same rule
+each time.
+
+It **notices** by movement: a unit that has not covered ground for a few
+seconds is a unit it never takes an interest in, however close it walks past.
+
+It **loses** by movement: once it is following, a unit that stops leaves the
+trail to go cold, and a few seconds later it gives up, says so, and wanders
+off to look somewhere else.
+
+It **strikes** by movement, and this is the tight one: it closes whether the
+unit is moving or not, and when it arrives it has the unit under it either
+way — but it can only place a chassis that is moving. A unit that has been
+perfectly still for half a second is one it stands over, and cannot hit, until
+the trail goes cold and it leaves.
+
+Which makes stopping the answer, and makes *when* to stop the whole of the
+skill. It crosses better than three squares inside the window in which the
+unit still reads as moving, so:
+
+| Stop with it this far off | What happens |
+|---------------------------|--------------|
+| Four squares or more | It arrives, stands over the unit, cannot place it, loses the trail and wanders off |
+| Three or fewer | It reaches the unit while the unit still reads as moving, and that is the run |
+
+Stopping is not the only answer. It is slower than the chassis, so open ground
+outruns it, a jump puts four squares between them in a fifth of a second, and
+a doorway shuts it out altogether.
 
 A shy contact — one with a `shy` distance in `FOES` — will not be walked up
 to. Come inside that distance and it drops whatever it was doing and runs, at
@@ -406,19 +446,21 @@ it: a contact is never held on the record the way ground is, because it has
 moved by the time the reading would be redrawn. Reading one through a wall is
 what the tracker is for.
 
-What either of them can reach is worked out square by square even though it
-does not move square by square: a hunter reaches the unit when the unit's own
-move leaves it one square away along the deck — orthogonally, the way the
-route is counted — so stepping diagonally clear of one that is beside the unit
-is a step it cannot answer. The lunge that follows is drawn as a lunge, but
-what it can cross was settled the moment the unit moved.
+Where a contact is is worked out in tiles, but how far off it is is counted in
+squares of route — so `wake`, `keep`, `shy` and `calm` are all distances
+along ground something could actually walk, never straight lines through a
+wall. Reaching the unit is the one thing measured in tiles: a contact has
+arrived when it is standing in the unit's square, wherever the grid says
+either of them is.
 
 The two of them are a pair on purpose, and the tracker is where the pair pays
-off. Everything on a deck is wandering, so the screen is rarely empty — but a
-hunter that has noticed the unit stops dead the moment the unit does, and a
-return that goes still exactly when the operator goes still is a return that
-has seen them. Nothing else on the screen behaves that way. An operator who
-has learned to read that has learned the whole of the instrument.
+off. Everything on a deck is walking about, so the screen is rarely empty and
+a return on it means very little by itself. What means something is a return
+that is *closing* — one that keeps getting nearer sweep after sweep is one
+that has the unit, and it is the only thing on the screen that does that.
+Stop, and watch it turn away: the operator who has learned to read that has
+learned the whole of the instrument, and the hunter is the reason the
+instrument is worth carrying.
 
 To add a creature, add one entry to `FOES` in `tiles.js` and one tile that
 names it in `foe`. Everything else — how fast it crosses the deck, how far it
