@@ -471,7 +471,7 @@ ISO.register({
     "82,26": {"label":""},
     "98,26": {"label":""},
     "99,26": {"label":""},
-    "0,27": {"dest":"Intermission","arrive":"","fade":true,"card":"PROLOGUE COMPLETE","cardsub":"Chapter One \u2014 Intermission","label":"WATER-TREATMENT-EXIT","circuit":""},
+    "0,27": {"dest":"Intermission","arrive":"","fade":true,"card":"","cardsub":"","label":"WATER-TREATMENT-EXIT","circuit":""},
     "25,27": {"dir":"left","dist":17,"circuit":""},
     "34,27": {"title":"Repair Request","text":"ISSUE #132\n----\nI tried to use the tram to Agri Dome #12 for a quick repair job, but the fuse to the button that opens the door is blown. Can we get a repair guy down here to fix it please?\n----\nSTATUS: Repair-Man en route. Located within WATER TREATMENT TANK #12","desktop":false,"circuit":""},
     "39,27": {"label":""},
