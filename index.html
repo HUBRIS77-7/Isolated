@@ -1681,7 +1681,7 @@ function heard(f,x,y,n){
   const d=foeDef(f);
   /* a fresher mark replaces an older one, so a deck that goes on making
      noise leads one along rather than letting it settle on the first thing */
-  f.mark={x, y}; f.heard=n; f.path=null; f.rest=0;
+  f.mark={x, y}; f.heard=n; f.path=null; f.rest=0; f.stood=0;
   if(f.mood!=='follow'){
     f.mood='follow';
     if(!f.met){f.met=true;say(d.notice,'alert')}
@@ -2507,7 +2507,7 @@ function makeFoe(kind,x,y,p){
           /* what a blind one goes by: how far a noise reaches it, the last
              square it heard one at, and when. `mark` is the whole of what it
              knows about the deck — it never learns what made the sound */
-          hears:((p&&p.hears)|0)||d.hears||0, mark:null, heard:-1e9,
+          hears:((p&&p.hears)|0)||d.hears||0, mark:null, heard:-1e9, stood:0,
           label:(p&&p.label)||'',
           hull:d.hull||1,             // rounds it takes to put down
           face:Math.random()*6.283,   // where a gun is laid, in radians
@@ -2644,14 +2644,23 @@ function foeMood(f,dt){
      arrives at it with nothing more to hear. */
   if(d.hunts==='sound'){
     const n=performance.now();
-    /* standing over the mark, it casts about for a moment before it gives up
-       on it — so a deck that goes on making noise at the same square keeps
-       one standing there, and one that goes quiet loses it */
-    const over=f.mark&&f.x===f.mark.x&&f.y===f.mark.y&&!f.path;
-    const spent=f.mark&&(n-f.heard>SOUND_HOLD*1000||
-                         (over&&n-f.heard>CAST_ABOUT*1000));
+    /* standing over the mark — on the square, or up against whatever the
+       square is inside — it casts about for a moment before it gives up on
+       it, timed from arriving rather than from the noise, so one that walked
+       a long way for a mark still looks at it. A deck that goes on making
+       noise at the same square keeps one standing there, and one that goes
+       quiet loses it.
+
+       A mark that has already gone while the mood has not is the other way
+       of losing one: `foeAimMark` drops a mark it can make nothing of, and
+       something blind left in `follow` with nothing to follow would stand
+       there for the rest of the run. */
+    const over=f.mark&&!f.path&&f.stood>0;
+    const spent=f.mark?(n-f.heard>SOUND_HOLD*1000||
+                        (over&&n-f.stood>CAST_ABOUT*1000))
+                      :f.mood==='follow';
     if(spent){
-      f.mark=null; f.path=null;
+      f.mark=null; f.path=null; f.stood=0;
       if(f.mood==='follow'){
         f.mood='roam';
         if(d.cools&&n-f.said>6000){f.said=n;say(d.cools,'dim')}
@@ -2765,8 +2774,13 @@ function foeAimMark(f){
   if(f.rest>0)return false;
   if(!f.path){
     f.path=foePathTo(f,f.mark.x,f.mark.y);
-    if(!f.path){f.mark=null;f.rest=.8;return false}
+    /* nothing to walk means it is already standing as near the noise as the
+       deck allows: on the square itself, or against the locker the square is
+       inside. That is arriving, so it holds the mark and casts about over it
+       — giving it up here would leave it blind with nowhere to be */
+    if(!f.path){if(!f.stood)f.stood=performance.now();f.rest=.5;return false}
   }
+  f.stood=0;
   const n=f.path.shift();
   const gone=!n||!foeGround(n.x,n.y,f)||foeAt(n.x,n.y)||
              Math.abs(n.x-f.x)+Math.abs(n.y-f.y)!==1;
@@ -2823,7 +2837,12 @@ function foeAimUnit(f,flee){
   f.x=nx;f.y=ny;
   return true;
 }
-const foeAim=f=>(foeDef(f).hunts==='sound'&&f.mood==='follow'&&f.mark)?foeAimMark(f)
+/* One that hunts by sound is the odd one out: it has a mark or it has
+   nothing, and with nothing it goes looking rather than falling through to
+   the sweep off the unit — which is a sweep it has no business reading, and
+   which is empty anyway while the unit is folded into a locker. */
+const foeAim=f=>foeDef(f).hunts==='sound'
+                 ?((f.mood==='follow'&&f.mark)?foeAimMark(f):foeAimRoam(f))
                :(f.mood==='roam'||f.mood==='carry')?foeAimRoam(f)
                                                    :foeAimUnit(f,f.mood==='scatter');
 /* Ground crossed, rather than squares taken. A contact walks towards the
