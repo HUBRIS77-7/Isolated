@@ -179,6 +179,14 @@ ISO.register({
 | `ƀ`  | Barrel    | no   | Decoration                                   |
 | `ṽ`  | Vacuum    | yes  | Open space, and the chassis is rated for it. Nothing done out here makes a sound, and no flood crosses it |
 | `ï`  | Astro-Grade Window | no | Blocks like a wall; the stars read clear through it. Touching copies become one port — as big as you paint it |
+| `ā`  | Comms Array | no | Twelve tiles by twelve; turns with its `dir`. Transmits through walls while it is live, the way a beacon does |
+| `ħ`  | Hull Steel Flooring | yes | Structural plate over the frame. Ordinary ground, and louder than plating |
+| `ǒ`  | Stuck Asteroid | no  | Rock, driven through the deck and stopped. Touching copies become one body — as big as you paint it |
+| `ẋ`  | Power Line | — | Ground while its circuit is dead, and solid while it is live. A line that wakes under the unit ends the run. Touching copies run as one |
+| `ť`  | Automatic Tram | yes | A platform that runs its rail on its own time. No control needed, and a button only turns it round early |
+| `ṁ`  | Micro Thruster | yes | An attitude port set in the deck. Cold, then building, then open flame, on a cycle of its own |
+| `ǎ`  | Asteroid Sweep | yes | A track a rock comes down, on a cycle of its own. The ground is ordinary; the rock is not on the deck until it arrives |
+| `ż`  | Spectre | yes  | Where a contact starts. It holds its distance, sets itself where you can see it, and crosses the whole gap in one movement |
 
 Every printable character on a keyboard is spoken for, so the blocks added
 after them are keyed to letters that carry an accent — `ð` for debris where
@@ -308,6 +316,19 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Corpse   | `hand`, `eye`  | What is still on it to take                    |
 | Tissue sample | `part`    | Which it is — a hand or an eye                 |
 | AI Core, Fusion Reactor, Keypad, Corpse, Tissue sample, Fuel spill, Barrel, Astro-Grade Window | `label` | Stencilled name |
+| Comms Array | `dir` | Which way it runs, so which of its hundred and forty-four squares it covers |
+| Comms Array | `range`, `armed`, `objective`, `label` | Read exactly as a signal beacon's are |
+| Stuck Asteroid, Power Line | `label` | Stencilled name — read from anywhere on the one body |
+| Automatic Tram | `dir`, `dist` | Which way the platform runs, and how far |
+| Automatic Tram | `dwell` | Seconds it stands at each end before it sets off again |
+| Micro Thruster | `every`, `warn`, `burn` | Seconds it stands cold, seconds it spends building, and seconds it burns |
+| Micro Thruster | `phase` | Seconds before its first firing, which is how a row of them is staggered |
+| Asteroid Sweep | `dir`, `dist` | Which way the rock runs, and how many squares of track it has |
+| Asteroid Sweep | `every`, `warn`, `phase` | Seconds between passes, seconds of warning, and seconds before the first one |
+| Micro Thruster, Asteroid Sweep | `label` | Name shown in the message log |
+| Spectre | `wake` | Squares of route at which it takes an interest |
+| Spectre | `range` | Squares from its mark it will wander. `0` — the default — turns it loose on the whole deck |
+| Spectre | `label` | Name shown in the message log |
 | *anything powered* | `circuit` | The circuit it waits on. Blank — the default — means it is live from the start |
 
 The palette is filed under headings — **Ground**, **Open land**, **Structure**,
@@ -537,6 +558,7 @@ There are three packages so far:
 | `jump`  | Vault servos | Hold `[SPACE]` to wind up, release to leap |
 | `motion`| Motion tracker | `[M]` raises a screen that reads movement through structure |
 | `flashlight` | Chassis floodlamp | `[F]` strikes a lamp on the housing, and `[F]` kills it |
+| `parry` | Reactive plating | `[P]` brings a plate up for one second, and anything that strikes inside that second is turned |
 
 The jump is held, not tapped. The longer the wind-up, the further it carries —
 one square, two, three, or the four the servos are rated for — and the movement
@@ -584,6 +606,32 @@ chassis, not to the deck.
 On a deck with light on it the lamp adds nothing. The optics were already
 reading the nine squares they are rated for, and striking the lamp says so. It
 is on a deck marked `dark` that it is the whole of the difference — see below.
+
+The **reactive plating** is the fourth, and the only one that is neither a
+thing the chassis can do nor a thing the operator can read: it is one second
+of not being killed, and it has to be spent *before* the blow rather than
+after it. `[P]` brings the plate up — or a tap on the `P` chip in the key row,
+which lights while it is up — and it goes down on its own a second later.
+Whether it happened to be up at the moment something arrived is the whole of
+the question.
+
+What it turns is a **blow**: a contact arriving on the unit and striking it, a
+round off an emplacement, a spectre that has committed to the ground between.
+What it does not turn is the deck. A port firing under the chassis, a rock
+through the plating, a bus line coming live underfoot, a pit — none of those
+are things that swung at anything, and the plate has nothing at all to say
+about them. That line is worth knowing before a deck is built round it: the
+plate is an answer to what is walking about, never to where the unit is
+standing.
+
+A turned blow costs whatever swung it. A contact that can be staggered breaks
+and gives ground; an emplacement loses its next shot; a spectre is put a good
+deal further out of its next lunge than a miss would have put it. And the
+plate is spent on the blow it turned, whatever was left of the second — one
+plate is one blow. The housing then takes the better part of two seconds to
+reset, so leaning on the key is worse than reading the tell, which is the
+whole of why a spectre setting itself is a thing worth watching rather than a
+thing worth panicking at.
 
 To add an ability, add one entry to `ABILITIES` in `tiles.js`. Every station's
 picker in the editor is built from that list. `index.html?abilities=jump` fits
@@ -668,6 +716,7 @@ halfway.
 | `z`  | Security drone | At a pace of its own, always | Onto the unit, and lifts it | Command side, and it cannot end a run. It takes hold of the chassis, carries it off, and sets it down wherever it was going. The movement keys become the struggle while it has hold |
 | `0`  | Block | Along one heading until the whole of it is stopped | It does not steer: it arrives | Three tiles by three of freight. Whatever it comes over is under it, and that ends the run. It needs the whole of its body's width, so a doorway is somewhere it can never be |
 | `4`  | Ravager | At a pace of its own, always — casting about or coming | Onto whatever it heard, and strikes it if it is still making a noise, which ends the run | It cannot see. Nothing about where the unit is standing reaches it: what it has is the last square the deck made a noise at, and it walks to that. Holding still is no answer to it — being quiet is. Four wasted trips to one square and it stops answering that square |
+| `ż`  | Spectre | At a pace of its own, whenever the range is wrong | Never, until it goes — and then the whole of the gap at once | Command side. It holds station off the unit the way a stalker does and is nothing like one: it sets itself where the operator can watch it do it, and covers four squares in a quarter of a second. The tell is the fight. It will not do any of it to a unit standing at a fusebox |
 
 ### Hunting by movement
 
@@ -2033,6 +2082,158 @@ was.
 
 A **hollow locker** answers both. So does a turret: a ravager belongs to
 nobody, so leading one past a gun is the same trick it always was.
+
+## The one that holds its distance — the Spectre
+
+A **Spectre** (`ż`) paces the unit the way a stalker does and is nothing like
+one. It is `command` side, so a turret leaves it alone and it leaves a drone
+alone; what it does with the unit is the whole of why it is here.
+
+It holds station at `keep` squares — four — and follows, and does nothing. Then
+it picks its moment: it stops dead, and for six tenths of a second it stands
+there **setting itself**, which draws as a ring closing onto it and a line
+drawn to where the unit is standing, and writes a line to the log. When the
+ring closes it goes, in one movement, along the heading it committed to when
+the tell ran out — sixteen tiles a second, which crosses the four squares it
+had left in a quarter of one.
+
+There are two answers to it and the deck decides which the operator has.
+
+**The plate.** Reactive plating turned on a lunge is what the package is for,
+and the numbers are a contract between the two of them: a plate lasts one
+second, and the tell plus the ground the spectre has left to cover come to
+eight and a half tenths of one. So a plate brought up *the moment it sets
+itself* is still up when it arrives — the operator does not have to thread a
+window, only to read the tell — and one brought up late is up for the part that
+matters. An author who widens `reach` or slows `dash` in `FOES` is quietly
+taking the plate away, which is worth doing on purpose or not at all.
+
+**Ground.** Without the plate, the answer is that it commits. It aims at the
+square the unit was standing on when the tell ran out and holds that heading
+whatever happens next, so a unit that is somewhere else by the time it arrives
+is a unit it goes straight past. Then it stands off for four seconds and
+starts again. A turned lunge costs it the better part of eight, which is the
+difference the plate makes.
+
+### The box it will not come in off
+
+A spectre **will not set itself while the unit is within three squares of a
+fusebox or a distribution panel**, counted over ground the unit could actually
+walk — so a box on the far side of a bulkhead shelters nobody. It says so the
+first time, and then holds off, and goes back to pacing.
+
+This is not mercy and it is not flavour. Working a box is the one thing on a
+deck that takes the keys away from the chassis: the fusebox screen has them,
+the unit cannot move, and the operator is reading circuits rather than the
+deck. Something that lunged at a unit that cannot move would not be a fight,
+it would be a coin toss, and the player would learn to seat fuses with the
+deck cleared rather than with the deck as it is. So the box is the one square
+on a spectre's deck that is safe, which also makes it somewhere to *go* — and
+an author who wants a spectre to matter puts the box where getting to it costs
+something.
+
+It is a `ward` in `FOES`, and it is written as data rather than as a special
+case: a list of block ids and a distance. Any kind can be given one, and any
+block can be named in one.
+
+## The hull, and what it is doing on its own
+
+The Comms Array is the far end of the command deck, and it is out on the hull.
+Six blocks make one, and between them they are a deck that is dangerous
+without anything walking on it.
+
+**Hull Steel Flooring** (`ħ`) is the ground of it: structural plate bolted
+straight onto the frame, with nothing under it but the outside. Ordinary
+walkable ground, and honest about the trade — a step on it carries six squares
+where a step on plating carries four, so the safe footing across the hull line
+is also the loud way across it. Beside it, **Vacuum** (`ṽ`) is silent and
+**Astro-Grade Window** (`ï`) is what holds the rest of it out; a **Stuck
+Asteroid** (`ǒ`) is a rock that came through the deckhead and stopped, one body
+as big as it is painted, solid, and the only cover out here.
+
+**Comms Array** (`ā`) is twelve tiles by twelve of dish, gearing and
+counterweight. It is an antenna and it is the same antenna — it transmits
+through structure the way a beacon does and goes quiet once the unit has walked
+up on it. What twelve by twelve buys is that an operator crosses the deck to
+read it: a mast that fits inside the optics is scenery, and one that does not
+is somewhere to be going.
+
+### A line that is ground, or a wall
+
+A **Power Line** (`ẋ`) is the one block on a deck whose circuit decides which
+of the two it is. Dead, the unit walks the run of it. Live, nothing crosses it
+at all — not the unit, not a contact. Touching copies run as one line, so a bus
+across a corridor is painted from ordinary tiles and reads as one body.
+
+That makes a fusebox somewhere else on the deck into a door, and it is the
+first block in the vocabulary where seating a fuse *shuts* a route as readily
+as it opens one. It is also the one block that will kill a unit standing
+perfectly still doing nothing: a line that comes live under a chassis already
+on it ends the run, and the log says exactly that. An author who puts a line
+where the route to the box crosses it has written a decision; one who puts it
+where the unit has to stand to reach the box has written a trap, and Survey
+will not tell them apart.
+
+Survey does know that a line can be made dead, so a deck whose only way
+through is a bus line reads as reachable rather than as sealed — the same way
+a bulkhead with a button does.
+
+### A platform that was never waiting
+
+An **Automatic Tram** (`ť`) is an ordinary tram that nothing calls. It runs its
+rail end to end on its own time, stands at each end for its `dwell`, and sets
+off again — so it is a piece of the deck's timing rather than a control the
+operator works, and crossing on one is reading a clock. A button still reaches
+one, and all that does is turn it round early.
+
+Everything else a tram is, it is: it runs on power, it stops where it stands if
+the supply is pulled, and **no contact will set foot on it or on the rail it
+runs along**. Riding one is still the way off a deck that nothing follows the
+unit onto. Survey knows the difference between the two kinds: it flags an
+ordinary platform with no control wired to it, and says nothing about an
+automatic one, which was never waiting for a control to begin with.
+
+### Two hazards that keep their own time
+
+Neither of these is a control and neither is a contact. They run cycles that
+nothing aboard is driving and nothing aboard can stop, and what an operator
+does about either is work out where to be standing when it comes round. Both
+give warning first, because a hazard with no tell is not a hazard an author can
+build a route across.
+
+A **Micro Thruster** (`ṁ`) is an attitude port firing into the deck. The ship
+is still trying to hold a bearing, the array is still being pointed, and the
+ports that do the pointing open into a walkway nobody was meant to be standing
+in. It runs cold for `every` seconds, spends `warn` seconds **building** —
+which draws as a ring closing on the square, and is the whole of the warning —
+and then burns for `burn` seconds, which is open flame and ends whatever is
+standing on it. `phase` is how long before its first firing, which is how a row
+of them is staggered: painted in a line with staggered phases they stop being a
+hazard and become a rhythm to cross on. A port runs on power like anything
+else, so an author can put one on a circuit and let a fusebox shut it off — or
+leave the circuit blank, and it fires from the moment the run starts.
+
+An **Asteroid Sweep** (`ǎ`) is a track a rock comes down. What is painted is
+the ground, and the ground is ordinary: the rock is not on the deck at all
+until it arrives, and it is gone again a second later. It waits `every`
+seconds, warns for `warn` — a dashed track drawn over as much of its path as
+the unit has ever looked at, and a noise that carries as far as a generator's,
+so a unit that is not looking at the track still hears it — and then a rock
+runs the block's heading at fifteen tiles a second, as far as `dist` or as far
+as the ground stays open. It needs no circuit. Nothing aboard is driving it.
+
+The path is worked out at the moment it comes round rather than when the deck
+is built, so **anything solid on the line stops it**: a bulkhead, a stuck
+asteroid, a stack of crating. Cover is cover, and an author builds shelter by
+putting something in the way — and a bulkhead that has since been driven open
+is shelter that has since stopped being any.
+
+A rock kills the unit and nothing else on the deck, which is deliberate. A
+track that also cleared a deck of whatever was walking it would strip the deck
+of its contacts while the operator stood somewhere else and watched. What lives
+out here has had a long time to learn where the tracks are. A port has not been
+learnt by anything, which is why a port *does* take a contact led over it —
+leading something onto one is a thing the operator does, and a sweep is not.
 
 ## A field to walk into
 
