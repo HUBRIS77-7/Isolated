@@ -112,6 +112,14 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
 .box h4{margin:0;font-size:inherit;font-weight:700;padding:3px 8px;border-bottom:1px solid var(--gfaint);flex:none}
 #feed{flex:1;width:100%;min-height:0;opacity:0;transition:opacity 1.2s}
 #feed.on{opacity:1}
+#feedBox{position:relative}
+/* the floodlamp's own gauge — opposite corner from the box's own label,
+   up only while something is fitted to read it off */
+#battWrap{position:absolute;top:8px;right:8px;width:64px;height:10px;
+  border:1px solid var(--gdim);background:rgba(0,0,0,.55);display:none;z-index:2}
+#battWrap.on{display:block}
+#battFill{height:100%;width:100%;background:var(--g);transition:width .3s linear,background .3s linear}
+#battWrap.low #battFill{background:var(--red)}
 .rcol{display:flex;flex-direction:column;gap:10px;min-height:0}
 #log{flex:1;overflow-y:auto;padding:8px}
 #log div{white-space:pre-wrap;word-break:break-word;margin-bottom:.35em}
@@ -276,7 +284,9 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
   <div class="term wide">
     <div class="term-bar"><span>RECOVERY UNIT 07 (VIEWPORT)</span><span id="stamp3">0000 00.00.0000</span></div>
     <div class="term-body split">
-      <div class="box"><h4>&lt;Environment Feed&gt;</h4><canvas id="feed"></canvas></div>
+      <div class="box" id="feedBox"><h4>&lt;Environment Feed&gt;</h4><canvas id="feed"></canvas>
+        <div id="battWrap" title="Floodlamp charge"><div id="battFill"></div></div>
+      </div>
       <div class="rcol">
         <div class="box" id="logBox" style="flex:1"><h4>&lt;Message Log&gt;</h4><div id="log"></div></div>
         <div class="box" id="fuseWin" style="flex:1;display:none"><h4>&lt;Fusebox&gt;</h4>
@@ -1107,6 +1117,7 @@ function resumeRun(rec){
   poemShown.clear();(rec.poems||[]).forEach(id=>poemShown.add(id));
   game.carry=(rec.carry||[]).slice(0,ISO.CARRY);
   cancelJump();closeTerminal();closeFusebox();closeDesk();
+  lamp.on=false;lamp.battery=100;
   syncAbilities();syncCarry();
   /* the calibration script ran in the prologue and does not run twice */
   game.step=3;
@@ -1220,7 +1231,7 @@ const sight={live:new Set(), seen:new Map()};
    unchanged — there is simply no light out there for them — so what they
    resolve closes to the couple of squares the chassis throws for itself,
    and a struck floodlamp opens it back up to the full rating. */
-const lamp={on:false, told:false};   // whether the lamp is struck — see [F], below
+const lamp={on:false, told:false, battery:100};   // whether the lamp is struck — see [F], below
 const darkDeck=()=>!!MAP.dark;
 const sightRange=()=>(darkDeck()&&!lamp.on)?DARK_SIGHT:SIGHT;
 
@@ -2726,6 +2737,11 @@ function toggleLamp(){
     if(n-game.useLog>2500){game.useLog=n;say('No illumination package fitted. There is no lamp to strike.','dim')}
     return;
   }
+  if(!lamp.on&&lamp.battery<=0){
+    const n=performance.now();
+    if(n-game.useLog>2500){game.useLog=n;say('Cell is flat. Give it a moment off to build a charge.','dim')}
+    return;
+  }
   lamp.on=!lamp.on;
   syncLamp();
   if(lamp.on){
@@ -2738,9 +2754,36 @@ function toggleLamp(){
     say('Floodlamp out.','dim');
   }
 }
-/* The chip in the key row is the lamp's own indicator: lit while it burns. */
+/* The chip in the key row is the lamp's own indicator: lit while it burns;
+   the gauge in the feed's corner is the cell behind it. */
 function syncLamp(){
   $('#keyLamp').classList.toggle('lit',lamp.on);
+  syncBattery();
+}
+function syncBattery(){
+  const on=game.abilities.has('flashlight'),wrap=$('#battWrap');
+  wrap.classList.toggle('on',on);
+  if(!on)return;
+  $('#battFill').style.width=lamp.battery+'%';
+  wrap.classList.toggle('low',lamp.battery<20);
+}
+/* Drawn on the housing, drained by burning: 1% every 2s lit, the same back
+   every 2s dark. Runs it dry rather than letting it burn forever. */
+const LAMP_RATE=.5;                  // %/sec — 1% per 2s
+function updateLamp(dt){
+  if(!game.abilities.has('flashlight'))return;
+  if(lamp.on){
+    lamp.battery=Math.max(0,lamp.battery-LAMP_RATE*dt);
+    if(lamp.battery<=0){
+      lamp.on=false;
+      say('Floodlamp cell spent. It goes dark on its own.','alert');
+      syncLamp();
+      return;
+    }
+  }else if(lamp.battery<100){
+    lamp.battery=Math.min(100,lamp.battery+LAMP_RATE*dt);
+  }
+  syncBattery();
 }
 /* Crossing onto an unlit deck, or off one. Said once on arrival rather than
    every frame, because it is a fact about the deck and not about the unit. */
@@ -3107,6 +3150,8 @@ function respawn(){
   /* on whichever deck the unit is standing, at the record it set down on */
   game.px=game.fx=level.entry.x;game.py=game.fy=level.entry.y;
   cancelJump();
+  /* a rebuilt chassis carries a fresh cell */
+  lamp.on=false;lamp.battery=100;syncLamp();
   /* the ground, the doors and every beacon go back to how they started, on
      this deck and on every deck behind it — what the unit has been fitted
      with does not */
@@ -3650,7 +3695,7 @@ function loop(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;
   if((state==='menu'||state==='dive')&&!usingVideo)drawMenu(now,dt);
   if(state==='console'){
-    updateTrams(dt);updateSlides(dt);checkFooting();updateFoes(dt);
+    updateTrams(dt);updateSlides(dt);checkFooting();updateFoes(dt);updateLamp(dt);
     /* a key held down walks the unit; it does not work against a grip. The
        struggle counts presses, so a drone is shaken off by an operator doing
        something rather than by one leaning on an arrow key */
