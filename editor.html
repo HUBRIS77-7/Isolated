@@ -829,6 +829,28 @@ function drawWiring(z){
         cx.beginPath(); cx.arc(tx+z/2, ty+z/2, z*.26, 0, 6.283); cx.stroke();
       }
     }
+    /* a keypad runs the same lines a button does — what is different about
+       it is what the unit has to be holding to press it, which is a thing
+       the inspector says rather than a thing the canvas can draw */
+    if(t.press === 'keypad') for(const c of ISO.signalTargets(map,x,y)){
+      const [tx,ty] = toScreen(c.x, c.y);
+      cx.strokeStyle = 'rgba(255,180,74,.55)'; cx.setLineDash([4*D,3*D]);
+      cx.beginPath(); cx.moveTo(aX,aY); cx.lineTo(tx+z/2,ty+z/2); cx.stroke(); cx.setLineDash([]);
+      cx.strokeStyle = 'rgba(255,180,74,.85)';
+      cx.strokeRect(tx+z*.18, ty+z*.18, z*.64, z*.64);
+    }
+    /* and a core drives whatever a question was wired to, drawn finer the
+       way a control filed on a console is: the unit has to be at the glass,
+       and it has to think to ask */
+    if(t.press === 'aicore') for(const w of ISO.talkOf(map,x,y)){
+      for(const c of (w.targets || [])){
+        const [tx,ty] = toScreen(c.x, c.y);
+        cx.strokeStyle = 'rgba(150,205,255,.45)'; cx.setLineDash([2*D,4*D]);
+        cx.beginPath(); cx.moveTo(aX,aY); cx.lineTo(tx+z/2,ty+z/2); cx.stroke(); cx.setLineDash([]);
+        cx.strokeStyle = 'rgba(150,205,255,.75)';
+        cx.beginPath(); cx.arc(tx+z/2, ty+z/2, z*.26, 0, 6.283); cx.stroke();
+      }
+    }
     if(t.press === 'vent'){
       const d = (ISO.propsAt(map,x,y)||{}).dest;
       if(d){

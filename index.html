@@ -150,6 +150,22 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
 #fuseFoot{flex:none;border-top:1px solid var(--gfaint);padding:4px 8px;font-size:12px;
   color:var(--gdim);display:flex;justify-content:space-between;gap:10px}
 #fuseNote{color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* the panel: the core, the reactor and the keypad all open one of these, and
+   it takes the log's place in the column exactly as the fusebox does — they
+   are the same kind of thing, a screen the operator reads and works */
+#dlgBody{flex:1;min-height:0;overflow-y:auto;padding:8px;font-size:13px;line-height:1.35}
+#dlgHead{color:var(--gdim);margin-bottom:6px}
+#dlgText{margin-top:9px;border-top:1px solid var(--gfaint);padding-top:7px;white-space:pre-wrap}
+#dlgText p{margin:0 0 .45em}
+#dlgText .b{color:var(--g);font-weight:700}
+#dlgHand{margin-top:9px;border-top:1px solid var(--gfaint);padding-top:7px;color:var(--gdim)}
+#dlgPrompt{margin-top:9px;color:var(--gdim);font-size:12px;letter-spacing:.18em}
+#dlgField{color:var(--amber);font-size:15px;letter-spacing:.3em;min-height:1.2em}
+#dlgFoot{flex:none;border-top:1px solid var(--gfaint);padding:4px 8px;font-size:12px;
+  color:var(--gdim);display:flex;justify-content:space-between;gap:10px}
+#dlgNote{color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dlgWin.doom #dlgHead{color:var(--red)}
 #carry{padding:0 8px 8px;font-size:12px;color:var(--gdim);display:none}
 
 /* the motion tracker: its own pane under the log, up only while it is raised */
@@ -296,6 +312,15 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
             <div id="fuseHand"></div>
           </div>
           <div id="fuseFoot"><span id="fuseNote"></span><span>[E]/[ESC] CLOSE</span></div>
+        </div>
+        <div class="box" id="dlgWin" style="flex:1;display:none"><h4 id="dlgKind">&lt;Panel&gt;</h4>
+          <div id="dlgBody">
+            <div id="dlgHead"></div>
+            <div id="dlgRows"></div>
+            <div id="dlgText"></div>
+            <div id="dlgHand"></div>
+          </div>
+          <div id="dlgFoot"><span id="dlgNote"></span><span id="dlgHint">[E]/[ESC] CLOSE</span></div>
         </div>
         <div class="box" id="motionWin" style="flex:1;display:none"><h4>&lt;Motion Tracker&gt;</h4>
           <canvas id="motion"></canvas>
@@ -860,6 +885,10 @@ const cardOf=p=>String(p.card||'').trim()?{title:p.card,sub:p.cardsub||''}:null;
 function usedUp(x,y,t){
   const k=K(x,y);
   if(t.alarm)return !world.armed.has(k);
+  /* a keypad that has been satisfied shows a green lamp for the rest of the
+     run, and a body with everything off it shows as one */
+  if(t.press==='keypad')return world.cleared.has(k);
+  if(t.press==='scavenge')return stripped(x,y);
   /* and a burst line reads dry when there is nothing behind it: the supply
      pulled, or an author who gave it no reach to flood */
   if(t.pipe)return !powered(x,y)||!(propsOf(x,y).reach|0);
@@ -936,6 +965,21 @@ const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
               /* the alarm that is sounding, if one is: where it was tripped,
                  how long it has left, and when the next pulse goes out */
               alarm:null,
+              /* ---------- the command plant ----------
+                 What the big blocks have had done to them. A body stripped
+                 of a hand is stripped of it for the rest of the deck's life,
+                 a keypad that has been satisfied presses like a button from
+                 then on, a reactor face that has been opened stays open, and
+                 what is seated in its two sockets is seated there the way a
+                 fuse is seated in a way. All of it is deck state: it is put
+                 away with the deck and comes back with it. */
+              parts:new Set(), cleared:new Set(), faces:new Set(), sockets:new Map(),
+              /* fuel that is alight: where the fire in a spill has got to,
+                 how long each square of it has left to burn, and which
+                 squares are about to catch. A spill is ground until
+                 something sets light to it and a fire that crosses itself
+                 afterwards */
+              ablaze:new Map(), catching:new Map(), spills:[],
               /* noises the deck has made lately — where, how loud, and when.
                  Whatever hunts by sound has already been told; what is kept
                  here is the ring the operator sees, so a unit that has just
@@ -958,6 +1002,8 @@ function buildWorld(){
   world.slides.clear(); world.unlocked.clear();
   world.pipes.length=0; world.flood.t=0; world.armed.clear(); world.alarm=null;
   world.running.clear(); world.genPulse=0;
+  world.parts.clear(); world.cleared.clear(); world.faces.clear(); world.sockets.clear();
+  world.ablaze.clear(); world.catching.clear(); world.spills.length=0;
   world.din.length=0; pool.key='';
   sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
@@ -982,11 +1028,23 @@ function buildWorld(){
     /* a set an author left turning is turning, and a re-initialise puts every
        other one back to cold with its tank empty */
     if(t.press==='generator'&&p.run) world.running.add(K(x,y));
+    /* every reactor starts shut, with both its sockets empty: a sacrifice
+       key is something the unit finds and turns, never something the record
+       hands it already turned */
+    if(t.press==='reactor') world.sockets.set(K(x,y),[null,null]);
     /* the mark is where a contact starts, not a block standing there: it is
        built once, walks off, and the square it came from is plain ground */
     if(t.foe&&ISO.FOES[t.foe]) world.foes.push(makeFoe(t.foe,x,y,p));
   }
-  indexTrams();
+  indexTrams(); indexSpills();
+}
+/* Where the fuel on this deck is lying. It is indexed rather than searched
+   for, the way the burst lines are: what catches, and when, is worked out
+   off this list every time something is alight near it. */
+function indexSpills(){
+  world.spills.length=0;
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++)
+    if(tileDef(x,y).spill) world.spills.push({x, y});
 }
 function indexTrams(){
   world.tramAt.clear();
@@ -1015,6 +1073,12 @@ function stashDeck(){
                        got, and which emitters are still across the way */
                     flood:world.flood.t, armed:new Set(world.armed),
                     running:new Set(world.running),
+                    /* what the plant on this deck has had done to it, and how
+                       far the fuel on it has burnt */
+                    parts:new Set(world.parts), cleared:new Set(world.cleared),
+                    faces:new Set(world.faces),
+                    sockets:new Map([...world.sockets].map(([k,s])=>[k,s.slice()])),
+                    ablaze:new Map(world.ablaze), catching:new Map(world.catching),
                     alarm:world.alarm?Object.assign({},world.alarm):null,
                     ways:new Map([...world.ways].map(([k,w])=>[k,w.map(o=>Object.assign({},o))])),
                     drops:new Map(world.drops),
@@ -1033,6 +1097,10 @@ function restoreDeck(d){
   world.unlocked=new Set(d.unlocked||[]);
   world.flood.t=d.flood||0; world.armed=new Set(d.armed||[]);
   world.running=new Set(d.running||[]);
+  world.parts=new Set(d.parts||[]); world.cleared=new Set(d.cleared||[]);
+  world.faces=new Set(d.faces||[]);
+  world.sockets=new Map([...(d.sockets||[])].map(([k,s])=>[k,s.slice()]));
+  world.ablaze=new Map(d.ablaze||[]); world.catching=new Map(d.catching||[]);
   world.alarm=d.alarm?Object.assign({},d.alarm):null;
   world.din.length=0; pool.key='';
   world.trams=d.trams.map(t=>Object.assign({},t));
@@ -1046,7 +1114,7 @@ function restoreDeck(d){
   world.lit.clear();
   sight.live.clear(); sight.seen.clear();     // optical memory does not ride the car
   level.entry={x:d.entry.x, y:d.entry.y};
-  indexTrams();
+  indexTrams(); indexSpills();
 }
 
 /* ---------- chapters, and where a run is kept ----------
@@ -1163,6 +1231,7 @@ function resumeRun(rec){
   /* the run begins here now, so this is the deck [R] calls the landing */
   START_DECK=MAP.id;
   decks.clear();
+  game.doom=null;
   buildWorld();
   level.entry={x:MAP.spawn.x, y:MAP.spawn.y};
   game.px=game.fx=MAP.spawn.x;game.py=game.fy=MAP.spawn.y;
@@ -1177,7 +1246,7 @@ function resumeRun(rec){
   cardShown.clear();(rec.cards||[]).forEach(w=>cardShown.add(w));
   poemShown.clear();(rec.poems||[]).forEach(id=>poemShown.add(id));
   game.carry=(rec.carry||[]).slice(0,ISO.CARRY);
-  cancelJump();closeTerminal();closeFusebox();closeDesk();
+  cancelJump();closeTerminal();closeFusebox();closeDesk();closePanel();
   lamp.on=false;lamp.battery=100;
   syncAbilities();syncCarry();
   /* the calibration script ran in the prologue and does not run twice */
@@ -1267,6 +1336,9 @@ function walkableAt(x,y){
   /* a fire is as solid as a wall while it burns, and wet ash the moment the
      water reaches it — the one block on a deck that is opened by weather */
   if(t.burn)return world.spent.has(K(x,y));
+  /* and fuel is the other way round: ground until something sets light to
+     it, and a wall of flame from then on until it has burnt itself out */
+  if(t.spill)return !world.ablaze.has(K(x,y));
   return t.walk;
 }
 /* What a jump passes over without coming down on it, and what it may come
@@ -1316,7 +1388,11 @@ function floodField(){
     if(!ISO.inside(MAP,x,y))return false;
     const t=bodyDef(x,y);
     if(t.fall||(t.deadly&&t.see))return false;
-    return walkableAt(x,y)||!!t.burn;
+    /* water put onto a square with no atmosphere over it is water that is
+       gone: a flood stops at the hull line rather than running out of it */
+    if(t.airless)return false;
+    /* fuel alight is run into the way a fire is, and put out the same way */
+    return walkableAt(x,y)||!!t.burn||!!t.spill;
   };
   const cost=(x,y)=>bodyDef(x,y).wet?0:1;
   for(const p of pipes){
@@ -1368,16 +1444,84 @@ function updateFlood(dt){
                           :Math.max(0,world.flood.t-dt*FLOOD_DRY);
   const now=floodFront();
   if(Math.floor(now)<=Math.floor(was))return;         // it has not covered new ground yet
-  let put=0;
+  let put=0, washed=0;
   pool.d.forEach((d,k)=>{
     if(d<=was||d>now||world.spent.has(k))return;
     const [x,y]=k.split(',').map(Number);
-    if(!bodyDef(x,y).burn)return;
-    world.spent.add(k); world.rev++; put++;
+    const t=bodyDef(x,y);
+    if(!t.burn&&!t.spill)return;
+    /* fuel the water gets to is fuel that never catches — and fuel already
+       alight is put out exactly as a fire is */
+    if(t.spill){
+      washed++;
+      if(world.ablaze.has(k)){world.ablaze.delete(k); put++}
+      world.catching.delete(k);
+    }else put++;
+    world.spent.add(k); world.rev++;
     noise(x,y,ISO.NOISE.press,false);                 // it goes out loudly
   });
   if(put)say('Water reaches the fire. '+(put===1?'It goes out':put+' squares of it go out')+
              ' in a wall of steam. The plating is walkable.','b');
+  if(washed>put)say('Water runs across the fuel and takes it off the plating. '+
+                    'Whatever was going to happen there is not going to happen now.','dim');
+}
+
+/* ---------- fuel, and what happens to a deck with fire on it ----------
+   A spill is ordinary ground right up until something alight is next to it.
+   Then it catches: the square it caught on goes up, the squares of the body
+   touching that one go up a moment later, and the fire works its way across
+   the whole of the spill the way the water works its way across the deck —
+   a front rather than a switch. Each square burns for a while and then there
+   is nothing left of it to burn, so a spill is a wall of fire that comes,
+   crosses a room, and goes, and the operator's business is being somewhere
+   else while it does.
+
+   The other end of it is the flood. Water reaching fuel washes the fuel off
+   the plating before it ever catches, which is the whole of the answer to
+   one: a burst line and a spill on the same deck are an author asking the
+   operator which of the two gets there first. */
+const SPILL_CATCH=.7;              // seconds a square of fuel holds out beside something alight
+const SPILL_BURN=8;                // and how long it burns for once it has gone up
+function alight(x,y){
+  const k=K(x,y);
+  if(world.ablaze.has(k))return true;
+  const t=bodyDef(x,y);
+  return !!t.burn&&!world.spent.has(k);              // a fire that has not been put out
+}
+function updateSpills(dt){
+  if(!world.spills.length)return;
+  let lit=0;
+  /* what is already burning burns down, and what is left when it has is
+     scorched plating: ordinary ground, walked over like any other */
+  world.ablaze.forEach((left,k)=>{
+    left-=dt;
+    if(left>0)return void world.ablaze.set(k,left);
+    world.ablaze.delete(k); world.spent.add(k); world.rev++;
+  });
+  for(const s of world.spills){
+    const k=K(s.x,s.y);
+    if(world.spent.has(k)||world.ablaze.has(k))continue;
+    const near=[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=>
+      ISO.inside(MAP,s.x+dx,s.y+dy)&&alight(s.x+dx,s.y+dy));
+    if(!near){world.catching.delete(k);continue}
+    const t=(world.catching.get(k)||0)+dt;
+    if(t<SPILL_CATCH){world.catching.set(k,t);continue}
+    world.catching.delete(k);
+    world.ablaze.set(k,SPILL_BURN); world.rev++; lit++;
+    /* a square of fuel going up is the sound of a square of fuel going up,
+       and nothing about it says where the unit is standing */
+    if(lit===1)noise(s.x,s.y,ISO.NOISE.press,false);
+    /* and the one thing it does to the unit: standing in fuel when it
+       catches is standing in fire */
+    if(game.px===s.x&&game.py===s.y&&!game.hide)die('FUEL GOES UP UNDER THE CHASSIS.');
+  }
+  if(lit){
+    const n=performance.now();
+    if(n-game.spillLog>3000){
+      game.spillLog=n;
+      say('THE FUEL HAS CAUGHT. It is working its way across the whole of the spill.','alert');
+    }
+  }
 }
 
 /* ---------- ground that takes longer to cross ----------
@@ -1501,7 +1645,8 @@ function sightAlpha(x,y,now){
 
 const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,mdur:.11,bx:0,by:0,bt:1,
   active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0,toldAbout:new Set(),
-  face:'down',dead:false,sink:0,useLog:0,baseObj:'',
+  face:'down',dead:false,sink:0,useLog:0,spillLog:0,baseObj:'',
+  doom:null,                    // the self-destruct sequence, if one is running
   stir:-1e9,                    // when the chassis last covered ground, for whatever hunts by it
   noised:-1e9,                  // and when it last made a sound, for whatever hunts by that
   hide:null,                    // the block the chassis is folded into, if it is in one
@@ -1554,6 +1699,14 @@ function beaconObjective(){
 }
 function refreshObjective(){
   if(game.dead||!game.baseObj)return;
+  /* a count running is the only errand there is: it takes the line off
+     everything else, beacon and all, because there is nothing else on the
+     deck worth reading while it is going down */
+  if(game.doom){
+    objective('CORE BREACH IN '+Math.max(0,Math.ceil(game.doom.left))+'s.',true);
+    $('#obj').className='alert';
+    return;
+  }
   /* while the calibration script is still talking, the line is its own */
   const script=game.step>=0&&game.step<3;
   objective((!script&&beaconObjective())||game.baseObj,true);
@@ -1660,6 +1813,11 @@ const DIN_LIFE=1.2;                        // seconds a ring stays on the feed
 const DIN_KEEP=16;                         // and how many are worth keeping at once
 function noise(x,y,loud,mine){
   if(!loud||!ISO.inside(MAP,x,y))return;
+  /* sound is the one thing on a deck structure does not stop. What does stop
+     it is there being nothing for it to travel through: a noise made out on
+     the hull line is a noise nothing on the deck ever hears, which is the
+     whole of what vacuum is worth to an operator */
+  if(bodyDef(x,y).silent)return;
   const n=performance.now();
   if(mine)game.noised=n;
   world.din.push({x, y, loud, t:n});
@@ -1717,7 +1875,8 @@ function heard(f,x,y,n){
 /* How loud a step onto a square is. Water is the loud one wherever it is,
    whether the author painted it or a burst line put it there; carpet is the
    quiet one, and everything else is a step on plating. */
-const stepLoud=(x,y)=>wetAt(x,y)?Math.max(ISO.NOISE.step,ISO.def('1').noisy)
+const stepLoud=(x,y)=>bodyDef(x,y).silent?0
+                     :wetAt(x,y)?Math.max(ISO.NOISE.step,ISO.def('1').noisy)
                                 :(bodyDef(x,y).noisy||ISO.NOISE.step);
 
 /* ---------- the beam across the way ----------
@@ -1792,7 +1951,7 @@ function useHide(x,y){
   const t=tileDef(ax,ay), p=propsOf(ax,ay), tag=p.label?' ['+p.label+']':'';
   world.lit.set(K(ax,ay),performance.now());
   game.hide={x, y, ax, ay};
-  cancelJump(); closeTerminal(); closeFusebox(); closeDesk();
+  cancelJump(); closeTerminal(); closeFusebox(); closeDesk(); closePanel();
   sight.live.clear();
   say('Folded into the '+t.name.toLowerCase()+tag+'. The door pulls to behind the chassis.','b');
   say('Nothing on this deck can find the unit in here. The optics have the slats and nothing else. [E] climbs out.','dim');
@@ -1811,7 +1970,7 @@ function leaveHide(){
 
 /* Either of the two screens the unit can open. While one is up the deck keys
    belong to it, not to the chassis. */
-const uiOpen=()=>term.on||fuse.on||desk.on;
+const uiOpen=()=>term.on||fuse.on||desk.on||dlg.on;
 function tryMove(dir){
   if(!game.active||game.dead||uiOpen())return;
   /* nothing the keys say to the motors reaches the deck while the deck is not
@@ -1910,6 +2069,9 @@ function interact(){
   if(desk.on)return deskUse();
   if(term.on)return closeTerminal();
   if(fuse.on)return closeFusebox();
+  /* the panel works the row that is selected, so the pad on the screen and
+     the key on the board do the same thing */
+  if(dlg.on)return panelUse(dlg.sel);
   if(!game.active||game.dead)return;
   if(game.held)return void heldLine('Nothing is within reach of a manipulator this far off the deck.');
   /* while the chassis is folded into something, the press is what gets it
@@ -1931,6 +2093,14 @@ function interact(){
     if(bt.press==='hide')return useHide(x,y);
     if(bt.press==='generator')return useGenerator(ax,ay);
     if(bt.press==='fusebox')return openFusebox(ax,ay);
+    /* the plant is pressed from any square of it: a core fourteen tiles
+       across and a reactor twenty-seven long are walked up to somewhere
+       rather than at the one corner they were painted on, and a body is
+       worked from wherever the chassis is standing over it */
+    if(bt.press==='aicore')return openCore(ax,ay);
+    if(bt.press==='reactor')return useReactor(ax,ay);
+    if(bt.press==='scavenge')return useScavenge(ax,ay);
+    if(t.press==='keypad')return useKeypad(x,y);
     if(t.press==='button')return pressButton(x,y);
     if(t.press==='terminal')return openTerminal(x,y);
     if(t.press==='note')return readNote(x,y);
@@ -2191,7 +2361,7 @@ function travelTo(deck,want,how,square){
   const held=decks.get(MAP.id);
   if(held)restoreDeck(held);else buildWorld();
   level.entry={x:land.x, y:land.y};
-  cancelJump();closeTerminal();closeFusebox();closeDesk();
+  cancelJump();closeTerminal();closeFusebox();closeDesk();closePanel();
   game.px=game.fx=land.x;game.py=game.fy=land.y;
   game.mt=1;game.bt=1;game.arc=0;game.sink=0;game.held=null;game.struggle=0;game.hide=null;
   game.visited.clear();game.visited.set(K(land.x,land.y),performance.now());
@@ -2456,6 +2626,438 @@ function workWay(i){
      pulled is the sound of it going off. Either way it carries */
   noise(fuse.x,fuse.y,ISO.NOISE.fuse,true);
   syncCarry(); renderFuse(); refreshObjective();
+}
+
+/* ---------- the panel ----------
+   Three of the blocks the command deck was built with open a screen rather
+   than a window: the core it was thinking with, the reactor underneath it,
+   and the keypad on the door between them. They share one panel because
+   they ask the operator for the same three things — pick a row, press it,
+   and now and then type a word — and because the panel is the same kind of
+   thing the fusebox is: it takes the message log's place in the column, and
+   closing it gives the log back with everything that happened written in it.
+
+     aicore  — one row per thing the core will answer to. Asking is the
+               press: a question wired to blocks drives them, so asking for
+               a door is how a door gets opened
+     keypad  — one row per measure its author turned on. Each is cleared on
+               its own and stays cleared, and the last one clearing is what
+               drives whatever the pad is wired to
+     reactor — two sockets and a count. Keys go in the way fuses go into a
+               fusebox way; the count only begins once both are turned      */
+const dlg={on:false, kind:'', x:0, y:0, sel:0, hand:0, ask:false, typed:'',
+           head:'', note:'', body:'', hint:'', lines:[],
+           /* what has been asked of the core while this channel has been
+              open. A core does not forget, but it does not repeat itself
+              unprompted either — the list says which of them have been put
+              to it already */
+           asked:new Set()};
+function openPanel(kind,x,y,head){
+  dlg.on=true; dlg.kind=kind; dlg.x=x; dlg.y=y;
+  dlg.sel=0; dlg.hand=0; dlg.ask=false; dlg.typed='';
+  dlg.head=head; dlg.note=''; dlg.body=''; dlg.lines=[]; dlg.asked=new Set();
+  $('#logBox').style.display='none'; $('#dlgWin').style.display='';
+  $('#dlgKind').innerHTML='&lt;'+PANEL_NAME[kind]+'&gt;';
+  renderPanel();
+}
+function closePanel(){
+  if(!dlg.on)return;
+  dlg.on=false; dlg.ask=false; dlg.typed='';
+  $('#dlgWin').style.display='none'; $('#logBox').style.display='';
+  $('#dlgWin').classList.remove('doom');
+}
+const PANEL_NAME={aicore:'Core Channel', keypad:'Security Keypad', reactor:'Fusion Plant'};
+const panelNote=t=>{dlg.note=t; $('#dlgNote').textContent=t};
+/* What the unit is holding of a kind, if it is holding one. A scanner wants
+   a sample and a socket wants a key, and both of them ask this. */
+const heldItem=(kind,variant)=>game.carry.find(it=>it.kind===kind&&
+                                                   (!variant||it.variant===variant));
+
+/* ---------- what the panel is showing ----------
+   One row per thing the block in front of the unit can be made to do. Each
+   says what it is, what state it is in, and nothing else: the row is the
+   whole of the interface, the way a fusebox way is. */
+function panelRows(){
+  const p=propsOf(dlg.x,dlg.y), k=K(dlg.x,dlg.y);
+  if(dlg.kind==='aicore')
+    return ISO.talkOf(MAP,dlg.x,dlg.y).map(w=>({
+      name:w.ask, ask:w,
+      state:dlg.asked.has(w.ask)?{cls:'dead', text:'ASKED'}:{cls:'live', text:'ASK'}}));
+  if(dlg.kind==='keypad')
+    return keypadMeasures(p).map(m=>({
+      name:m.name, measure:m,
+      state:world.cleared.has(k+'/'+m.id)?{cls:'live', text:'CLEARED'}
+                                         :{cls:'bad',  text:m.wants}}));
+  /* the reactor: two sockets and the thing they are there for */
+  const sock=world.sockets.get(k)||[null,null], cut=ISO.KEYS[p.arms];
+  const rows=sock.map((held,i)=>({
+    name:'SOCKET '+(i+1)+(held?' · '+held.name.toUpperCase():''), socket:i,
+    state:held?(held.variant===p.arms?{cls:'live', text:'TURNED'}
+                                     :{cls:'bad',  text:'WRONG CUT'})
+              :{cls:'dead', text:'EMPTY'}}));
+  const ready=sock.every(h=>h&&h.variant===p.arms);
+  rows.push({name:'BEGIN SEQUENCE', begin:true,
+             state:game.doom?{cls:'bad', text:'RUNNING'}
+                  :ready    ?{cls:'live',text:'READY'}
+                            :{cls:'dead',text:'WANTS TWO '+
+                              ((cut?cut.tag:'KEYS')+(cut?'S':''))}});
+  return rows;
+}
+/* The measures a keypad's author turned on, in the order the pad works
+   them. A pad with none of them on is a button with a screen on it. */
+function keypadMeasures(p){
+  const out=[];
+  if(p.retina)out.push({id:'retina', name:'RETINA SCAN',  wants:'WANTS AN EYE',
+                        part:'eye'});
+  if(p.finger)out.push({id:'finger', name:'FINGERPRINT',  wants:'WANTS A HAND',
+                        part:'hand'});
+  if(p.pass)  out.push({id:'pass',   name:'CODE ENTRY',   wants:'WANTS THE CODE'});
+  return out;
+}
+function renderPanel(){
+  if(!dlg.on)return;
+  const rows=panelRows(), p=propsOf(dlg.x,dlg.y);
+  dlg.sel=Math.max(0,Math.min(rows.length-1,dlg.sel));
+  dlg.hand=Math.max(0,Math.min(game.carry.length-1,dlg.hand));
+  $('#dlgWin').classList.toggle('doom',!!game.doom&&dlg.kind==='reactor');
+  $('#dlgHead').textContent=dlg.head+(game.doom&&dlg.kind==='reactor'
+    ? ' · BREACH IN '+Math.max(0,Math.ceil(game.doom.left))+'s' : '');
+  /* the rows themselves, drawn the way a fusebox's ways are: this is the
+     same panel and the operator reads it the same way */
+  const wrap=$('#dlgRows'); wrap.innerHTML='';
+  if(!rows.length){
+    const d=document.createElement('div'); d.className='dim';
+    d.textContent=dlg.kind==='aicore'?'The channel is open and there is nothing behind it.'
+                                     :'Nothing on this panel answers.';
+    wrap.appendChild(d);
+  }
+  rows.forEach((r,i)=>{
+    const row=document.createElement('div');
+    row.className='way'+(i===dlg.sel?' on':'');
+    row.innerHTML='<span class="n">'+(i+1)+'</span>'+
+                  '<span class="c">'+esc(r.name)+'</span>'+
+                  '<span class="s '+r.state.cls+'">'+r.state.text+'</span>';
+    /* a row is clicked as readily as it is selected — except while the pad
+       is asking for a word, when the only thing that submits one is the
+       press itself */
+    row.onclick=()=>{dlg.sel=i; if(!dlg.ask)panelUse(i); else renderPanel()};
+    wrap.appendChild(row);
+  });
+  /* what it last said, and what the deck answered if the asking drove
+     anything — the log is behind this panel and the operator is looking
+     at this */
+  const text=$('#dlgText');
+  if(dlg.ask){
+    text.innerHTML='<p class="dim">'+esc(dlg.body||'The pad wants the code.')+'</p>'+
+      '<div id="dlgPrompt">CODE</div>'+
+      '<div id="dlgField">'+esc('•'.repeat(dlg.typed.length))+'</div>';
+  }else{
+    text.innerHTML=(dlg.body?String(dlg.body).split(/\n+/)
+                      .map(l=>'<p>'+esc(l)+'</p>').join(''):'')+
+      dlg.lines.map(l=>'<p'+(l.cls?' class="'+l.cls+'"':'')+'>'+esc(l.text)+'</p>').join('');
+  }
+  text.style.display=(dlg.ask||dlg.body||dlg.lines.length)?'':'none';
+  /* a socket takes what is in the manipulator, so the manipulator is on the
+     screen — exactly as it is on the fusebox's */
+  const hand=$('#dlgHand');
+  if(dlg.kind==='reactor'&&!game.doom){
+    hand.style.display=''; hand.innerHTML='';
+    const head=document.createElement('div');
+    head.textContent=game.carry.length?'MANIPULATOR:':'MANIPULATOR EMPTY.';
+    hand.appendChild(head);
+    game.carry.forEach((it,i)=>{
+      const b=document.createElement('span');
+      b.className='hand'+(i===dlg.hand?' on':'');
+      b.textContent=it.name+(it.label?' ['+it.label+']':'');
+      b.onclick=()=>{dlg.hand=i; renderPanel()};
+      hand.appendChild(b);
+    });
+  }else hand.style.display='none';
+  $('#dlgNote').textContent=dlg.note;
+  $('#dlgHint').textContent=dlg.ask?'TYPE · [ENTER] TRY · [ESC] BACK'
+    :'[↑]/[↓] SELECT · [E] WORK · [ESC] CLOSE';
+  const on=wrap.querySelector('.way.on');
+  if(on)on.scrollIntoView({block:'nearest'});
+}
+/* [E] on whatever row is selected. Which of the three panels it is decides
+   what that means, and nothing else about the screen changes. */
+function panelUse(i){
+  const rows=panelRows(), r=rows[i];
+  if(dlg.ask)return panelTry();
+  if(!r)return;
+  dlg.sel=i;
+  if(r.ask)   return askCore(r.ask);
+  if(r.measure)return workMeasure(r.measure);
+  if(r.socket!=null)return workSocket(r.socket);
+  if(r.begin) return beginSequence();
+}
+
+/* ---------- the core ----------
+   A terminal hands over a record. A core answers questions, one at a time,
+   in whatever order the operator thinks to ask them — and a question may be
+   wired to blocks the way a control filed on a desktop is, so asking the
+   thing to open a door is how the door gets opened. */
+function openCore(x,y){
+  const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  world.lit.set(K(x,y),performance.now());
+  if(!powered(x,y))return say(deadLine('Core',x,y,tag),'dim');
+  openPanel('aicore',x,y,(p.label||p.title||'CORE INTELLIGENCE').toUpperCase());
+  dlg.body=p.greet||'The channel opens.';
+  const n=ISO.talkOf(MAP,x,y).length;
+  panelNote(n?n+' THREAD'+(n===1?'':'S'):'NOTHING TO ASK');
+  say('Channel open to the core'+tag+'.','b');
+  noise(x,y,ISO.NOISE.press,true);
+  renderPanel();
+}
+function askCore(w){
+  dlg.asked.add(w.ask);
+  dlg.body=w.reply||'It does not answer that.';
+  dlg.lines=[];
+  say('Asked the core: '+w.ask,'dim');
+  /* the asking is the press: whatever the question was wired to answers it
+     the way it answers a button, and what the deck said comes back onto the
+     core's own glass rather than into a log nobody is reading */
+  if((w.targets||[]).length){
+    const lines=driveAll(w.targets,' [CORE]');
+    dlg.lines=lines.length?lines:[{cls:'dim', text:'Nothing on the far end answers.'}];
+    for(const l of dlg.lines)say(l.text,l.cls);
+    const go=dlg.lines.find(l=>l.go);
+    if(go){closePanel();return transit(go.go.fade,()=>travelTo(go.go.deck,go.go.want),go.go.card)}
+  }
+  panelNote('ANSWERED');
+  renderPanel();
+}
+
+/* ---------- the keypad ----------
+   A button with conditions on it. Each measure its author turned on is
+   cleared on its own and stays cleared for the rest of the run, and the last
+   one clearing is what drives whatever the pad is wired to. What a scanner
+   wants is not a word and not a key: it is the crew member, and the crew
+   member is lying in a corridor somewhere on this deck. */
+function useKeypad(x,y){
+  const k=K(x,y), p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  world.lit.set(k,performance.now());
+  noise(x,y,ISO.NOISE.press,true);
+  if(!powered(x,y))return say(deadLine('Keypad',x,y,tag),'dim');
+  /* a pad that has been cleared is an ordinary control from then on: it
+     presses, and it does not ask again */
+  if(world.cleared.has(k))return firePad(x,y,tag);
+  openPanel('keypad',x,y,(p.label||'SECURITY KEYPAD').toUpperCase()+' · '+x+','+y);
+  const left=keypadMeasures(p).filter(m=>!world.cleared.has(k+'/'+m.id)).length;
+  dlg.body=left?'The pad is holding the door. '+left+' measure'+(left===1?'':'s')+
+                ' still to satisfy.'
+               :'Every measure on this pad reads clear.';
+  panelNote(left?left+' OUTSTANDING':'CLEAR');
+  say('Keypad'+tag+' opened. '+(left?left+' measure(s) outstanding.':'All measures clear.'),'dim');
+  if(!left)releasePad(x,y,tag);
+  renderPanel();
+}
+function workMeasure(m){
+  const x=dlg.x, y=dlg.y, k=K(x,y), p=propsOf(x,y);
+  if(world.cleared.has(k+'/'+m.id))return panelNote('Already cleared.');
+  /* the code is typed, and the pad says nothing about how close it was */
+  if(m.id==='pass'){
+    dlg.ask=true; dlg.typed='';
+    dlg.body='The pad wants the code. It does not say how long the code is.';
+    panelNote('WAITING ON THE CODE');
+    return renderPanel();
+  }
+  const it=heldItem('organ',m.part), spec=ISO.PARTS[m.part];
+  if(!it){
+    dlg.body='The '+m.name.toLowerCase()+' finds nothing to read. It wants '+
+             (m.part==='eye'?'an eye held to the lens':'a hand on the plate')+
+             ', and the manipulator is holding neither.';
+    panelNote('NOTHING TO READ');
+    return renderPanel();
+  }
+  clearMeasure(m, 'The '+spec.name.toLowerCase()+' reads. The pad takes it.');
+}
+function panelTry(){
+  const p=propsOf(dlg.x,dlg.y), want=String(p.code||'').trim();
+  if(want&&dlg.typed.trim().toUpperCase()!==want.toUpperCase()){
+    dlg.typed=''; panelNote('REJECTED');
+    dlg.body='REJECTED. The pad does not say how close that was.';
+    return renderPanel();
+  }
+  dlg.ask=false; dlg.typed='';
+  clearMeasure({id:'pass', name:'CODE ENTRY'}, 'The code is accepted.');
+}
+/* One measure satisfied. The pad is released once the last of them is, and
+   from then on it is a control like any other. */
+function clearMeasure(m,line){
+  const x=dlg.x, y=dlg.y, k=K(x,y), p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  world.cleared.add(k+'/'+m.id); world.rev++;
+  say('KEYPAD'+tag.toUpperCase()+' — '+m.name+' CLEARED.','b');
+  const left=keypadMeasures(p).filter(q=>!world.cleared.has(k+'/'+q.id));
+  dlg.body=line+(left.length?' '+left.length+' measure'+(left.length===1?'':'s')+' to go.'
+                            :'');
+  panelNote(left.length?left.length+' OUTSTANDING':'CLEARED');
+  if(!left.length)releasePad(x,y,tag);
+  renderPanel();
+}
+function releasePad(x,y,tag){
+  const k=K(x,y);
+  if(!world.cleared.has(k)){
+    world.cleared.add(k); world.rev++;
+    say('KEYPAD'+tag.toUpperCase()+' RELEASED. The lamp on it goes green.','b');
+  }
+  firePad(x,y,tag);
+}
+/* A released pad drives its lines exactly as a button on a wall does. */
+function firePad(x,y,tag){
+  const targets=ISO.signalTargets(MAP,x,y);
+  if(!targets.length){
+    const line='Keypad'+tag+' reads clear, and no line runs from it.';
+    dlg.lines=[{cls:'dim', text:line}]; say(line,'dim');
+    return renderPanel();
+  }
+  const lines=driveAll(targets,tag);
+  dlg.lines=lines.length?lines:[{cls:'dim', text:'Keypad'+tag+' pressed. Nothing on the far end answers.'}];
+  for(const l of dlg.lines)say(l.text,l.cls);
+  const go=dlg.lines.find(l=>l.go);
+  if(go){closePanel();return transit(go.go.fade,()=>travelTo(go.go.deck,go.go.want),go.go.card)}
+  renderPanel();
+}
+
+/* ---------- the reactor ----------
+   Twenty-seven tiles of plant, and the only block on the ship that answers
+   nothing at all: no control reaches it, no circuit wakes it, and there is
+   no [E] on it worth anything without the operator key. What is behind the
+   face is two sockets and a count. Two sacrifice keys go in, neither of them
+   comes out, and from the moment the second is turned the deck has as long
+   as its author gave it. */
+function useReactor(x,y){
+  const k=K(x,y), p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  world.lit.set(k,performance.now());
+  if(!powered(x,y))return say(deadLine('Fusion plant',x,y,tag),'dim');
+  const head=(p.label||'FUSION PLANT').toUpperCase();
+  if(!world.faces.has(k)){
+    const want=ISO.KEYS[p.opens], held=heldItem('key',p.opens);
+    if(!held)
+      return say('Fusion plant'+tag+'. The operator face is shut. It takes the '+
+                 (want?want.name.toLowerCase():'key it was cut for')+
+                 ', and the manipulator holds nothing that turns it.','dim');
+    world.faces.add(k); world.rev++;
+    noise(x,y,ISO.NOISE.gear,true);
+    say('The '+held.name.toLowerCase()+' turns. The operator face comes open on two sockets '+
+        'and a count.','b');
+  }
+  openPanel('reactor',x,y,head);
+  const sock=world.sockets.get(k)||[null,null];
+  dlg.body=game.doom
+    ? 'The sequence is running. Nothing on this deck stops it now.'
+    : 'Two sockets, and neither of them gives a key back. The count begins when '+
+      'the second one is turned.';
+  panelNote(game.doom?'SEQUENCE RUNNING'
+                     :sock.filter(Boolean).length+'/2 SOCKETS');
+  renderPanel();
+}
+/* Seat what is selected in the manipulator, or pull back out what is in
+   there already — one press does whichever the socket is asking for, the way
+   a fusebox way does. Once the count is running nothing comes out at all. */
+function workSocket(i){
+  const x=dlg.x, y=dlg.y, k=K(x,y), p=propsOf(x,y);
+  const sock=world.sockets.get(k);
+  if(!sock)return;
+  if(game.doom)return panelNote('The sockets are turned. Nothing comes out now.');
+  const cut=ISO.KEYS[p.arms];
+  if(sock[i]){
+    if(game.carry.length>=ISO.CARRY)return panelNote('Manipulator full.');
+    game.carry.push(sock[i]); sock[i]=null;
+    say('Pulled the '+game.carry[game.carry.length-1].name.toLowerCase()+
+        ' back out of socket '+(i+1)+'.','dim');
+    panelNote('PULLED');
+  }else{
+    const it=game.carry[dlg.hand];
+    if(!it)return panelNote('Nothing in the manipulator to turn in it.');
+    if(it.kind!=='key')return panelNote(it.name+' is not a key.');
+    game.carry.splice(dlg.hand,1); sock[i]=it;
+    const ok=it.variant===p.arms;
+    say('Turned the '+it.name.toLowerCase()+' into socket '+(i+1)+'. '+
+        (ok?'It seats and locks.':'It seats, and the socket does not read it.'), ok?'b':'dim');
+    panelNote(ok?'TURNED':'WRONG CUT — it takes the '+
+                 (cut?cut.name.toLowerCase():'key the plant was cut for'));
+  }
+  noise(x,y,ISO.NOISE.gear,true);
+  world.rev++; syncCarry(); renderPanel();
+}
+const DOOM_PULSE=4;                        // seconds between one turn of the klaxon and the next
+function beginSequence(){
+  const x=dlg.x, y=dlg.y, k=K(x,y), p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  if(game.doom)return panelNote('It is already running.');
+  const sock=world.sockets.get(k)||[];
+  if(!sock.length||!sock.every(h=>h&&h.variant===p.arms))
+    return panelNote('Both sockets have to be turned before the count will take.');
+  game.doom={left:Math.max(1,p.count|0)||120, pulse:0, deck:MAP.id, x, y,
+             card:String(p.card||''), sub:String(p.cardsub||''), tag};
+  world.rev++;
+  say('SELF-DESTRUCT SEQUENCE ACCEPTED'+tag.toUpperCase()+'.','alert');
+  say('CORE BREACH IN '+Math.ceil(game.doom.left)+' SECONDS. THE SOCKETS DO NOT TURN BACK.','alert');
+  dlg.body='The sequence is running. Nothing on this deck stops it now.';
+  panelNote('SEQUENCE RUNNING');
+  refreshObjective(); renderPanel();
+}
+/* The count, and the klaxon that goes with it. It is the loudest thing on a
+   deck and it goes on being it every few seconds, so a sequence begun is a
+   deck that every blind thing on it is walking towards — and the operator is
+   walking the other way. */
+function updateDoom(dt){
+  const d=game.doom;
+  if(!d)return;
+  const was=Math.ceil(d.left);
+  d.left-=dt; d.pulse-=dt;
+  if(d.pulse<=0){
+    d.pulse=DOOM_PULSE;
+    if(d.deck===MAP.id)noise(d.x,d.y,ISO.NOISE.alarm,false);
+  }
+  const now=Math.ceil(d.left);
+  if(now!==was){
+    refreshObjective();
+    if(dlg.on&&dlg.kind==='reactor')renderPanel();
+    if(now>0&&(now%30===0||now<=5))
+      say('CORE BREACH IN '+now+'.',now<=5?'alert':'dim');
+  }
+  if(d.left>0)return;
+  const card=String(d.card||'').trim()?{title:d.card, sub:d.sub||''}:null;
+  game.doom=null; closePanel();
+  const end=()=>{
+    world.rev++;
+    die('THE CORE LETS GO. There is no part of this ship the light does not reach.');
+  };
+  if(card)fadeThrough(end,card); else end();
+}
+/* Whether the plant standing here is the one counting, so it is drawn the way
+   a generator that is turning is drawn: end to end, and in red. */
+const doomAt=(x,y)=>!!game.doom&&game.doom.deck===MAP.id&&game.doom.x===x&&game.doom.y===y;
+
+/* ---------- what is left on a body ----------
+   A dead body is read on the way past. A corpse is worked: [E] takes the
+   next thing still on it — a hand, then an eye — and what comes off is a
+   small object carried in the manipulator exactly as a fuse is. Nothing on
+   the ship reads one but a scanner, and there is a scanner on a door
+   somewhere on this deck. */
+function useScavenge(x,y){
+  const k=K(x,y), p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  world.lit.set(k,performance.now());
+  const left=['hand','eye'].filter(q=>p[q]&&!world.parts.has(k+'/'+q));
+  if(!left.length)
+    return say('Crew remains'+tag+'. Nothing left on it a scanner would read.','dim');
+  if(game.carry.length>=ISO.CARRY)
+    return say('Manipulator full. It holds '+ISO.CARRY+' objects and no more.','dim');
+  const part=left[0], spec=ISO.PARTS[part];
+  world.parts.add(k+'/'+part); world.rev++;
+  game.carry.push({kind:'organ', variant:part, tag:spec.tag, name:spec.name,
+                   label:p.label||'', tile:ISO.ITEMS.organ.tile});
+  noise(x,y,ISO.NOISE.lift,true);
+  say('Taken from the remains'+tag+': '+spec.name.toLowerCase()+'. '+
+      (left.length>1?'There is still an eye in it.'
+                    :'There is nothing else on it worth taking.'),'dim');
+  syncCarry();
+}
+/* A body with everything off it reads as one, the way a spent clip does. */
+function stripped(x,y){
+  const p=propsOf(x,y), k=K(x,y);
+  return ['hand','eye'].every(q=>!p[q]||world.parts.has(k+'/'+q));
 }
 
 function callTram(x,y,tag){
@@ -3140,7 +3742,7 @@ function grabUnit(f){
   if(!trip){f.rest=.9;f.wary=3;return}
   game.held=f;game.struggle=0;
   f.mood='carry';f.path=trip;f.rest=0;f.wary=0;f.carried=0;
-  cancelJump();closeTerminal();closeFusebox();closeDesk();
+  cancelJump();closeTerminal();closeFusebox();closeDesk();closePanel();
   const d=foeDef(f);
   say(d.grabs||'THE UNIT IS OFF THE DECK.','alert');
   say('The movement keys work against the grip now. Enough of them and it lets go.','dim');
@@ -3755,7 +4357,7 @@ function deskPress(){
 function die(reason){
   if(game.dead)return;
   game.dead=true;game.active=false;game.sink=0;game.hide=null;
-  closeTerminal();closeFusebox();closeDesk();cancelJump();
+  closeTerminal();closeFusebox();closeDesk();closePanel();cancelJump();
   letGo(game.held);
   say(reason,'alert');
   say('CHASSIS UNRECOVERABLE. SIGNAL LOST.','alert');
@@ -3776,6 +4378,9 @@ function respawn(){
      this deck and on every deck behind it — what the unit has been fitted
      with does not */
   decks.clear();
+  /* a count is the deck's, not the chassis's: every deck goes back to how it
+     started, so the sequence was never begun */
+  game.doom=null;
   buildWorld();
   /* the deck is rebuilt around the unit, clips and all — so anything it was
      carrying is back where it was lifted from rather than held twice */
@@ -3888,7 +4493,7 @@ function drawFeed(now,dt){
       ISO.drawCell(fx,MAP,x,y,px,py,tile,D,
                    {open:world.open.has(K(x,y)), locked:propsOf(x,y).locked,
                     spent:usedUp(ax,ay,tileDef(ax,ay)), over:below,
-                    run:world.running.has(K(ax,ay)),
+                    run:world.running.has(K(ax,ay))||doomAt(ax,ay),
                     inside:!!hd&&ax===hd.ax&&ay===hd.ay});
     }
     /* the flood, drawn over whatever it has run across. Water painted on the
@@ -3896,6 +4501,12 @@ function drawFeed(now,dt){
     if(wetAt(x,y)&&!tileDef(x,y).wet){
       fx.globalAlpha=(dark?a*.42:a)*.8;
       ISO.drawTile(fx,'1',px,py,tile,D);
+    }
+    /* and fuel that has caught, drawn the same way: the spill is still what
+       is on the plating, and what is on top of it is fire */
+    if(world.ablaze.has(K(x,y))){
+      fx.globalAlpha=(dark?a*.42:a)*.9;
+      ISO.drawTile(fx,'2',px,py,tile,D);
     }
     fx.globalAlpha=a;
     if(dark&&tile>=14){
@@ -4283,6 +4894,38 @@ addEventListener('keydown',e=>{
       if(dir==='right')return deskUse();
       return;
     }
+    /* while the panel is up the deck keys belong to it — and while it is
+       asking for a code they are letters rather than commands, exactly as
+       they are on a sealed file */
+    if(dlg.on){
+      e.preventDefault();
+      if(dlg.ask){
+        if(e.repeat&&e.code!=='Backspace')return;
+        if(e.code==='Enter'||e.code==='NumpadEnter')return panelTry();
+        if(e.code==='Escape'){dlg.ask=false;dlg.typed='';panelNote('');return renderPanel()}
+        if(e.code==='Backspace'){dlg.typed=dlg.typed.slice(0,-1);return renderPanel()}
+        if(e.key&&e.key.length===1&&dlg.typed.length<32){dlg.typed+=e.key;return renderPanel()}
+        return;
+      }
+      if(e.repeat)return;
+      if(e.code==='Escape')return closePanel();
+      if(e.code==='KeyE'||e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')
+        return panelUse(dlg.sel);
+      const rows=panelRows().length;
+      const n='123456789'.indexOf(e.key);
+      if(n>=0&&n<rows){dlg.sel=n;return panelUse(n)}
+      if(dir==='up'||dir==='down'){
+        if(rows)dlg.sel=(dlg.sel+(dir==='up'?rows-1:1))%rows;
+        return renderPanel();
+      }
+      /* the manipulator, for the panel that takes something out of it */
+      if(dir==='left'||dir==='right'){
+        const h=game.carry.length;
+        if(h)dlg.hand=(dlg.hand+(dir==='left'?h-1:1))%h;
+        return renderPanel();
+      }
+      return;
+    }
     /* while the fusebox is up the deck keys belong to it */
     if(fuse.on){
       e.preventDefault();
@@ -4352,6 +4995,7 @@ function loop(now){
   if((state==='menu'||state==='dive')&&!usingVideo)drawMenu(now,dt);
   if(state==='console'){
     updateTrams(dt);updateSlides(dt);updateFlood(dt);updateAlarm(dt);updateGens(dt);
+    updateSpills(dt);updateDoom(dt);
     checkFooting();updateFoes(dt);updateLamp(dt);
     /* a key held down walks the unit; it does not work against a grip. The
        struggle counts presses, so a drone is shaken off by an operator doing

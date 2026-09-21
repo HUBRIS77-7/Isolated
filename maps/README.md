@@ -170,6 +170,15 @@ ISO.register({
 | `ƒ`  | Fuel canister | yes | Small enough to carry off. `[E]` lifts it, `[Q]` sets it down. What a generator takes |
 | `ĝ`  | Generator | no   | Six tiles by three; turns with its `dir`. `[E]` empties a canister into it and it runs — and goes on making a noise about it |
 | `ü`  | Distribution panel | no | Two tiles by two; turns with its `dir`. Everything a fusebox is, in the size a compartment that mattered got |
+| `ĉ`  | AI Core   | no   | Fourteen tiles by twelve; turns with its `dir`. `[E]` opens a channel and it answers what it was given to answer — and a question may be wired to blocks |
+| `ř`  | Fusion Reactor | no | Twenty-seven tiles by six; turns with its `dir`. `[E]` tries the operator key against the face; two sacrifice keys turned into its sockets begin the count |
+| `ķ`  | Keypad    | no   | `[E]` works it. A code, a fingerprint and a retina — any of them, all of them, or none — and clearing the last one drives whatever it is wired to |
+| `ÿ`  | Corpse    | yes  | Three tiles long; turns with its `dir`. Crossed slowly, and `[E]` takes the hand and then the eye off it |
+| `ø`  | Tissue sample | yes | Small enough to carry off. `[E]` lifts it, `[Q]` sets it down. The only thing a scanner reads |
+| `ş`  | Fuel spill | yes | Touching copies become one spill. Ground until something sets light to it, and a fire that works across the whole of itself afterwards. Water washes it away |
+| `ƀ`  | Barrel    | no   | Decoration                                   |
+| `ṽ`  | Vacuum    | yes  | Open space, and the chassis is rated for it. Nothing done out here makes a sound, and no flood crosses it |
+| `ï`  | Astro-Grade Window | no | Blocks like a wall; the stars read clear through it. Touching copies become one port — as big as you paint it |
 
 Every printable character on a keyboard is spoken for, so the blocks added
 after them are keyed to letters that carry an accent — `ð` for debris where
@@ -284,6 +293,21 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Security drone, Block | `wake` | Squares of route at which it takes an interest |
 | Security drone, Block | `range` | Squares from its mark it will wander. `0` — the default — turns it loose on the whole deck |
 | Security drone, Block | `label` | Name shown in the message log                |
+| AI Core  | `dir`          | Which way it runs, so which of its hundred and sixty-eight squares it covers |
+| AI Core  | `title`, `greet` | What the channel is called, and what it says when it opens |
+| AI Core  | `talk`         | What it will answer to — one row per question, each with its reply and the blocks the asking drives |
+| Fusion Reactor | `dir`    | Which way it runs                              |
+| Fusion Reactor | `opens`  | The key the operator face takes                |
+| Fusion Reactor | `arms`   | The key its two sockets take. Both of them, and neither comes out again |
+| Fusion Reactor | `count`  | Seconds between the second socket turning and the breach |
+| Fusion Reactor | `card`, `cardsub` | The words the count ends on           |
+| Keypad   | `pass`, `code` | Whether it asks for a word, and which word     |
+| Keypad   | `finger`, `retina` | Whether it wants a hand on the plate, and an eye at the lens |
+| Keypad   | `targets`      | The blocks it drives once every measure it carries reads clear |
+| Corpse   | `dir`          | Which way it lies                              |
+| Corpse   | `hand`, `eye`  | What is still on it to take                    |
+| Tissue sample | `part`    | Which it is — a hand or an eye                 |
+| AI Core, Fusion Reactor, Keypad, Corpse, Tissue sample, Fuel spill, Barrel, Astro-Grade Window | `label` | Stencilled name |
 | *anything powered* | `circuit` | The circuit it waits on. Blank — the default — means it is live from the start |
 
 The palette is filed under headings — **Ground**, **Open land**, **Structure**,
@@ -487,6 +511,12 @@ A **Fuel canister** (`ƒ`) is the third, and the plain one: it comes in no
 ratings and no cuts, because every canister fits every generator. It is lifted,
 carried and set down like the other two, and what it is for is
 **The supply behind the box** above.
+
+A **Tissue sample** (`ø`) is the fourth, and the one the ship never issued. It
+comes in two kinds — a hand and an eye — and what reads it is neither a circuit
+nor a lock but a **Keypad** (`ķ`) with a scanner turned on. An author may paint
+one straight onto a deck, or leave it on the **Corpse** (`ÿ`) it is still
+attached to and let the unit take it off. See **What a scanner wants** below.
 
 To add another kind of small object, add one entry to `ITEMS` in `tiles.js` and
 one tile that says it holds that kind — the lifting, the carrying, the setting
@@ -1574,6 +1604,165 @@ Nothing else in the family is new behaviour, and that is deliberate.
   sight crosses them. Which is worth knowing where there is a turret about:
   cover that reads clear is cover the gun fires over.
 
+## The plant the command deck was built round
+
+Everything else in the family is furniture beside these three. A deck with a
+**core** on it is a deck the ship was thinking with; a deck with a **reactor**
+on it is a deck that can be taken off the ship entirely; and the **keypad** is
+what stands between the two of them. They are drawn at the size that actually
+means — fourteen tiles by twelve, and twenty-seven by six — so an operator
+walks the length of one before it has read what is stencilled on it, which is
+the whole reason for building them that big.
+
+All three open a **panel**: it takes the message log's place in the right-hand
+column, exactly the way the fusebox screen does, because it is the same kind of
+thing. One row per thing the block can be made to do, `[↑]`/`[↓]` to choose,
+`[E]` or `[ENTER]` to work the row, the number keys to reach one directly, and
+`[ESC]` to close and give the log back. Everything that happens in there is
+written to the log as well, so closing it leaves a record rather than a gap.
+A row can be clicked as readily as selected.
+
+### Fourteen by twelve of it — the AI Core
+
+A terminal hands over a record. A **Core** (`ĉ`) answers questions, one at a
+time, in whatever order the operator thinks to ask them. `[E]` from any square
+of the body opens the channel; `greet` is what it says as it opens, and `talk`
+is the list of things it will answer to — one row, one question:
+
+| Field     | Means                                                       |
+|-----------|-------------------------------------------------------------|
+| `ask`     | The line the operator puts to it. A row with nothing asked is not a question |
+| `reply`   | What comes back                                             |
+| `targets` | The blocks the asking drives — any number                   |
+
+That last one is the whole reason a core is not a console with better prose.
+**Asking is a press.** A question wired to a bulkhead opens the bulkhead, in
+the same driver a button on a wall uses and with the same one line per thing
+that answered — written onto the core's own glass, under the reply, because the
+log is behind the panel and the operator is looking at this. So a core is a
+control the unit has to think of the right thing to say to, and the survey
+counts it as one: a bulkhead nothing lifts but a core is a bulkhead with a
+control.
+
+It runs on power like any other console. A core on a dead circuit is fourteen
+tiles by twelve of dark lattice, and the channel never opens at all.
+
+### Twenty-seven by six of it — the Fusion Reactor
+
+A **Fusion Reactor** (`ř`) is the one block on the ship that answers nothing.
+No control reaches it, no circuit wakes it — it draws power like everything
+else, but nothing *drives* it — and there is no `[E]` on it worth anything
+without a key. What is behind the face is two sockets and a count.
+
+1. **The face.** It is shut, and it opens to the key named in `opens` — the
+   **Operator key** by default. `[E]` from any square of the twenty-seven tries
+   whatever is in the manipulator against it, exactly as a locked door does,
+   and a face that has been opened stays open.
+2. **The sockets.** Two of them, and they take the key named in `arms` — the
+   **Sacrifice key**. They are worked the way a fusebox way is: choose what is
+   in the manipulator with `[←]`/`[→]`, `[ENTER]` turns it in, and `[ENTER]`
+   again pulls it back out while there is still time. A key of the wrong cut
+   seats and reads nothing, and the panel says so rather than refusing it.
+3. **The count.** With both sockets turned the last row reads `READY`. Press
+   it, and the deck has `count` seconds. **Nothing stops it after that** — the
+   sockets do not turn back, the keys do not come out, and a car to another
+   deck only changes where the unit is standing when it happens.
+
+What a running sequence costs is the deck. It takes the objective line for
+itself, the plant draws in red from end to end the way a generator turning
+draws in amber, and every few seconds it puts an **alarm** out of the reactor's
+own square — sixty squares, the loudest noise in the table. A reactor begun on
+a deck with a ravager on it is a reactor that has told the ravager exactly
+where to stand.
+
+When the count runs out the run ends, and `card`/`cardsub` are the words it
+ends on — held on the black the way a chapter's card is. `[R]` puts the whole
+record back, sequence included: a count is the deck's, not the chassis's.
+
+Two sacrifice keys is not a setting, it is what the sockets are, so the survey
+asks the record for two of them and says so when it finds one.
+
+### The measures on the door — the Keypad
+
+A **Keypad** (`ķ`) is a button with conditions on it. Its author turns on as
+many of three measures as the door deserves, and the pad holds until every one
+of them reads clear:
+
+| Measure   | Cleared by                                                  |
+|-----------|-------------------------------------------------------------|
+| `pass`    | The word in `code`, typed. A wrong word is rejected without a hint of how close it was |
+| `finger`  | A **hand** in the manipulator, held to the plate            |
+| `retina`  | An **eye** in the manipulator, held to the lens             |
+
+Each is cleared on its own and **stays cleared for the rest of the run**, so a
+pad walked away from halfway is a pad that only wants what is left of it. The
+last one clearing releases the pad: it drives its `targets` the way a button
+does, its lamp goes green on the feed, and from then on `[E]` on it is an
+ordinary press with nothing to satisfy.
+
+A scanner is not a lock and not a circuit. What it wants is the crew member,
+and the crew member is lying in a corridor two rooms away — which is the errand
+the pad creates, and the reason the two blocks below exist.
+
+## What a scanner wants
+
+A **Corpse** (`ÿ`) is three tiles of crew, walked over slowly the way a dead
+body is, and worked rather than read. `[E]` from any square of it takes the
+next thing still on it — the hand, then the eye — and each comes off as a
+**Tissue sample** (`ø`) in the manipulator, carried and set down exactly as a
+fuse is. `hand` and `eye` say what is still on a copy, so an author can place
+one that has already been got at; a body with nothing left on it draws as one.
+
+Nothing else on the ship reads a sample. It opens no door by itself, seats in
+no box, and is worth precisely one thing: a keypad with a scanner turned on.
+The survey checks the pair the way it checks a lock and its key — a pad that
+reads a retina with no eye anywhere in the record, on a deck or still in a
+body, is a pad that never opens, and it says so.
+
+## Fuel, and what happens to a deck with fire on it
+
+A **Fuel spill** (`ş`) is ordinary ground. It is slower to cross than plating
+and louder, it is as big as it is painted, and for as long as nothing is alight
+near it that is the whole of what it does.
+
+Then something is alight near it. A square of fuel beside a fire — or beside a
+square of fuel that has already gone up — holds out for about half a second and
+then **catches**, and the fire works its way across the whole of the spill a
+square at a time, the way the flood works its way across a deck. A burning
+square is as solid as a fire: nothing crosses one, not the unit and not
+anything walking about. Each burns for a few seconds and leaves scorched
+plating, which is ordinary ground again — so a spill is a wall of flame that
+comes, crosses a room and goes, and the operator's business is being somewhere
+else while it does. **Standing in fuel when it catches ends the run.**
+
+The other end of it is the water. A flood reaching a spill washes the fuel off
+the plating before it ever catches, and a flood reaching one that is already
+alight puts it out the way it puts out a fire. So a burst line and a spill on
+the same deck are an author asking which of the two gets where it is going
+first — and a **Barrel** (`ƀ`) at the head of the spill is what it came out of.
+A drum stops the unit, holds whatever is in it, and does nothing else.
+
+## The hull line
+
+**Vacuum** (`ṽ`) is not a wall at the end of a deck. It is ground: the chassis
+is rated for it, it is crossed at walking pace, and the optics read across it
+exactly as they read across plating. Two things are different out there, and
+both of them are the absence of air.
+
+* **Nothing done on it makes a sound.** A step, a control struck, a canister
+  set down — a noise made on a vacuum square is not made at all, so it never
+  reaches a ravager and it never draws anything. It is the only ground on the
+  ship that costs an operator nothing to cross, and on a deck with something
+  listening on it that is not a detail. It is the route.
+* **No flood crosses it.** Water put onto a square with no atmosphere over it
+  is water that is gone, so a burst line stops at the hull line rather than
+  running out of it.
+
+An **Astro-Grade Window** (`ï`) is what holds the rest of it out: laminated,
+rated for the pressure it is standing against, one body as big as it is
+painted. It stops the unit and it stops nothing else — sight crosses it, which
+is the only reason to build one instead of a wall.
+
 ## The offices
 
 Three blocks and a colour, for the decks between the plating and the command
@@ -1692,6 +1881,10 @@ exactly as it routes round a bulkhead, so a fire is a wall an author can put
 across a room without building one. A jump clears it the way a jump clears a
 pit: sailed over, never landed on.
 
+The other thing a fire does is set light to **fuel** — see **Fuel, and what
+happens to a deck with fire on it** — which is the one way a fire on this ship
+moves.
+
 The only thing that answers a fire is **water**. Where the flood reaches one it
 goes out, loudly, and what is left is wet ash — ordinary ground the unit walks
 over from then on. Which makes the two of them a pair: a fire is a door, and
@@ -1730,6 +1923,7 @@ buried in the driver that does it:
 
 | Squares | What makes it |
 |---------|---------------|
+| 0       | Anything at all done in vacuum — there is no air out there to carry it |
 | 2       | A step on carpet |
 | 4       | A step on plating — the quiet one, on purpose |
 | 6       | Something small lifted off the deck, or set down on it |
@@ -1744,8 +1938,8 @@ buried in the driver that does it:
 | 60      | A laser alarm, which is the whole deck and a good way past the edges of it |
 
 A tile says how loud a step onto it is with `noisy`, so what a deck sounds like
-underfoot is a property of what it is built out of. Carpet is the quiet one and
-water is the loud one, and everything between them is a decision about where
+underfoot is a property of what it is built out of. Vacuum is silent outright —
+see **The hull line** — carpet is the quiet one and water is the loud one, and everything between them is a decision about where
 the route through a room ought to go. Wreckage is how that decision is drawn:
 **Fractured floor** (`'`) is ground that costs nothing to cross and tells the
 deck you crossed it, a **Debris field** (`ð`) is slower and louder again, a
@@ -1854,7 +2048,14 @@ have, a breach with nothing registered under it or nothing stencilled to come
 down at, a forklift, desk or body with nowhere to lie, a contact bigger
 than a square whose mark has not the room to stand it up in, a laser alarm no
 control disarms, a broken pipe with no reach to flood with, and a hiding place
-with no ground beside it to work `[E]` from. On power it flags a fusebox that feeds nothing, a way stencilled with no
+with no ground beside it to work `[E]` from. On the command plant it flags a
+core with nothing to answer or nothing to open on, a question wired to a square
+that answers no signal, a reactor whose operator key is on no deck or whose
+sockets want two keys the record holds fewer than two of, a reactor that opens
+to the same cut its sockets take, a keypad that signals nothing or has every
+measure turned off, a keypad that asks for a code with no code set, a scanner
+with no hand or eye anywhere in the record to read — in a body or on a deck —
+and a corpse with nothing left on it to take. On power it flags a fusebox that feeds nothing, a way stencilled with no
 circuit, a way that feeds a circuit nothing on the deck is on, a way whose fuse
 is placed on no deck at all, and a block waiting on a circuit no box on its
 deck feeds — the one that would otherwise look exactly like a block that
