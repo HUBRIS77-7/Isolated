@@ -29,7 +29,7 @@ ISO.register({
     "12,11": {"dir":"right","open":false,"locked":false,"circuit":""},
     "13,11": {"dir":"right","open":false,"locked":false,"circuit":""},
     "14,11": {"dir":"right","open":false,"locked":false,"circuit":""},
-    "5,27": {"dest":"CommandMidTower","arrive":"","fade":true,"card":"","cardsub":"","label":""}
+    "5,27": {"dest":"CommandMidTower","arrive":"","fade":true,"card":"CHAPTER ONE COMPLETE","cardsub":"BEGIN CHAPTER TWO?","label":""}
   },
   "rows": [
     "##########I#########",
