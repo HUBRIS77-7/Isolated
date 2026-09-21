@@ -170,7 +170,7 @@ ISO.register({
 | `ƒ`  | Fuel canister | yes | Small enough to carry off. `[E]` lifts it, `[Q]` sets it down. What a generator takes |
 | `ĝ`  | Generator | no   | Six tiles by three; turns with its `dir`. `[E]` empties a canister into it and it runs — and goes on making a noise about it |
 | `ü`  | Distribution panel | no | Two tiles by two; turns with its `dir`. Everything a fusebox is, in the size a compartment that mattered got |
-| `ĉ`  | AI Core   | no   | Fourteen tiles by twelve; turns with its `dir`. `[E]` opens a channel and it answers what it was given to answer — and a question may be wired to blocks |
+| `ĉ`  | AI Core   | no   | Fourteen tiles by twelve; turns with its `dir`. `[E]` opens a channel and it answers what it was given to answer — a question may be wired to blocks, and an answer may open the next question |
 | `ř`  | Fusion Reactor | no | Twenty-seven tiles by six; turns with its `dir`. `[E]` tries the operator key against the face; two sacrifice keys turned into its sockets begin the count |
 | `ķ`  | Keypad    | no   | `[E]` works it. A code, a fingerprint and a retina — any of them, all of them, or none — and clearing the last one drives whatever it is wired to |
 | `ÿ`  | Corpse    | yes  | Three tiles long; turns with its `dir`. Crossed slowly, and `[E]` takes the hand and then the eye off it |
@@ -295,7 +295,7 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Security drone, Block | `label` | Name shown in the message log                |
 | AI Core  | `dir`          | Which way it runs, so which of its hundred and sixty-eight squares it covers |
 | AI Core  | `title`, `greet` | What the channel is called, and what it says when it opens |
-| AI Core  | `talk`         | What it will answer to — one row per question, each with its reply and the blocks the asking drives |
+| AI Core  | `talk`         | What it will answer to — one row per question, each with its reply, the question that opens it, and the blocks the asking drives |
 | Fusion Reactor | `dir`    | Which way it runs                              |
 | Fusion Reactor | `opens`  | The key the operator face takes                |
 | Fusion Reactor | `arms`   | The key its two sockets take. Both of them, and neither comes out again |
@@ -1632,10 +1632,30 @@ is the list of things it will answer to — one row, one question:
 | Field     | Means                                                       |
 |-----------|-------------------------------------------------------------|
 | `ask`     | The line the operator puts to it. A row with nothing asked is not a question |
+| `after`   | The question that opens this one. Empty — the usual — and the row is on the list from the moment the channel opens |
 | `reply`   | What comes back                                             |
 | `targets` | The blocks the asking drives — any number                   |
 
-That last one is the whole reason a core is not a console with better prose.
+**An answer can open another thread.** A row with a question written into its
+`after` is not on the list at all until that question has been put to the core:
+ask it, the core answers, and the row appears under the answer with one line
+saying so — *The channel opens a thread: …* — in the log as well as on the
+glass. Chain them and the channel is a conversation rather than a menu: one
+question opens the next, and the operator arrives at the last of them by having
+worked out the first. Two rows may name the same opener, in which case one
+answer puts both on the list at once.
+
+A thread is named by what is asked, the way a circuit is named by what is
+stencilled on it: `after` holds the other row's `ask`, word for word, and the
+two are matched without regard to case or the spaces round them.
+
+What has been asked is **deck state**, not channel state. A core does not
+forget: close the channel, walk the deck, come back, and the threads that were
+opened are still open and the questions already put to it still read `ASKED`.
+It is put away with the deck and comes back with it, the way a keypad's cleared
+measures are, and a reset is what clears it.
+
+`targets` is the whole reason a core is not a console with better prose.
 **Asking is a press.** A question wired to a bulkhead opens the bulkhead, in
 the same driver a button on a wall uses and with the same one line per thing
 that answered — written onto the core's own glass, under the reply, because the
@@ -2050,7 +2070,10 @@ than a square whose mark has not the room to stand it up in, a laser alarm no
 control disarms, a broken pipe with no reach to flood with, and a hiding place
 with no ground beside it to work `[E]` from. On the command plant it flags a
 core with nothing to answer or nothing to open on, a question wired to a square
-that answers no signal, a reactor whose operator key is on no deck or whose
+that answers no signal, a question that opens after one the core will not
+answer, a pair of questions that wait on each other for ever, a core every
+question of which waits on another — which is a channel that opens on an empty
+list — a reactor whose operator key is on no deck or whose
 sockets want two keys the record holds fewer than two of, a reactor that opens
 to the same cut its sockets take, a keypad that signals nothing or has every
 measure turned off, a keypad that asks for a code with no code set, a scanner
