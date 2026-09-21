@@ -1874,9 +1874,8 @@ const DIN_KEEP=16;                         // and how many are worth keeping at 
 function noise(x,y,loud,mine){
   if(!loud||!ISO.inside(MAP,x,y))return;
   /* sound is the one thing on a deck structure does not stop. What does stop
-     it is there being nothing for it to travel through: a noise made out on
-     the hull line is a noise nothing on the deck ever hears, which is the
-     whole of what vacuum is worth to an operator */
+     it is there being nothing for it to travel through: a noise made on a
+     square with no air over it is a noise nothing on the deck ever hears */
   if(bodyDef(x,y).silent)return;
   const n=performance.now();
   if(mine)game.noised=n;
@@ -3426,12 +3425,14 @@ function foeFlow(f){
   return d;
 }
 /* ---------- what mood it is in ----------
-   Three, and the whole of a contact's behaviour hangs off which one it is in.
+   Four, and the whole of a contact's behaviour hangs off which one it is in.
    `roam` is the one it starts in and comes back to: it has nothing to do with
    the unit at all, and does not wait on it — it goes looking. `follow` is
    once the unit is inside its range. `scatter` is the one a shy thing drops
    into when the unit walks up on it, and it runs until it has the ground back
-   that it wanted. */
+   that it wanted. `retreat` is the one something that lunged drops into after
+   a plate has turned it: it wants its own mark rather than distance, and it
+   walks the whole way back to it before it is interested in the unit again. */
 const SCATTER_FOR=2.4;                     // seconds a thing that breaks keeps running
 const WARY_FOR=6;                          // and how long afterwards it will not come back in
 const TRAIL_HOLD=3.2;                      // seconds a stopped unit still reads as a trail
@@ -3456,6 +3457,25 @@ function foeMood(f,dt){
     f.flee-=dt;
     /* far enough, or run out of fright */
     if(f.flee<=0||here===undefined||here>=(d.calm||8)){
+      f.mood=(here!==undefined&&here<=f.wake)?'follow':'roam';
+      f.path=null;
+    }
+    return;
+  }
+  /* ---------- driven off ----------
+     Turned on the plate, something that lunges does not simply stand off a
+     moment and come straight back in. It breaks contact and walks the whole
+     way back to the square it was painted on, and it is only its own ground
+     again once it is standing on it. That is what the second the plate cost
+     actually buys: not a pause, but the room the unit needed — and it is
+     why an operator who reads the tell gets to cross the deck rather than
+     merely to survive one lunge on it. It gives the ground up after `back`
+     seconds of walking whatever happens, because a contact that cannot find
+     its way home is not a contact that stands still for the rest of the run. */
+  if(f.mood==='retreat'){
+    f.flee-=dt;
+    const home=Math.max(Math.abs(f.x-f.hx),Math.abs(f.y-f.hy));
+    if(f.flee<=0||home===0){
       f.mood=(here!==undefined&&here<=f.wake)?'follow':'roam';
       f.path=null;
     }
@@ -3532,6 +3552,17 @@ function foeScatter(f){
   f.mood='scatter'; f.flee=SCATTER_FOR; f.wary=WARY_FOR+Math.random()*3;
   f.path=null;
   if(d.spooked&&n-f.said>5000){f.said=n;say(d.spooked,'dim')}
+}
+/* Beaten off rather than startled. It is a different thing from scattering:
+   what it wants is not distance from the unit but its own mark, so it takes
+   a route back to it and walks that instead of reading the sweep. An author
+   who leaves `back` off the lunge keeps the old behaviour — it stands
+   off where it landed and comes back in when the rest runs out. */
+function foeRetreat(f){
+  const d=foeDef(f), L=d.lunge||{};
+  if(!(L.back>0))return;
+  f.mood='retreat'; f.flee=L.back; f.path=null; f.rest=0;
+  if(d.retreats)say(d.retreats,'dim');
 }
 
 /* ---------- somewhere to be ----------
@@ -3697,11 +3728,35 @@ function foeAimUnit(f,flee){
   f.x=nx;f.y=ny;
   return true;
 }
+/* One square of the way back to the mark it was painted on. It is a route
+   rather than a reading off the sweep: where its own ground lies has nothing
+   to do with where the unit happens to be standing, and something backing off
+   down the sweep would only be walking away, which is not the same errand.
+   One already standing on the mark has arrived, and says so by finding
+   nowhere to go. */
+function foeAimHome(f){
+  if(f.rest>0||(f.x===f.hx&&f.y===f.hy))return false;
+  if(!f.path){
+    f.path=foePathTo(f,f.hx,f.hy);
+    /* no way back from where the lunge left it: it gives the errand up here
+       rather than standing about looking for one that does not exist */
+    if(!f.path){f.flee=0;f.rest=.3;return false}
+  }
+  const n=f.path.shift();
+  const gone=!n||!foeGround(n.x,n.y,f)||foeAt(n.x,n.y)||
+             (n.x===game.px&&n.y===game.py)||
+             Math.abs(n.x-f.x)+Math.abs(n.y-f.y)!==1;
+  if(!f.path.length)f.path=null;
+  if(gone){f.path=null;f.rest=.25;return false}
+  f.x=n.x;f.y=n.y;
+  return true;
+}
 /* One that hunts by sound is the odd one out: it has a mark or it has
    nothing, and with nothing it goes looking rather than falling through to
    the sweep off the unit — which is a sweep it has no business reading, and
    which is empty anyway while the unit is folded into a locker. */
-const foeAim=f=>foeDef(f).hunts==='sound'
+const foeAim=f=>f.mood==='retreat'?foeAimHome(f)
+               :foeDef(f).hunts==='sound'
                  ?((f.mood==='follow'&&f.mark)?foeAimMark(f):foeAimRoam(f))
                :(f.mood==='roam'||f.mood==='carry')?foeAimRoam(f)
                                                    :foeAimUnit(f,f.mood==='scatter');
@@ -3716,6 +3771,9 @@ function foeAdvance(f,dt){
   if(d.slides)return foeSlide(f,dt);                   // it runs a heading rather than a route
   const speed=f.mood==='roam'?(d.prowl||fast*.55)
              :f.mood==='scatter'?fast*(d.bolt||2)
+             /* it goes back a good deal faster than it prowls: what the deck
+                reads is something leaving, not something thinking about it */
+             :f.mood==='retreat'?fast*((d.lunge&&d.lunge.bolt)||1.5)
              :f.mood==='carry'?fast*.8                 // it labours with the chassis under it
              :fast;
   let budget=speed*dt;
@@ -4229,7 +4287,10 @@ function spectreDash(f,dt){
 }
 /* However it ended, it comes to rest on a square it could stand on and holds
    off a while. Being turned on the plate costs it a good deal longer than
-   missing does, which is what makes the second the plate takes worth taking. */
+   missing does, which is what makes the second the plate takes worth taking
+   — and it costs it the ground as well: a turned lunge sends it back to
+   the mark it was painted on rather than leaving it standing over the unit
+   waiting for the rest to run out. */
 function endLunge(f,why){
   const d=foeDef(f), L=d.lunge||{};
   f.lunge=null; f.lt=0; f.path=null;
@@ -4239,6 +4300,7 @@ function endLunge(f,why){
   if(!foeStands(x,y,f)){x=f.hx;y=f.hy}
   f.x=x;f.y=y;f.rx=x;f.ry=y;
   f.lrest=why==='turned'?(L.turned||7):(L.rest||4);
+  if(why==='turned')foeRetreat(f);
   if(why==='missed'&&d.missed)say(d.missed,'dim');
   if(why==='warded'&&d.warded)say(d.warded,'dim');
 }
