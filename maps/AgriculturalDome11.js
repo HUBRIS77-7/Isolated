@@ -64,7 +64,7 @@ ISO.register({
     "245,83": {"open":false,"circuit":""},
     "244,84": {"open":false,"locked":false,"circuit":"ELEVATORBLOCK"},
     "245,84": {"open":false,"circuit":""},
-    "289,84": {"dest":"","arrive":"","fade":false,"card":"","cardsub":"","label":"","circuit":""},
+    "289,84": {"dest":"Intermission2","arrive":"","fade":false,"card":"","cardsub":"","label":"","circuit":""},
     "129,85": {"wake":18,"range":0,"label":""},
     "188,85": {"wake":18,"range":0,"label":""},
     "244,85": {"open":false,"locked":false,"circuit":"ELEVATORBLOCK"},
