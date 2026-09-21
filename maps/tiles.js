@@ -108,6 +108,17 @@
              costs nothing, and the reason vacuum is worth crossing
    airless — no atmosphere, so no weather either: a flood will not run across
              it, because water put onto this square is water that is gone
+   charged — a line of current laid across the deck. It is the one block whose
+             circuit decides whether it is ground or wall: dead, the unit walks
+             over it, and live, nothing crosses it at all. The value is the
+             line the log writes when one wakes under a chassis already
+             standing on it, because that is the one way it kills
+   thruster — an attitude port in the hull, firing on a cycle of its own. It
+             is ground between firings, a warning while it builds, and open
+             flame while it burns. Nothing about it waits on the unit
+   sweep   — a rock comes through here, on a cycle of its own and along the
+             block's own heading. What is painted is the track, which is
+             ordinary ground: the rock is not on the deck until it arrives
    foe     — the square is where a contact starts rather than a block that
              stands there: the name of the entry in FOES that says what walks
              off it. The tile itself is plain ground from then on
@@ -137,6 +148,12 @@ const ABILITIES = {
   motion: {id:'motion', name:'Motion tracker',
          fitted:'SENSOR PACKAGE FITTED: DOPPLER MOTION TRACKER.',
          hint:'[M] raises the tracker. It reads movement through structure \u2014 and only movement. Anything holding still reads as nothing at all.'},
+  /* The one package that is neither a thing the chassis can do nor a thing
+     the operator can read: it is a second of not being killed, and it has to
+     be spent before the blow rather than after it. */
+  parry: {id:'parry', name:'Reactive plating',
+         fitted:'DEFENSIVE PACKAGE FITTED: REACTIVE PLATING.',
+         hint:'[P] brings the plate up for one second. Anything that strikes the chassis inside that second is turned, and whatever swung is left standing in front of it \u2014 but it answers a blow and nothing else. A deck that is simply trying to kill the unit is not a blow.'},
   flashlight: {id:'flashlight', name:'Chassis floodlamp',
          fitted:'ILLUMINATION PACKAGE FITTED: CHASSIS FLOODLAMP.',
          hint:'[F] strikes the lamp and [F] kills it. On a deck with nothing lighting it, that is the difference between two squares of ground and the whole of what the optics are rated for.'},
@@ -284,6 +301,47 @@ const FOES = {
             kills:'THE RAVAGER PUT ITS WEIGHT THROUGH WHATEVER WAS MAKING THE NOISE.',
             notice:'CONTACT. It has heard something. It is coming to where the sound was.',
             cools:'CONTACT ARRIVES AT NOTHING. It casts about, hears nothing more, and moves off.'},
+  /* ---------- the one that holds its distance and then does not ----------
+     A spectre paces the unit the way a stalker does and is nothing like one.
+     It holds station off the chassis, picks its moment, sets itself where the
+     operator can see it do it, and covers the whole of the gap in one
+     movement. The tell is the entire fight: a second and a bit of standing
+     still is the only warning there is, and it is enough for a plate to come
+     up if the plate is fitted and the operator has learnt to read it.
+
+     `lunge` is the whole of the behaviour: `reach` is how close it has to be
+     before it will set itself, `tell` how long it stands doing it, `dash` how
+     fast it crosses the ground once it goes, `run` how long it will keep
+     running, `rest` how long it stands off afterwards, and `turned` how long
+     it wants after a plate has turned one \u2014 longer, because being turned
+     costs it more than missing does.
+
+     `ward` is the other half, and it is the fair half: it will not set itself
+     while the unit is standing within `within` squares of any of the blocks
+     named in it. A fusebox is where an operator has to stand still, with the
+     deck keys belonging to a screen rather than to the chassis, and something
+     that lunges at a unit that cannot move is not a fight. So it holds off
+     instead, and says so. */
+  spectre: {id:'spectre', name:'Spectre', side:'command', speed:5.6, prowl:2.9,
+            wake:17, keep:4, glyph:'\u03a6',
+            /* the numbers are a contract with the plate, and they are set by
+               it: a plate lasts one second, so the tell and the whole of the
+               ground it has left to cover have to fit inside one second
+               between them. Four squares at sixteen tiles a second is a
+               quarter of one, and six tenths of a tell leaves the rest as
+               margin \u2014 so a plate brought up the moment it sets itself
+               is still up when it arrives, and one brought up late is up for
+               the part that matters. An author who widens `reach` or slows
+               `dash` is quietly taking the plate away. */
+            lunge:{reach:4, tell:.6, dash:16, run:.45, rest:4.2, turned:7.5},
+            ward:{blocks:['fusebox','panel'], within:3},
+            fill:'rgba(168,130,255,.2)', line:'rgba(200,172,255,.9)',
+            kills:'THE SPECTRE CROSSED THE WHOLE OF THE GAP IN ONE MOVEMENT. CHASSIS OPENED.',
+            notice:'CONTACT. Command pattern, and it is standing off the unit rather than closing on it.',
+            sets:'THE SPECTRE SETS ITSELF. Whatever it is about to do, it is about to do all at once.',
+            turned:'LUNGE TURNED ON THE PLATE. It comes off the chassis and gives ground.',
+            missed:'THE LUNGE GOES THROUGH WHERE THE UNIT WAS STANDING. It recovers and stands off again.',
+            warded:'THE SPECTRE WILL NOT COME IN OFF THE BOX. It holds where it is while the unit is on the fusebox.'},
   block:   {id:'block',   name:'Block', bulk:1, slides:true, speed:4.4, prowl:3,
             wake:12, keep:0, hull:12, glyph:'\u25a0',
             fill:'rgba(255,59,47,.16)', line:'rgba(255,120,80,.85)',
@@ -1432,6 +1490,124 @@ const TILES = {
         fill:'rgba(150,205,255,.09)', line:'rgba(190,228,255,.55)', glyph:'◧',
         bump:'Astro-grade glazing, laminated and rated for the pressure it is holding back. It reads clear and it holds.',
         props:{label:{type:'text', label:'Stencilled', def:''}}},
+  /* ---------- the comms array ----------
+     The far end of the command deck, and the thing the whole of it was built
+     to keep pointed. Six blocks, and between them they are a deck out on the
+     hull: a mast too big to read from one square, the plate it is bolted to,
+     the rock that came through the roof of it, the current laid across the
+     way, the platform that runs whether anything called it or not, and the
+     ports that fire into the deck because the ship is still trying to hold an
+     attitude nobody has asked it for in a very long time. */
+  /* Twelve tiles by twelve of dish, gearing and counterweight. It is an
+     antenna and it is the same antenna \u2014 it transmits through structure
+     the way a beacon does, and goes quiet once the unit has walked up on it.
+     What twelve by twelve buys is that an operator crosses the deck to read
+     it: a mast that fits inside the optics is scenery, and one that does not
+     is somewhere to be going. */
+  'ā': {key:'ā', id:'commsarray', name:'Comms Array', walk:false,
+        foot:{len:12, wide:12},
+        parts:faceParts(12, 12, '\u25ce', '\u00b7', 3),
+        fill:CMD_DEEP.fill, line:CMD_BLUE.line,
+        ping:true, powered:true,
+        bump:'Array housing. Twelve tiles by twelve of dish and gearing, the drive still holding it on its bearing, and a carrier under it that reads from anywhere on this deck.',
+        spent:{fill:'rgba(18,48,116,.08)', line:'rgba(74,132,214,.28)',
+               bump:'Array housing. Twelve tiles of it, cold end to end. The bearing is where it stopped, and nothing is going out.'},
+        props:{dir:{type:'dir', label:'Runs', def:'right'},
+               range:{type:'int', label:'Goes quiet within', def:4, min:0, max:20},
+               armed:{type:'bool', label:'Starts transmitting', def:true},
+               objective:{type:'text', label:'Objective while lit', def:''},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* Structural plate, laid straight onto the frame rather than over a void.
+     It is the ground an author puts down where there is nothing under the
+     deck but the outside, and it is honest about the trade: it holds, and it
+     rings. A step on it carries half again as far as a step on plating, so
+     the safe footing across the hull line is also the loud way across it. */
+  'ħ': {key:'ħ', id:'hullsteel', name:'Hull Steel Flooring', walk:true,
+        fill:'rgba(122,152,190,.13)', line:'rgba(164,198,240,.42)', glyph:'\u2550',
+        noisy:6,
+        enter:'Hull steel. Structural plate bolted straight onto the frame, with nothing under it but the outside \u2014 and every step the chassis takes on it goes the length of the deck.'},
+  /* What came through the deckhead and stopped. It is as big as it is
+     painted, one body, and it is not going anywhere: the ship was built round
+     it after the fact. Solid, and sight stops in it. */
+  'ǒ': {key:'ǒ', id:'asteroid', name:'Stuck Asteroid', walk:false,
+        merge:true, sized:true,
+        fill:'rgba(118,108,102,.32)', line:'rgba(178,168,158,.6)', glyph:'\u25cf',
+        bump:'Rock. It came through the deckhead at speed, buried itself in the plating and stopped there. Whatever was holding the hull shut is holding it in place now.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
+  /* A bus line laid across the way, and the one block on a deck whose circuit
+     decides whether it is ground or wall. Dead, the unit steps over the run
+     of it; live, nothing crosses it at all. Which makes a fusebox somewhere
+     else on the deck into a door \u2014 and makes seating a fuse something an
+     operator does knowing where the unit is standing, because a line that
+     wakes under a chassis is a line that kills it. */
+  'ẋ': {key:'ẋ', id:'powerline', name:'Power Line', walk:false,
+        clear:true, merge:true, powered:true, alert:true,
+        charged:'CURRENT ACROSS THE PLATING. THE LINE WOKE UNDER THE CHASSIS.',
+        fill:'rgba(255,180,74,.22)', line:'rgba(255,214,120,.85)', glyph:'\u2261',
+        bump:'Bus line, live. There is current down the whole run of it, and the chassis will not put a foot on any of it.',
+        spent:{fill:'rgba(255,180,74,.05)', line:'rgba(255,214,120,.24)', glyph:'\u2500',
+               enter:'Bus line, cold. The run is dead and the way across it is open \u2014 for as long as it stays dead.'},
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
+  /* A platform that was never waiting to be called. It runs its rail end to
+     end on its own time, stands at each end for as long as its author gave
+     it, and sets off again \u2014 so it is a piece of the deck's timing
+     rather than a control the operator works. A button still reaches one, and
+     all that does is turn it round early. */
+  'ť': {key:'ť', id:'autotram', name:'Automatic Tram', walk:true,
+        fill:'rgba(191,247,220,.16)', line:'rgba(191,247,220,.62)', glyph:'\u25a4',
+        enter:'Platform plating. This one is not waiting to be called \u2014 it is on its way from one end of its rail to the other, and the unit is on it.',
+        signal:'move', auto:true, powered:true,
+        away:'Bare rail. The platform is somewhere along it, and it is coming back on its own.',
+        props:{dir:{type:'dir',  label:'Travels',           def:'right'},
+               dist:{type:'int', label:'Distance',          def:6, min:1, max:60},
+               dwell:{type:'int',label:'Waits at each end', def:3, min:0, max:60}}},
+  /* An attitude port firing into the deck. The ship is still trying to hold a
+     bearing, the array is still being pointed, and the ports that do the
+     pointing open into a walkway nobody was ever meant to be standing in.
+
+     It runs a cycle, and nothing about the cycle waits on the unit: cold,
+     then building \u2014 which is the whole of the warning \u2014 then
+     burning, which is open flame and ends whatever is standing on it. An
+     author staggers a row of them with `phase`, and what that builds is not a
+     hazard but a rhythm to be crossed on. */
+  'ṁ': {key:'ṁ', id:'thruster', name:'Micro Thruster', walk:true,
+        powered:true, thruster:true, alert:true,
+        fill:'rgba(96,170,255,.12)', line:'rgba(150,205,255,.45)', glyph:'\u2299',
+        enter:'Attitude port. Cold at the moment, and the scoring round the rim of it says that is not what it usually is.',
+        run:{fill:'rgba(255,120,80,.34)', line:'rgba(255,180,74,.95)', glyph:'\u25b2',
+             bump:'PORT FIRING. There is open flame coming out of the deck.'},
+        props:{every:{type:'int', label:'Fires every (s)',      def:7, min:2, max:90},
+               warn:{type:'int',  label:'Seconds of build',     def:2, min:1, max:15},
+               burn:{type:'int',  label:'Seconds it burns',     def:2, min:1, max:15},
+               phase:{type:'int', label:'Seconds before the first firing', def:0, min:0, max:90},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* A track something comes through. What is painted is the ground, and the
+     ground is ordinary: the rock is not on the deck at all until it arrives,
+     and it is gone again a second later. It runs the block's heading from the
+     square it was painted on, as far as the ground stays open \u2014 a
+     bulkhead, a stuck asteroid, anything solid stops it, so cover is cover
+     and an author builds shelter by putting something in the way.
+
+     It needs no circuit. Nothing aboard is driving it. */
+  'ǎ': {key:'ǎ', id:'sweep', name:'Asteroid Sweep', walk:true, alert:true,
+        sweep:true,
+        fill:'rgba(118,108,102,.12)', line:'rgba(178,168,158,.48)', glyph:'\u21e2',
+        enter:'Track. The plating along this line is scoured back to bare metal in one direction, and nothing has worn it but whatever keeps coming through.',
+        props:{dir:{type:'dir',  label:'Runs',                 def:'right'},
+               dist:{type:'int', label:'Squares it crosses',   def:14, min:1, max:80},
+               every:{type:'int',label:'Comes round every (s)',def:11, min:3, max:180},
+               warn:{type:'int', label:'Seconds of warning',   def:2, min:1, max:15},
+               phase:{type:'int',label:'Seconds before the first pass', def:0, min:0, max:180},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* The mark a spectre starts on. It takes a `wake` and a `range` like
+     anything else that walks; everything that makes it a spectre rather than
+     a stalker is in FOES. */
+  'ż': {key:'ż', id:'spectre', name:'Spectre', walk:true, foe:'spectre',
+        fill:'rgba(168,130,255,.09)', line:'rgba(200,172,255,.42)', glyph:'\u03a6',
+        enter:'Scuffing on the plating in one tight arc, and clean deck either side of it. Whatever stands here does not stand anywhere long.',
+        props:{wake:{type:'int',  label:'Notices within', def:17, min:0, max:60},
+               range:{type:'int', label:'Wanders within (0: the deck)', def:0, min:0, max:60},
+               label:{type:'text',label:'Stencilled', def:''}}},
 };
 
 /* ---------- palette categories ----------
@@ -1439,21 +1615,21 @@ const TILES = {
    stays legible, not a second vocabulary. A tile named in none of them still
    shows up, under "Other", so adding a tile can never lose it. */
 const CATS = [
-  {id:'ground',    name:'Ground',      keys:' .,=+~!v/:`'},
+  {id:'ground',    name:'Ground',      keys:' .,=+~!v/:`ħ'},
   {id:'land',      name:'Open land',   keys:'dgpr_P'},
-  {id:'structure', name:'Structure',   keys:'#%oxWG]ï'},
+  {id:'structure', name:'Structure',   keys:'#%oxWG]ïǒẋ'},
   {id:'building',  name:'Buildings',   keys:'HhiQK>'},
   {id:'controls',  name:'Controls',    keys:'bcun?üĝ'},
-  {id:'transit',   name:'Transit',     keys:'T^sVO'},
+  {id:'transit',   name:'Transit',     keys:'Tť^sVO'},
   {id:'fixtures',  name:'Fixtures',    keys:'LBACFDR){}ƀ'},
   {id:'home',      name:'Furnishings', keys:'ZaUtm56789'},
   {id:'farm',      name:'Farm',        keys:'|w&yj@'},
   {id:'remains',   name:'Remains',     keys:';SXYśÿ'},
   {id:'wreck',     name:'Wreckage',    keys:'ð\'ďłŵ'},
   {id:'kit',       name:'Unit & kit',  keys:'M*fkƒø'},
-  {id:'command',   name:'Command deck', keys:'J-(qlNI[ĉřķ'},
-  {id:'hazard',    name:'Hazards',     keys:'$123şṽ'},
-  {id:'contacts',  name:'Contacts',    keys:'Ee<z04'},
+  {id:'command',   name:'Command deck', keys:'J-(qlāNI[ĉřķ'},
+  {id:'hazard',    name:'Hazards',     keys:'$123şṽṁǎ'},
+  {id:'contacts',  name:'Contacts',    keys:'Ee<z04ż'},
 ];
 /* One setting, fitted to every block that runs on power. */
 for(const ch in TILES) if(TILES[ch].powered)
@@ -1868,6 +2044,25 @@ function tramPath(map,x,y){
   return out;
 }
 
+/* The squares a rock crosses, the square it comes in over first. The track
+   is as long as its author gave it, and no longer than the ground stays open:
+   `clear` is asked of every square in turn and the path stops at the first
+   one that says no, so anything solid on the line is shelter behind it. The
+   game hands in its own notion of clear, because what is solid on a deck
+   changes while the unit is standing on it. */
+function sweepPath(map,x,y,clear){
+  const p = propsAt(map,x,y) || {};
+  const [dx,dy] = DIRS[p.dir] || DIRS.right;
+  const out = [];
+  for(let i=0;i<=(p.dist|0);i++){
+    const cx = x+dx*i, cy = y+dy*i;
+    if(!inside(map,cx,cy)) break;
+    if(i && clear && !clear(cx,cy)) break;
+    out.push({x:cx, y:cy});
+  }
+  return out;
+}
+
 /* ---------- decks, and the links that run between them ----------
    One deck is one map. A link — a car, a flight of steps — is one tile on it,
    and the deck it serves is a setting on that tile, so a map never holds
@@ -2022,11 +2217,16 @@ function trim(map){
 function reachable(map, from, opts){
   const powered = !!(opts && opts.powered);
   const jump = !!(opts && opts.jump);
+  /* a bus line is passable in exactly the sense a sealed bulkhead is: it is
+     not ground now, and there is a way of making it ground. "Can the unit get
+     there at all" counts both */
   const pass  = (x,y) => walkable(map,x,y) ||
+                         (powered && !!at(map,x,y).charged) ||
                          (powered && !!at(map,x,y).signal && !lockedShut(map,x,y));
   /* a jump comes down on ground, never on a pit or a breach: it sails over one */
   const land  = (x,y) => pass(x,y) && !bodyAt(map,x,y).deadly;
   const over  = (x,y) => vaultable(map,x,y) ||
+                         (powered && !!at(map,x,y).charged) ||
                          (powered && !!at(map,x,y).signal && !lockedShut(map,x,y));
   const seen = new Set();
   if(!from || !pass(from.x, from.y)) return seen;
@@ -2485,7 +2685,9 @@ function audit(map){
                         ' at '+c.x+','+c.y+'.');
     }
     if(t.signal === 'move'){
-      if(!wired[pk(x,y)]) out.issues.push(t.name+where+' has no button wired to it.');
+      /* one that runs its rail on its own time is not waiting on anything: a
+         button turns it round early and that is all one is ever for */
+      if(!t.auto && !wired[pk(x,y)]) out.issues.push(t.name+where+' has no button wired to it.');
       tramPath(map,x,y).slice(1).forEach(c=>{
         if(!inside(map,c.x,c.y))
           out.issues.push('Tram'+where+' runs off the edge of the record.');
@@ -2717,7 +2919,7 @@ global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, KEYS
                def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
                schemaOf, defaults, propsAt, setProp, signalIndex, signalSources, signalTargets,
-               tramPath, key:pk,
+               tramPath, sweepPath, key:pk,
                links, linkLanding, linkNoun, lifts, liftLanding, stencilled, dropLanding,
                underOf, underAt, seeThrough, dropAt,
                footprint, partAt, coveredBy, cluster, lockedShut,

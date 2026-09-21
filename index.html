@@ -329,7 +329,7 @@ body.carded .screen,body.carded #dpad{transition:opacity .4s linear}
         <div class="box" id="objWrap"><h4>&lt;Objective&gt;</h4>
           <div id="obj" class="dim">—</div>
           <div id="carry"></div>
-          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div><div class="key" id="keyTrack" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">M</div><div class="key" id="keyLamp" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">F</div><div class="key" id="keyStore" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">O</div></div>
+          <div id="keys"><div class="key" data-dir="up">W</div><div class="key" data-dir="left">A</div><div class="key" data-dir="down">S</div><div class="key" data-dir="right">D</div><div class="key" data-dir="use" style="margin-left:10px;width:auto;padding:0 10px">E</div><div class="key" id="keyJump" data-dir="jump" style="margin-left:6px;width:auto;padding:0 10px;display:none">SPACE</div><div class="key" id="keyTrack" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">M</div><div class="key" id="keyLamp" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">F</div><div class="key" id="keyParry" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">P</div><div class="key" id="keyStore" style="margin-left:6px;width:auto;padding:0 10px;display:none;cursor:pointer">O</div></div>
         </div>
       </div>
     </div>
@@ -892,6 +892,9 @@ function usedUp(x,y,t){
   /* and a burst line reads dry when there is nothing behind it: the supply
      pulled, or an author who gave it no reach to flood */
   if(t.pipe)return !powered(x,y)||!(propsOf(x,y).reach|0);
+  /* a bus line reads dead when there is nothing down it, which is also when
+     it is ground rather than wall */
+  if(t.charged)return !powered(x,y);
   return world.spent.has(k);
 }
 /* A block built out of however many tiles the author used says how big the
@@ -997,6 +1000,14 @@ const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
                  cannot see: one control can open a door and shut another in
                  the same press, and a tally of how many stand open would read
                  the same on both sides of that. */
+              /* ---------- the hull's own timing ----------
+                 An attitude port runs a cycle of cold, build and burn, and a
+                 track runs one of quiet, warning and a rock crossing it.
+                 Neither waits on the unit and neither is a control anything
+                 can reach, so neither is kept when a deck is put away: a
+                 cycle is not a thing a deck remembers being part-way
+                 through, and an author's phase is where it starts again. */
+              thrusters:[], sweeps:[],
               rev:0};
 const TRAM_STEP=.34;                       // seconds the platform takes per tile
 const SLIDE_STEP=.26;                      // seconds a running gate takes per tile
@@ -1012,12 +1023,18 @@ function buildWorld(){
   world.asked.clear();
   world.ablaze.clear(); world.catching.clear(); world.spills.length=0;
   world.din.length=0; pool.key='';
+  world.thrusters.length=0; world.sweeps.length=0;
   sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
     const t=tileDef(x,y), p=propsOf(x,y);
     if(t.signal==='toggle'&&p.open) world.open.add(K(x,y));
+    /* a platform, and whether it is one that waits to be called or one that
+       runs its rail on its own time. `wait` is what is left of the stand at
+       the end it is at, and only an automatic one ever counts it down */
     if(t.signal==='move') world.trams.push({home:K(x,y), path:ISO.tramPath(MAP,x,y),
-                                            i:0, dest:0, ax:x, ay:y, t:1});
+                                            i:0, dest:0, ax:x, ay:y, t:1,
+                                            auto:!!t.auto, dwell:Math.max(0,p.dwell|0),
+                                            wait:Math.max(0,p.dwell|0)});
     /* every box starts with its ways empty: a fuse is something the unit
        finds and seats, never something the record hands it */
     if(t.press==='fusebox') world.ways.set(K(x,y),
@@ -1043,7 +1060,36 @@ function buildWorld(){
        built once, walks off, and the square it came from is plain ground */
     if(t.foe&&ISO.FOES[t.foe]) world.foes.push(makeFoe(t.foe,x,y,p));
   }
-  indexTrams(); indexSpills();
+  indexTrams(); indexSpills(); indexHull();
+}
+/* The attitude ports and the tracks on this deck, and where each one is in
+   its cycle. Indexed rather than searched for, the way the burst lines and
+   the fuel are — and rebuilt rather than kept when a deck comes back,
+   because a cycle is not a thing a deck remembers being part-way through.
+   What an author wrote as `phase` is where it starts again. */
+function indexHull(){
+  world.thrusters.length=0; world.sweeps.length=0;
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+    const t=tileDef(x,y), p=propsOf(x,y);
+    /* an attitude port, cold and counting. `phase` is how long this one waits
+       before its first firing, which is the whole of how a row of them is
+       staggered into something with a rhythm to cross on */
+    if(t.thruster) world.thrusters.push({x, y, state:'cold',
+                                         every:Math.max(2,(p.every|0)||7),
+                                         warn:Math.max(1,(p.warn|0)||2),
+                                         burn:Math.max(1,(p.burn|0)||2),
+                                         t:(p.phase|0)||Math.max(2,(p.every|0)||7)});
+    /* and a track, with nothing on it yet. The path is worked out at the
+       moment it comes round rather than now, because what is solid on a deck
+       changes while the unit is standing on it */
+    if(t.sweep){
+      const [dx,dy]=ISO.DIRS[p.dir]||ISO.DIRS.right;
+      world.sweeps.push({x, y, dx, dy, state:'quiet', pos:0, rx:x, ry:y, path:[], len:0,
+                         every:Math.max(3,(p.every|0)||11),
+                         warn:Math.max(1,(p.warn|0)||2),
+                         t:(p.phase|0)||Math.max(3,(p.every|0)||11)});
+    }
+  }
 }
 /* Where the fuel on this deck is lying. It is indexed rather than searched
    for, the way the burst lines are: what catches, and when, is worked out
@@ -1121,7 +1167,7 @@ function restoreDeck(d){
   world.lit.clear();
   sight.live.clear(); sight.seen.clear();     // optical memory does not ride the car
   level.entry={x:d.entry.x, y:d.entry.y};
-  indexTrams(); indexSpills();
+  indexTrams(); indexSpills(); indexHull();
 }
 
 /* ---------- chapters, and where a run is kept ----------
@@ -1340,6 +1386,9 @@ function walkableAt(x,y){
   const t=tileDef(x,y);
   if(t.signal==='toggle')return world.open.has(K(x,y));
   if(t.signal==='move')return false;                 // bare rail; platform is elsewhere
+  /* a bus line is the one block whose circuit decides whether it is ground or
+     wall: dead, the unit walks the run of it, and live, nothing crosses it */
+  if(t.charged)return !powered(x,y);
   /* a fire is as solid as a wall while it burns, and wet ash the moment the
      water reaches it — the one block on a deck that is opened by weather */
   if(t.burn)return world.spent.has(K(x,y));
@@ -1357,6 +1406,8 @@ function vaultAt(x,y){
   const t=tileDef(x,y);
   if(t.signal==='toggle')return world.open.has(K(x,y));
   if(t.signal==='move')return true;                  // bare rail is an open span
+  /* a live line is a curtain of current floor to deckhead: there is no over it */
+  if(t.charged)return !powered(x,y);
   return ISO.vaultable(MAP,x,y);
 }
 const landAt=(x,y)=>ISO.inside(MAP,x,y)&&walkableAt(x,y)&&!(bodyDef(x,y).deadly&&!tramOn(x,y));
@@ -1734,18 +1785,20 @@ function grantAbility(id,tag){
 }
 function syncAbilities(){
   const j=game.abilities.has('jump'), m=game.abilities.has('motion'),
-        l=game.abilities.has('flashlight');
+        l=game.abilities.has('flashlight'), y=game.abilities.has('parry');
   /* the store is the deck's rather than the chassis's, so this is re-read
      every time the ground under the unit changes */
   const o=ISO.osOf(MAP).length>0;
   $('#keyJump').style.display=j?'':'none';
   $('#keyTrack').style.display=m?'':'none';
   $('#keyLamp').style.display=l?'':'none';
+  $('#keyParry').style.display=y?'':'none';
   $('#keyStore').style.display=o?'':'none';
   $('#dpad').classList.toggle('canjump',j);
   $('#footHint').textContent='WASD/Arrows to Move · [E] to Interact'+
     (j?' · [SPACE] to Jump':'')+(m?' · [M] for the Tracker':'')+
     (l?' · [F] for the Lamp':'')+
+    (y?' · [P] for the Plate':'')+
     (o?' · [O] for the Store':'');
   syncLamp();
 }
@@ -2453,6 +2506,7 @@ $('#carry').addEventListener('pointerdown',e=>{e.preventDefault();dropItem()});
    in the key row while it is down, its own footer while it is up */
 $('#keyTrack').addEventListener('pointerdown',e=>{e.preventDefault();toggleTracker()});
 $('#keyLamp').addEventListener('pointerdown',e=>{e.preventDefault();toggleLamp()});
+$('#keyParry').addEventListener('pointerdown',e=>{e.preventDefault();raisePlate()});
 $('#keyStore').addEventListener('pointerdown',e=>{e.preventDefault();desk.on?closeDesk():openStore()});
 $('#motionFoot').addEventListener('pointerdown',e=>{e.preventDefault();toggleTracker()});
 $('#motionFoot').style.cursor='pointer';
@@ -3108,6 +3162,16 @@ function callTram(x,y,tag){
 function updateTrams(dt){
   for(const tr of world.trams){
     if(tr.t<1){tr.t=Math.min(1,tr.t+dt/TRAM_STEP);continue}
+    /* one that runs on its own time stands at the end it reached for as long
+       as its author gave it, and then sets off for the other one. Nothing
+       calls it and nothing has to: it is a piece of the deck's timing rather
+       than a control, and an operator crossing on one is reading a clock */
+    if(tr.i===tr.dest&&tr.auto&&powered(tr.path[0].x,tr.path[0].y)){
+      if((tr.wait-=dt)>0)continue;
+      tr.wait=tr.dwell;
+      tr.dest=tr.i===0?tr.path.length-1:0;
+      noise(tr.path[tr.i].x,tr.path[tr.i].y,ISO.NOISE.gear,false);
+    }
     if(tr.i===tr.dest)continue;
     /* power cut while it was under way: it stops where it stands */
     if(!powered(tr.path[0].x,tr.path[0].y)){tr.dest=tr.i;continue}
@@ -3124,12 +3188,96 @@ function updateTrams(dt){
     if(riding)stepTo(next.x,next.y,TRAM_STEP);
   }
 }
+/* ---------- what the hull is doing on its own ----------
+   Two blocks, and between them the whole of the deck's timing. Neither of
+   them is a control and neither is a contact: they run cycles of their own
+   that nothing aboard is driving and nothing aboard can stop, and what an
+   operator does about either is work out where to be standing when it comes
+   round. Both give warning first, because a hazard with no tell is not a
+   hazard an author can build a route across. */
+const thrusterAt=(x,y)=>world.thrusters.find(o=>o.x===x&&o.y===y)||null;
+const portBurning=(x,y)=>{const o=thrusterAt(x,y);return !!o&&o.state==='burn'};
+/* Whatever is standing over a port while it burns. The unit is caught by
+   checkFooting the same frame; this is for everything else on the deck,
+   because a contact led over a port is a contact the deck deals with. */
+function burnPort(o){
+  for(const f of world.foes.slice())
+    if(foeIn(f,o.x,o.y))hurtFoe(f,99);
+}
+function updateThrusters(dt){
+  for(const o of world.thrusters){
+    /* nothing behind it: a port with a dead circuit is a hole in the deck */
+    if(!powered(o.x,o.y)){
+      if(o.state!=='cold'){o.state='cold';o.t=o.every}
+      continue;
+    }
+    if((o.t-=dt)>0){
+      if(o.state==='burn')burnPort(o);
+      continue;
+    }
+    if(o.state==='cold'){
+      o.state='build'; o.t=o.warn;
+      world.lit.set(K(o.x,o.y),performance.now());
+    }else if(o.state==='build'){
+      o.state='burn'; o.t=o.burn;
+      noise(o.x,o.y,ISO.NOISE.gear,false);
+      burnPort(o);
+    }else{
+      o.state='cold'; o.t=o.every;
+    }
+  }
+}
+const SWEEP_SPEED=15;                      // tiles a second a rock crosses at
+function updateSweeps(dt){
+  for(const w of world.sweeps){
+    if(w.state==='run'){
+      w.pos+=SWEEP_SPEED*dt;
+      w.rx=w.x+w.dx*w.pos; w.ry=w.y+w.dy*w.pos;
+      if(game.active&&!game.dead&&!game.hide&&
+         Math.abs(w.rx-game.px)<.7&&Math.abs(w.ry-game.py)<.7)
+        return void die('SOMETHING CAME THROUGH THE DECK AT SPEED. THE CHASSIS WAS STANDING IN THE WAY OF IT.');
+      /* and nothing else on the deck, which is deliberate. A track is the one
+         hazard here that keeps its own time and answers to nobody: a rock that
+         also cleared the deck of whatever was walking it would strip a deck of
+         its contacts while the operator stood somewhere else and watched. What
+         lives out here has had a long time to learn where the tracks are. A
+         port has not been learnt by anything, which is why leading something
+         onto one is a thing an operator can do and this is not. */
+      if(w.pos>w.len){w.state='quiet'; w.t=w.every}
+      continue;
+    }
+    if((w.t-=dt)>0)continue;
+    if(w.state==='quiet'){
+      /* the track is worked out now rather than at build: anything solid on
+         the line stops it, and what is solid changes while the unit is
+         standing on the deck — a driven bulkhead is shelter, and a bulkhead
+         that has been opened is not */
+      w.path=ISO.sweepPath(MAP,w.x,w.y,(cx,cy)=>walkableAt(cx,cy));
+      w.len=Math.max(0,w.path.length-1);
+      w.state='warn'; w.t=w.warn;
+      /* it is heard before it is seen, and through structure, which is the
+         whole of the warning to a unit that is not looking at the track */
+      noise(w.x,w.y,ISO.NOISE.engine,false);
+    }else{
+      w.state='run'; w.pos=0; w.rx=w.x; w.ry=w.y;
+    }
+  }
+}
+
 /* The ground moved rather than the unit — check what it is standing on now. */
 function checkFooting(){
   if(!game.active||game.dead)return;
   const t=bodyDef(game.px,game.py);
   if(tramOn(game.px,game.py))return;                 // the platform is the floor
   if(holeAt(game.px,game.py))return fallThrough(game.px,game.py);
+  /* a bus line that has come live under a chassis already standing on it.
+     Nothing about the square changed but its circuit, which is the whole of
+     why a fusebox is somewhere an operator thinks before seating a fuse */
+  if(t.charged&&powered(game.px,game.py))return die(t.charged);
+  /* and a port that lit while the unit was crossing it. The plate is no
+     answer to either: neither of them is a blow */
+  if(portBurning(game.px,game.py))
+    return die('ATTITUDE PORT FIRED WITH THE CHASSIS OVER IT. NOTHING CAME BACK OUT OF IT.');
   if(t.deadly)die(t.deadly);
 }
 
@@ -3182,6 +3330,11 @@ function makeFoe(kind,x,y,p){
           hull:d.hull||1,             // rounds it takes to put down
           face:Math.random()*6.283,   // where a gun is laid, in radians
           aim:null, warm:0, cool:0,   // what it has, how long it has held it, and its rate
+          /* what something that lunges is doing: the phase it is in, what is
+             left of it, how long before it will set itself again, the heading
+             it committed to, and when it last said it would not come in off
+             the box */
+          lunge:null, lt:0, lrest:0, ldx:0, ldy:0, warded:-1e9,
           dir:null};                  // the heading something that slides is running on
 }
 const foeDef=f=>ISO.FOES[f.kind]||{};
@@ -3741,7 +3894,7 @@ function foeGun(f,dt){
   f.warm=0;f.cool=g.cool||1.5;
   world.shots.push({x0:f.rx, y0:f.ry, x1:mark.x, y1:mark.y, t:0});
   if(mark.o)hurtFoe(mark.o,1);
-  else die(d.shot||'ROUND THROUGH THE CHASSIS.');
+  else if(!turnBlow(f))die(d.shot||'ROUND THROUGH THE CHASSIS.');
 }
 /* A round into something. What it takes is `hull`, and what is left of one
    that runs out is nothing: it is off the deck, and the log says so only if
@@ -3870,6 +4023,9 @@ function updateFoes(dt){
     foeMood(f,dt);
     if(d.gun)foeGun(f,dt);
     if(game.dead)return;
+    /* one that lunges takes its own turn while it is setting itself or going,
+       and falls through to the ordinary walk every other frame of its life */
+    if(d.lunge&&spectreTick(f,dt)){if(game.dead)return;continue}
     foeAdvance(f,dt);
     /* nine squares of freight does not strike the unit: it arrives over it */
     if(d.bulk&&d.kills&&foeOver(f,game.px,game.py)){die(d.kills);return}
@@ -3886,7 +4042,10 @@ function updateFoes(dt){
       continue;
     }
     if(f.mood==='follow'&&d.carries&&!game.held&&f.wary<=0&&foeOnUnit(f)){grabUnit(f);continue}
-    if(f.mood==='follow'&&d.kills&&!d.bulk&&foeOnUnit(f)&&foeStrikes(f)){
+    /* one that lunges never strikes by arriving: it strikes by having
+       committed, and that is resolved where the commitment is */
+    if(f.mood==='follow'&&d.kills&&!d.bulk&&!d.lunge&&foeOnUnit(f)&&foeStrikes(f)){
+      if(turnBlow(f))continue;
       die(d.kills);return;
     }
   }
@@ -3906,6 +4065,182 @@ function foeStrikes(f){
      deck to go quiet, which is a different thing the operator has to learn */
   if(d.hunts==='sound')return performance.now()-game.noised<STRIKE_HOLD*1000;
   return true;
+}
+
+/* ---------- the plate ----------
+   One second of not being killed, and it has to be spent before the blow
+   rather than after it. [P] brings it up, it goes down on its own, and
+   whether it happened to be up at the moment something arrived is the whole
+   of the question.
+
+   It answers a blow and nothing else. A port firing under the chassis, a rock
+   through the deck, a line coming live, a pit — none of those are things to
+   be turned, and the plate has nothing at all to say about them. What it
+   turns is something that swung: a contact arriving on the unit, a round off
+   an emplacement, a spectre that has committed to the ground between.
+
+   What it costs is that it cannot be held. The window is short and the
+   housing is slow to reset, so leaning on the key is worse than reading the
+   tell — which is what makes a spectre setting itself a thing worth watching
+   rather than a thing worth panicking at. */
+const PARRY_FOR=1;                         // seconds the plate is up
+const PARRY_REST=1.8;                      // and how long the housing takes to reset after it
+const parry={t:0, cool:0, told:false};
+const parrying=()=>parry.t>0;
+function raisePlate(){
+  if(!game.abilities.has('parry')){
+    const n=performance.now();
+    if(n-game.useLog>2500){game.useLog=n;say('No defensive package fitted. There is no plate to bring up.','dim')}
+    return;
+  }
+  if(!game.active||game.dead||game.held||game.hide||parry.t>0)return;
+  if(parry.cool>0){
+    const n=performance.now();
+    if(n-game.useLog>1200){game.useLog=n;say('Plate still resetting.','dim')}
+    return;
+  }
+  parry.t=PARRY_FOR; parry.cool=PARRY_FOR+PARRY_REST;
+  if(!parry.told){
+    parry.told=true;
+    say('Plate up. One second of it, and it will not come up again straight away.','dim');
+  }
+}
+function updateParry(dt){
+  if(parry.t>0)parry.t=Math.max(0,parry.t-dt);
+  if(parry.cool>0)parry.cool=Math.max(0,parry.cool-dt);
+  $('#keyParry').classList.toggle('lit',parry.t>0);
+}
+/* A blow arriving on a chassis with the plate up. It is turned, the plate is
+   spent on it — one plate is one blow, whatever is left of the second — and
+   whatever swung is left standing in front of the unit: staggered if it is
+   something that can be staggered, off its shot if it is bolted down, and
+   well out of its next lunge if it is the thing the plate was fitted for. */
+function turnBlow(f){
+  if(!parrying())return false;
+  const d=foeDef(f);
+  parry.t=0; parry.cool=PARRY_REST;
+  say(d.turned||'BLOW TURNED ON THE PLATE. Whatever swung is still standing there.','b');
+  if(d.lunge)endLunge(f,'turned');
+  else if(d.fixed)f.cool=Math.max(f.cool,((d.gun&&d.gun.cool)||1.5)*2);
+  else foeScatter(f);
+  noise(Math.round(f.rx),Math.round(f.ry),ISO.NOISE.press,true);
+  return true;
+}
+
+/* ---------- the one that holds its distance and then does not ----------
+   A spectre paces the unit the way a stalker does and is nothing like one. It
+   holds station off the chassis, picks its moment, sets itself where the
+   operator can watch it do it, and covers the whole of the gap in one
+   movement. The tell is the entire fight: a second and a bit of standing
+   perfectly still is the only warning there is, and it is exactly enough for
+   a plate to come up if the plate is fitted and the operator has learnt to
+   read it. Without the plate the answer is ground — it commits to a heading
+   the moment it goes, and a unit that is no longer on that heading is a unit
+   it goes straight past.
+
+   And it will not do any of it to a unit standing on a fusebox. Working a box
+   is the one thing on a deck that takes the keys away from the chassis: the
+   screen has them, the unit cannot move, and something that lunged at that
+   would not be a fight. So it holds off while the unit is inside the ward,
+   and says so, which is also how an operator learns that the box is where to
+   be. */
+const WARD_TELL=8;                         // seconds between one saying so again
+const ward={key:'', on:false};
+/* Whether the unit is close enough to one of the named blocks to be sheltered
+   by it. Counted over ground the unit could actually walk, so a box on the far
+   side of a bulkhead shelters nobody — and worked out once per frame per
+   answer, because it is the same answer for every spectre on the deck. */
+function nearBlock(ids,within){
+  const key=MAP.id+'|'+K(game.px,game.py)+'|'+world.rev+'|'+ids.join(',')+'|'+within;
+  if(ward.key===key)return ward.on;
+  ward.key=key; ward.on=false;
+  const seen=new Set([K(game.px,game.py)]);
+  let edge=[[game.px,game.py]];
+  for(let r=0;r<=within&&edge.length&&!ward.on;r++){
+    const next=[];
+    for(const [x,y] of edge){
+      for(const dir in DIRV){
+        const nx=x+DIRV[dir][0], ny=y+DIRV[dir][1], k=K(nx,ny);
+        if(!ISO.inside(MAP,nx,ny))continue;
+        /* a box is not ground, so it is found as a neighbour of ground */
+        if(ids.indexOf(bodyDef(nx,ny).id)>=0){ward.on=true;break}
+        if(seen.has(k)||!walkableAt(nx,ny))continue;
+        seen.add(k); next.push([nx,ny]);
+      }
+      if(ward.on)break;
+    }
+    edge=next;
+  }
+  return ward.on;
+}
+const warded=f=>{const w=foeDef(f).ward;return !!w&&nearBlock(w.blocks,w.within|0)};
+/* One spectre, one frame. Returns whether it has taken its own turn — while
+   it is setting itself or going, it does its own moving and the ordinary walk
+   is not run for it at all. */
+function spectreTick(f,dt){
+  const d=foeDef(f), L=d.lunge;
+  if(f.lrest>0)f.lrest=Math.max(0,f.lrest-dt);
+  if(f.lunge==='dash')return spectreDash(f,dt);
+  if(f.lunge==='tell'){
+    /* it stands perfectly still while it sets itself. A tell that drifted
+       would not be one */
+    f.lt-=dt; f.rx=f.x; f.ry=f.y;
+    if(warded(f)){endLunge(f,'warded');return true}
+    if(f.lt<=0){
+      /* it commits to a heading here and holds it: what it is aiming at is
+         where the unit was standing when the tell ran out, not where the unit
+         is a quarter of a second later */
+      const dx=game.px-f.rx, dy=game.py-f.ry, m=Math.hypot(dx,dy)||1;
+      f.ldx=dx/m; f.ldy=dy/m;
+      f.lunge='dash'; f.lt=L.run||.6;
+      noise(f.x,f.y,ISO.NOISE.press,false);
+    }
+    return true;
+  }
+  if(f.mood!=='follow'||f.lrest>0||game.hide||!game.active||game.dead)return false;
+  const here=foeFlow(f).get(K(f.x,f.y));
+  if(here===undefined||here>(L.reach|0))return false;
+  if(warded(f)){
+    const n=performance.now();
+    if(d.warded&&n-f.warded>WARD_TELL*1000){f.warded=n;say(d.warded,'dim')}
+    return false;
+  }
+  f.rx=f.x; f.ry=f.y; f.path=null;
+  f.lunge='tell'; f.lt=L.tell||1;
+  if(d.sets)say(d.sets,'alert');
+  return true;
+}
+function spectreDash(f,dt){
+  const d=foeDef(f), L=d.lunge;
+  f.lt-=dt;
+  const step=(L.dash||10)*dt;
+  f.rx+=f.ldx*step; f.ry+=f.ldy*step;
+  f.x=Math.round(f.rx); f.y=Math.round(f.ry);
+  f.moved=performance.now();                          // it is moving: the tracker has it
+  if(!game.hide&&game.active&&!game.dead&&
+     Math.abs(f.rx-game.px)<.7&&Math.abs(f.ry-game.py)<.7){
+    if(turnBlow(f))return true;
+    die(d.kills); return true;
+  }
+  /* it runs until it is spent, or until the ground in front of it stops it */
+  const ax=Math.round(f.rx+f.ldx*.55), ay=Math.round(f.ry+f.ldy*.55);
+  if(f.lt<=0||!foeStands(ax,ay,f))endLunge(f,'missed');
+  return true;
+}
+/* However it ended, it comes to rest on a square it could stand on and holds
+   off a while. Being turned on the plate costs it a good deal longer than
+   missing does, which is what makes the second the plate takes worth taking. */
+function endLunge(f,why){
+  const d=foeDef(f), L=d.lunge||{};
+  f.lunge=null; f.lt=0; f.path=null;
+  let x=Math.round(f.rx), y=Math.round(f.ry);
+  const bx=Math.round(f.ldx), by=Math.round(f.ldy);
+  for(let i=0;i<5&&!foeStands(x,y,f);i++){x-=bx;y-=by}
+  if(!foeStands(x,y,f)){x=f.hx;y=f.hy}
+  f.x=x;f.y=y;f.rx=x;f.ry=y;
+  f.lrest=why==='turned'?(L.turned||7):(L.rest||4);
+  if(why==='missed'&&d.missed)say(d.missed,'dim');
+  if(why==='warded'&&d.warded)say(d.warded,'dim');
 }
 
 /* ---------- the motion tracker ----------
@@ -4404,6 +4739,8 @@ function respawn(){
   game.dead=false;game.sink=0;game.mt=1;game.mdur=.11;game.bt=1;game.face='down';game.arc=0;
   /* a rebuilt chassis has not made a sound yet, whatever the last one was doing */
   game.noised=-1e9;game.stir=-1e9;
+  /* and its plate is down and reset, whatever the last one had spent */
+  parry.t=0;parry.cool=0;
   /* on whichever deck the unit is standing, at the record it set down on */
   game.px=game.fx=level.entry.x;game.py=game.fy=level.entry.y;
   cancelJump();
@@ -4528,7 +4865,7 @@ function drawFeed(now,dt){
       ISO.drawCell(fx,MAP,x,y,px,py,tile,D,
                    {open:world.open.has(K(x,y)), locked:propsOf(x,y).locked,
                     spent:usedUp(ax,ay,tileDef(ax,ay)), over:below,
-                    run:world.running.has(K(ax,ay))||doomAt(ax,ay),
+                    run:world.running.has(K(ax,ay))||doomAt(ax,ay)||portBurning(ax,ay),
                     inside:!!hd&&ax===hd.ax&&ay===hd.ay});
     }
     /* the flood, drawn over whatever it has run across. Water painted on the
@@ -4576,6 +4913,7 @@ function drawFeed(now,dt){
 
   drawRails(ox,oy,tile,D,now);
   drawTrams(ox,oy,tile,D,now);
+  drawHazards(ox,oy,tile,D,now);
   drawFoes(ox,oy,tile,D,now);
   drawDin(ox,oy,tile,D,now);
   drawShots(ox,oy,tile,D);
@@ -4611,6 +4949,15 @@ function drawFeed(now,dt){
   const inn=s*.56;fx.fillStyle='rgba(28,240,28,.15)';fx.fillRect(cx-inn/2,cy-inn/2,inn,inn);
   fx.strokeStyle='rgba(28,240,28,.45)';fx.lineWidth=D;fx.strokeRect(cx-inn/2,cy-inn/2,inn,inn);
   fx.fillStyle=`rgba(255,59,47,${.5+.5*Math.sin(t*3)})`;fx.fillRect(cx-2*D,cy-2*D,4*D,4*D);
+
+  /* the plate, while it is up. It is drawn on the chassis rather than in the
+     key row, because the second it lasts is a second the operator is reading
+     the deck rather than the interface */
+  if(parry.t>0){
+    const g=parry.t/PARRY_FOR;
+    fx.strokeStyle=`rgba(150,205,255,${.3+.6*g})`;fx.lineWidth=Math.max(2,2.6*D);
+    fx.beginPath();fx.arc(cx,cy,tile*(.5+.2*(1-g)),0,6.283);fx.stroke();
+  }
 
   if(game.dead){
     const u=Math.min(W,H);
@@ -4743,6 +5090,23 @@ function drawFoes(ox,oy,tile,D,now){
         fx.setLineDash([]);
       }
     }
+    /* the tell, and then the heading it went down. A spectre that has set
+       itself is the one thing on a deck that is deliberately easy to read: it
+       stops, it draws a mark that closes, and when the mark closes it goes */
+    if(f.lunge==='tell'){
+      const hold=1-Math.max(0,f.lt)/((d.lunge&&d.lunge.tell)||1);
+      fx.strokeStyle=d.line;fx.lineWidth=Math.max(1.5,2*D);
+      ring();fx.arc(cx,cy,r*(2.8-1.6*hold),0,6.283);fx.stroke();
+      fx.setLineDash([3*D,4*D]);
+      fx.strokeStyle='rgba(200,172,255,'+(a*(.25+.6*hold))+')';fx.lineWidth=Math.max(1,D);
+      ring();fx.moveTo(cx,cy);
+      fx.lineTo(ox+(lerp(game.fx,game.px,ease(game.mt))+.5)*tile,
+                oy+(lerp(game.fy,game.py,ease(game.mt))+.5)*tile);
+      fx.stroke();fx.setLineDash([]);
+    }else if(f.lunge==='dash'){
+      fx.strokeStyle='rgba(200,172,255,'+(a*.55)+')';fx.lineWidth=Math.max(2,2.8*D);
+      ring();fx.moveTo(cx-f.ldx*tile,cy-f.ldy*tile);fx.lineTo(cx,cy);fx.stroke();
+    }
     /* and the grip, while it has the chassis: a short tether that says what
        is carrying what */
     if(game.held===f){
@@ -4755,6 +5119,59 @@ function drawFoes(ox,oy,tile,D,now){
     fx.globalAlpha=1;
   }
 }
+/* ---------- what the hull is doing, drawn ----------
+   Neither of these is a contact and neither is a control, so neither is drawn
+   like one. What the operator gets is the warning, drawn wherever the optics
+   reach or have reached, and then the thing itself. */
+function drawHazards(ox,oy,tile,D,now){
+  /* a port building. The ring closes as it comes up, so how long is left is
+     read off the picture rather than counted */
+  for(const o of world.thrusters){
+    if(o.state!=='build'||!powered(o.x,o.y))continue;
+    const a=sightAlpha(o.x,o.y,now);
+    if(a<=0)continue;
+    const hold=1-Math.max(0,o.t)/(o.warn||1),
+          cx=ox+(o.x+.5)*tile, cy=oy+(o.y+.5)*tile;
+    fx.strokeStyle='rgba(255,180,74,'+(a*(.3+.55*hold))+')';
+    fx.lineWidth=Math.max(1.5,2*D);
+    fx.beginPath();fx.arc(cx,cy,tile*(.62-.32*hold),0,6.283);fx.stroke();
+  }
+  for(const w of world.sweeps){
+    /* the track it is about to come down, over as much of it as the unit has
+       ever looked at — a warning drawn only where the unit is already looking
+       is a warning that arrives with the rock */
+    if(w.state==='warn'){
+      const hold=1-Math.max(0,w.t)/(w.warn||1);
+      fx.setLineDash([5*D,5*D]);
+      fx.lineWidth=Math.max(2,2.2*D);
+      for(const c of w.path){
+        const a=sightAlpha(c.x,c.y,now);
+        if(a<=0)continue;
+        fx.strokeStyle='rgba(255,59,47,'+(a*(.22+.55*hold))+')';
+        fx.beginPath();
+        fx.rect(ox+c.x*tile+2*D,oy+c.y*tile+2*D,tile-4*D,tile-4*D);
+        fx.stroke();
+      }
+      fx.setLineDash([]);
+    }
+    if(w.state!=='run')continue;
+    const a=sightAlpha(Math.round(w.rx),Math.round(w.ry),now);
+    if(a<=0)continue;
+    const cx=ox+(w.rx+.5)*tile, cy=oy+(w.ry+.5)*tile, r=tile*.44;
+    fx.globalAlpha=a;
+    /* the trail it is dragging, which is the whole of how fast it reads */
+    fx.strokeStyle='rgba(178,168,158,.5)';fx.lineWidth=Math.max(2,3*D);
+    fx.beginPath();fx.moveTo(cx-w.dx*tile*1.7,cy-w.dy*tile*1.7);fx.lineTo(cx,cy);fx.stroke();
+    fx.fillStyle='#0a0908';
+    fx.beginPath();fx.arc(cx,cy,r,0,6.283);fx.fill();
+    fx.fillStyle='rgba(118,108,102,.85)';
+    fx.beginPath();fx.arc(cx,cy,r,0,6.283);fx.fill();
+    fx.strokeStyle='rgba(200,190,180,.9)';fx.lineWidth=Math.max(1.5,1.6*D);
+    fx.beginPath();fx.arc(cx,cy,r,0,6.283);fx.stroke();
+    fx.globalAlpha=1;
+  }
+}
+
 /* ---------- what the deck sounded like ----------
    A ring off every noise the deck has made lately, as wide as the noise
    carried. It is the one thing on the feed drawn without reference to the
@@ -4984,6 +5401,7 @@ addEventListener('keydown',e=>{
     if(e.code==='KeyE'){e.preventDefault();if(!e.repeat)interact();return}
     if(e.code==='KeyM'){e.preventDefault();if(!e.repeat)toggleTracker();return}
     if(e.code==='KeyF'){e.preventDefault();if(!e.repeat)toggleLamp();return}
+    if(e.code==='KeyP'){e.preventDefault();if(!e.repeat)raisePlate();return}
     if(e.code==='KeyO'){e.preventDefault();if(!e.repeat)openStore();return}
     if(e.code==='KeyQ'){e.preventDefault();if(!e.repeat)dropItem();return}
     if(e.code==='Escape'&&term.on){e.preventDefault();closeTerminal();return}
@@ -5031,6 +5449,9 @@ function loop(now){
   if(state==='console'){
     updateTrams(dt);updateSlides(dt);updateFlood(dt);updateAlarm(dt);updateGens(dt);
     updateSpills(dt);updateDoom(dt);
+    /* the hull keeps its own time, and the plate runs down whatever else is
+       happening: both are worked out before anything reads the deck */
+    updateThrusters(dt);updateSweeps(dt);updateParry(dt);
     checkFooting();updateFoes(dt);updateLamp(dt);
     /* a key held down walks the unit; it does not work against a grip. The
        struggle counts presses, so a drone is shaken off by an operator doing
