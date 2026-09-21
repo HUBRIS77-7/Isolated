@@ -1679,9 +1679,36 @@ function noise(x,y,loud,mine){
    and it never will: what it has is a square, and it walks to it. */
 function heard(f,x,y,n){
   const d=foeDef(f);
+  /* ---------- what it has stopped walking to ----------
+     A deck makes noises of its own. A generator turns over from the same
+     square every few seconds for the rest of the run, and an alarm sounds
+     from one faster than a thing can cast about over it — so something that
+     answers every noise on its merits is something that goes to the
+     generator once and is still there at the end of the run. What it keeps
+     instead is a count against the squares it has walked to and found
+     nothing at, and once one of them has wasted enough trips it stops being
+     a mark at all: it has learnt what the deck sounds like by itself.
+
+     It is not deaf to the square for good. The count is kept alive by the
+     noise going on and dropped once the square has been quiet a while, so a
+     set that is still running stays ignored while a door that was driven
+     four times an hour ago is a door worth walking to again. */
+  const k=K(x,y), dull=f.dull.get(k);
+  if(dull){
+    if(n-dull.at>DULL_FOR*1000)f.dull.delete(k);
+    else{
+      dull.at=n;                                     // still going, so it stays learnt
+      if(dull.n>=DULL_AFTER)return;                  // machinery, and it has been
+    }
+  }
   /* a fresher mark replaces an older one, so a deck that goes on making
-     noise leads one along rather than letting it settle on the first thing */
-  f.mark={x, y}; f.heard=n; f.path=null; f.rest=0; f.stood=0;
+     noise leads one along rather than letting it settle on the first thing —
+     but the same square making the same noise again is not a fresher mark.
+     It is the noise it is already standing over, and letting it restart the
+     cast-about is what pins one to a generator for good. */
+  const same=f.mark&&f.mark.x===x&&f.mark.y===y;
+  f.mark={x, y}; f.heard=n; f.rest=0;
+  if(!same){f.path=null; f.stood=0}
   if(f.mood!=='follow'){
     f.mood='follow';
     if(!f.met){f.met=true;say(d.notice,'alert')}
@@ -2497,7 +2524,10 @@ function checkFooting(){
    something standing on the deck being put away, and it is worked out again
    the first frame the deck is back. */
 const foeCopy=f=>Object.assign({},f,{path:f.path?f.path.slice():null,
-                                     been:f.been?f.been.slice():[], aim:null});
+                                     been:f.been?f.been.slice():[],
+                                     /* what it has learnt to ignore is its own,
+                                        and it keeps it across a crossing */
+                                     dull:new Map(f.dull||[]), aim:null});
 function makeFoe(kind,x,y,p){
   const d=ISO.FOES[kind];
   return {kind, x, y, rx:x, ry:y, hx:x, hy:y, vis:0, met:false,
@@ -2509,6 +2539,7 @@ function makeFoe(kind,x,y,p){
              square it heard one at, and when. `mark` is the whole of what it
              knows about the deck — it never learns what made the sound */
           hears:((p&&p.hears)|0)||d.hears||0, mark:null, heard:-1e9, stood:0,
+          dull:new Map(),             // squares it has walked to and found nothing at
           been:[],                    // the last few squares it walked a leg to
           label:(p&&p.label)||'',
           hull:d.hull||1,             // rounds it takes to put down
@@ -2617,6 +2648,8 @@ const TRAIL_HOLD=3.2;                      // seconds a stopped unit still reads
 const STRIKE_HOLD=.5;                       // and how long it stays something worth striking at
 const SOUND_HOLD=9;                        // and how long a blind one keeps walking to a noise
 const CAST_ABOUT=2.6;                      // and how long it stands over one before giving it up
+const DULL_AFTER=4;                        // trips to one square that came to nothing before it stops answering it
+const DULL_FOR=40;                         // and seconds of quiet from that square before it is worth walking to again
 /* Whether the chassis has covered ground lately enough to be found by it, or
    hit. Standing still is not hiding from something that hunts by sight — but
    it is the whole of the answer to something that hunts by movement. */
@@ -2662,6 +2695,17 @@ function foeMood(f,dt){
                         (over&&n-f.stood>CAST_ABOUT*1000))
                       :f.mood==='follow';
     if(spent){
+      /* a square it stood over and got nothing from counts against that
+         square, and enough of them is what stops it coming back. Only one it
+         actually reached counts: giving a mark up because the deck went quiet
+         on the way there is not the square's fault */
+      if(over&&f.mark){
+        const k=K(f.mark.x,f.mark.y), dull=f.dull.get(k);
+        if(dull){dull.n++; dull.at=n}else f.dull.set(k,{n:1, at:n});
+        /* and whatever it learnt about a deck that has since gone quiet is
+           not worth carrying about */
+        f.dull.forEach((v,key)=>{if(n-v.at>DULL_FOR*1000)f.dull.delete(key)});
+      }
       f.mark=null; f.path=null; f.stood=0;
       if(f.mood==='follow'){
         f.mood='roam';

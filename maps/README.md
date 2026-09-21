@@ -439,6 +439,12 @@ walk to and stand over, which is either the worst mistake a run can make or the
 best decoy it has, depending on where the operator is going next. Powering a
 deck and being quiet on it are two things one run cannot have.
 
+It is a decoy with a shelf life. A ravager that has walked to the same square
+four times and found nothing at it stops answering that square — see *The one
+that cannot see* below — so a set pulls one off the operator a few times and
+then stops being worth anything at all. Start it for the crossing it buys, not
+as somewhere to park the thing for the rest of the run.
+
 The fusebox screen says which of the two is missing. A way whose box has
 nothing behind it reads `NO SUPPLY` rather than `LIVE`, and the header carries
 `SUPPLY [name] COLD` — otherwise an operator walks off looking for a second
@@ -631,7 +637,7 @@ halfway.
 | `<`  | Sentry turret | Never. It is bolted where it was painted | It does not have to: it shoots | Command side. It lays onto anything not of its own side — a stalker, a hunter, a block — and onto the unit whatever happens, and puts a round through it. What it never fires at is a security drone |
 | `z`  | Security drone | At a pace of its own, always | Onto the unit, and lifts it | Command side, and it cannot end a run. It takes hold of the chassis, carries it off, and sets it down wherever it was going. The movement keys become the struggle while it has hold |
 | `0`  | Block | Along one heading until the whole of it is stopped | It does not steer: it arrives | Three tiles by three of freight. Whatever it comes over is under it, and that ends the run. It needs the whole of its body's width, so a doorway is somewhere it can never be |
-| `4`  | Ravager | At a pace of its own, always — casting about or coming | Onto whatever it heard, and strikes it if it is still making a noise, which ends the run | It cannot see. Nothing about where the unit is standing reaches it: what it has is the last square the deck made a noise at, and it walks to that. Holding still is no answer to it — being quiet is |
+| `4`  | Ravager | At a pace of its own, always — casting about or coming | Onto whatever it heard, and strikes it if it is still making a noise, which ends the run | It cannot see. Nothing about where the unit is standing reaches it: what it has is the last square the deck made a noise at, and it walks to that. Holding still is no answer to it — being quiet is. Four wasted trips to one square and it stops answering that square |
 
 ### Hunting by movement
 
@@ -1763,6 +1769,21 @@ about where the unit is standing reaches it: it will walk straight past a unit
 in the open, at any range, indefinitely. What it has is a **mark** — the last
 square the deck was heard doing something at — and it walks to that, stands
 over it, casts about for a couple of seconds, and gives it up.
+
+**It learns the deck's own noises.** Four trips to one square that came to
+nothing and it stops answering that square: the count is what the deck is
+making, not what made it, so a generator turning over every few seconds from
+where it stands pulls one four times and is then ignored. What it learnt is
+kept alive by the noise going on and dropped once the square has been quiet
+about forty seconds, so a set still running stays ignored while a door driven
+four times a minute ago is a door worth walking to again. Nothing else is
+affected: a square it has stopped answering is one square, and the next noise
+from anywhere else is a mark like any other.
+
+That cuts both ways for an operator. It is what stops a running generator
+pinning the thing where it stands for the rest of a run — and it is also a
+square the unit can make safe, at the cost of four trips' worth of the
+ravager's attention and with about forty seconds before the deck forgets.
 
 Everything in the table above is a mark. A door driven two rooms away is a
 mark. A fuse seated in a fusebox is a mark. A control struck, a duct crawled, a
