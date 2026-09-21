@@ -2496,7 +2496,8 @@ function checkFooting(){
 /* What it was laid onto is not copied: a mark is a live reference to
    something standing on the deck being put away, and it is worked out again
    the first frame the deck is back. */
-const foeCopy=f=>Object.assign({},f,{path:f.path?f.path.slice():null, aim:null});
+const foeCopy=f=>Object.assign({},f,{path:f.path?f.path.slice():null,
+                                     been:f.been?f.been.slice():[], aim:null});
 function makeFoe(kind,x,y,p){
   const d=ISO.FOES[kind];
   return {kind, x, y, rx:x, ry:y, hx:x, hy:y, vis:0, met:false,
@@ -2508,6 +2509,7 @@ function makeFoe(kind,x,y,p){
              square it heard one at, and when. `mark` is the whole of what it
              knows about the deck — it never learns what made the sound */
           hears:((p&&p.hears)|0)||d.hears||0, mark:null, heard:-1e9, stood:0,
+          been:[],                    // the last few squares it walked a leg to
           label:(p&&p.label)||'',
           hull:d.hull||1,             // rounds it takes to put down
           face:Math.random()*6.283,   // where a gun is laid, in radians
@@ -2705,6 +2707,7 @@ function foeScatter(f){
    reads as something searching it rather than something drifting. */
 const ROAM_REACH=18;                       // squares a contact will set out across
 const ROAM_MIN=5;                          // and the shortest trip it bothers with
+const ROAM_MEMORY=10;                      // and legs of it that it remembers walking
 function foeRoute(f){
   const from=K(f.x,f.y), parent=new Map([[from,null]]);
   const home=(x,y)=>Math.max(Math.abs(x-f.hx),Math.abs(y-f.hy));
@@ -2723,11 +2726,34 @@ function foeRoute(f){
       if(r<ROAM_MIN&&!out)continue;
       const h=home(nx,ny);
       if(out){if(h<bestd){bestd=h;best=k}}
-      else if(!leash||h<=f.range)far.push(k);
+      else if(!leash||h<=f.range)far.push([k,nx,ny]);
     }
     edge=next;
   }
-  let k=out?best:far.length?far[Math.random()*far.length|0]:null;
+  /* which of them it makes for. A leg taken at random out of everything in
+     reach is a drift rather than a search, and a drift works one room of a
+     deck over and over: most of the ground within reach of where a thing is
+     standing is ground it has just come through, so the dice keep handing it
+     back. What it keeps instead is the last few squares it made for, and out
+     of what the sweep reached it takes the ground least like any of them.
+     That is the difference between one that finds the corridor out of a room
+     and one that never quite does — and it is why an author gets the whole
+     deck walked rather than the corner the contact was painted in. */
+  let k=null;
+  if(out)k=best;
+  else if(far.length){
+    let most=-1;
+    for(const c of far){
+      let near=Infinity;
+      for(const b of f.been)near=Math.min(near,Math.max(Math.abs(c[1]-b.x),Math.abs(c[2]-b.y)));
+      c.push(near); if(near>most)most=near;
+    }
+    /* anything as new as the newest, so it still picks rather than computes */
+    const pick=far.filter(c=>c[3]>=most-1), c=pick[Math.random()*pick.length|0];
+    k=c[0];
+    f.been.push({x:c[1], y:c[2]});
+    while(f.been.length>ROAM_MEMORY)f.been.shift();
+  }
   if(!k)return null;                                   // nowhere worth going
   const path=[];
   while(k&&k!==from){
