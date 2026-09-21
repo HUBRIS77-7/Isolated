@@ -156,6 +156,27 @@ ISO.register({
 | `2`  | Fire      | no   | Nothing crosses it. Water puts it out, and what is left is ash the unit walks over |
 | `3`  | Laser alarm | yes | A beam across the way. Walk through an armed one and the deck sounds. A control disarms it. Touching copies are one beam |
 | `4`  | Ravager   | yes  | Where a contact starts. It is blind, and it hunts the deck by sound |
+| `5`  | Potted plant | no | Decoration. Sight passes over it             |
+| `6`  | Wide chair | no  | Two tiles across its facing; turns with its `dir`. Sight passes over it |
+| `7`  | Side table | no  | One tile of it. Sight passes over it         |
+| `8`  | Long table | no  | Touching copies become one top — as long as you paint it. Sight passes over it |
+| `9`  | Wall heater | no | Decoration, and it draws power: a dead circuit is a cold panel |
+| `'`  | Fractured floor | yes | Plating that has gone without going through. Crossed at walking pace, and louder than plating |
+| `ð`  | Debris field | yes | Touching copies become one drift — as big as you paint it. Slower to cross, and loud |
+| `ď`  | Broken door | yes | A door down flat across the way. Driven over slowly, and it rings the length of the deck |
+| `ł`  | Fallen light fixture | yes | Out of the deckhead, glass first. Slower to cross, and loud |
+| `ś`  | Skeleton  | yes  | Two tiles long; turns with its `dir`. Crossed slowly, and it cracks |
+| `ŵ`  | Wall debris | no | What a bulkhead becomes. Touching copies become one heap — as big as you paint it |
+| `ƒ`  | Fuel canister | yes | Small enough to carry off. `[E]` lifts it, `[Q]` sets it down. What a generator takes |
+| `ĝ`  | Generator | no   | Six tiles by three; turns with its `dir`. `[E]` empties a canister into it and it runs — and goes on making a noise about it |
+| `ü`  | Distribution panel | no | Two tiles by two; turns with its `dir`. Everything a fusebox is, in the size a compartment that mattered got |
+
+Every printable character on a keyboard is spoken for, so the blocks added
+after them are keyed to letters that carry an accent — `ð` for debris where
+`,` is a scatter of it, `ď` for a door that is down, `ĝ` for a generator, `ü`
+for the panel where `u` is the box. They are one character in a row like any
+other and the editor paints them like any other; what they cost is that they
+are easier to pick out of the palette than to type into a row by hand.
 
 To add a tile type, add one entry to `TILES` in `tiles.js`. It shows up in the
 editor palette on its own and the game obeys it straight away — walkability,
@@ -205,8 +226,14 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Stairway | `dest`         | The deck the steps climb to — another map's `id` |
 | Stairway | `arrive`       | Which flight it comes out at over there (blank: one stencilled the same) |
 | Stairway | `label`        | Stencilled name — the companionway's name on both decks |
-| Fusebox  | `ways`         | The circuits it feeds, and the fuse each way takes |
-| Fusebox  | `label`        | Name shown in the message log and on the screen |
+| Fusebox, Distribution panel | `ways` | The circuits it feeds, and the fuse each way takes |
+| Fusebox, Distribution panel | `supply` | The supply behind the box. Blank — the default — is the ship's own, which is never off |
+| Fusebox, Distribution panel | `label` | Name shown in the message log and on the screen |
+| Distribution panel | `dir`  | Which way it runs, so which tiles its other three cover |
+| Generator | `supply`      | The supply it feeds. Every box stencilled the same reads live while it turns |
+| Generator | `run`         | Starts turning rather than cold                |
+| Generator | `dir`         | Which way it runs, so which tiles it covers    |
+| Generator | `label`       | Name shown in the message log                  |
 | Fuse     | `rating`       | Which fuse this one is — a way only wakes for its own |
 | Fuse     | `label`        | Name shown in the message log                  |
 | Stalker  | `wake`         | Squares of route at which it takes an interest |
@@ -231,6 +258,10 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Car, Windmill | `dir`     | Which way it faces, so which tiles it covers   |
 | Car, Windmill | `label`   | Stencilled name                                |
 | Bed, Sofa, Table | `dir`  | Which way it runs                              |
+| Wide chair | `dir`        | Which way it faces, so which tile its second half covers |
+| Skeleton | `dir`          | Which way it lies                              |
+| Potted plant, Long table, Wall heater, Fuel canister | `label` | Stencilled name |
+| Wall heater | `circuit`   | Read exactly as any other powered block's is    |
 | Scarecrow | `label`       | Stencilled name                                |
 | Command Desk, Command Antenna | `dir` | Which way it runs, so which tiles it covers |
 | Command Desk, Command Antenna, Command Relay | `label` | Stencilled name |
@@ -257,7 +288,7 @@ costs one line in `tiles.js` and nothing anywhere else.
 
 The palette is filed under headings — **Ground**, **Open land**, **Structure**,
 **Buildings**, **Controls**, **Transit**, **Fixtures**, **Furnishings**, **Farm**,
-**Remains**, **Unit & kit**, **Command deck**, **Hazards**, **Contacts** — and each heading folds away with a
+**Remains**, **Wreckage**, **Unit & kit**, **Command deck**, **Hazards**, **Contacts** — and each heading folds away with a
 click, so a room is laid out from the six or seven blocks it actually uses
 rather than from a list of thirty. Which headings are folded is kept between
 visits, like the draft is. The number keys still reach the first ten blocks
@@ -373,6 +404,56 @@ Power crosses decks the way everything else does: each deck keeps the fuses
 seated in its own boxes, so a car that goes back comes back to the circuits it
 left live. `[R]` puts every deck back to how it started, fuses included.
 
+There is a bigger box for a compartment that deserves one. A **Distribution
+panel** (`ü`) is two tiles by two, let into the bulkhead, and it is a fusebox in
+every other respect: the same ways, the same fuses, the same screen, opened
+with `[E]` from any square of the four rather than from the corner you painted.
+
+### The supply behind the box — the generator
+
+A fuse decides which way out of a box is live. It decides nothing at all about
+whether the box has anything to give, and on most decks that question never
+comes up: a box with its **supply** field blank is on the ship's own supply,
+which has never been off.
+
+Write a name in a box's `supply` and the question comes up. That box now
+carries nothing — whatever is seated in it, and however right the rating is —
+until a **Generator** (`ĝ`) somewhere on the same deck, stencilled with the same
+name, is turning. So a deck can be drawn with the power off at the source
+rather than merely unfused, and the errand doubles: find the fuel, then find the
+fuse.
+
+A generator is six tiles by three and turns with its `dir` like anything else
+that size. Nothing signals it: no button reaches it, no circuit wakes it, and
+`signal` has no meaning for it at all. What starts it is `[E]` from any square
+of it with a **Fuel canister** (`ƒ`) in the manipulator — the third small
+object, carried and set down exactly the way a fuse and a key are, and the one
+that comes in no variants, because a can is a can. It takes the canister, it
+catches, and it runs for the rest of the deck. It cannot be stopped again.
+
+What it costs is the deck. A set catching is `engine` in the noise table — 20
+squares, louder than a door and second only to the alarm — and it does not stop
+being loud: it turns over again every few seconds for as long as it runs, from
+where it stands. On a deck with a Ravager on it that is a mark the thing will
+walk to and stand over, which is either the worst mistake a run can make or the
+best decoy it has, depending on where the operator is going next. Powering a
+deck and being quiet on it are two things one run cannot have.
+
+The fusebox screen says which of the two is missing. A way whose box has
+nothing behind it reads `NO SUPPLY` rather than `LIVE`, and the header carries
+`SUPPLY [name] COLD` — otherwise an operator walks off looking for a second
+fuse it does not need. A block prodded on such a circuit says the same thing in
+the log: it names the supply and says nothing is turning, where a block merely
+waiting on a fuse says the way sits empty. Survey checks both halves — a
+generator stencilled for a supply no box waits on, a box waiting on a supply no
+generator feeds, and a generator that starts cold on a deck with no fuel placed
+anywhere in the record to start it with.
+
+Set `Starts turning` on a generator and the deck opens with it running, which
+is how you give a deck power and still put a generator on it for the look of
+the thing. `[R]` puts it back to cold with its tank empty, the way it puts
+every fuse back in its clip.
+
 ## Small objects, and carrying them
 
 Some things are small enough for the unit to pick up. `[E]` lifts one into the
@@ -395,6 +476,11 @@ twice.
 A **Key** (`k`) is the second, and it works the same way with one difference:
 what it answers to is a lock rather than a circuit. Which lock is `opens`, on
 the key and on the door alike — see **A lock, rather than a circuit** below.
+
+A **Fuel canister** (`ƒ`) is the third, and the plain one: it comes in no
+ratings and no cuts, because every canister fits every generator. It is lifted,
+carried and set down like the other two, and what it is for is
+**The supply behind the box** above.
 
 To add another kind of small object, add one entry to `ITEMS` in `tiles.js` and
 one tile that says it holds that kind — the lifting, the carrying, the setting
@@ -1291,6 +1377,13 @@ a car needs: seven tiles by three, wheels at its corners, a cab and a bed. Both
 turn with the block, because `parts` is read off the footprint rather than off
 the map.
 
+A block that states its own size answers `[E]` from **any square of it**, not
+from the anchor. The whole of a hollow desk is a way in, the whole of a
+distribution panel opens its ways, and a generator six tiles long is started
+from wherever the unit happens to be standing beside it. It is drawn as one
+body in one state, too: a set that is turning lights up end to end rather than
+one corner at a time.
+
 Survey flags a big block that reaches past the edge of the record, stands in a
 wall, or overlaps another one.
 
@@ -1494,6 +1587,32 @@ on the ship** — a step taken on it carries two squares where a step on plating
 carries four — and on a deck with something listening on it that is the
 difference between a route and a mistake. See **A deck that can be heard**.
 
+## Furnishing a room
+
+A room read from overhead is its furniture, and furniture that only ever comes
+one tile square or two tiles long makes every room on the ship the same room.
+The sizes the first few were not are these: a **Wide chair** (`6`) is two tiles
+across its facing, where a sofa is two along it — one faces a way and seats two,
+the other runs a length and faces nowhere. A **Side table** (`7`) is one tile,
+where the **Table** (`t`) is two by two. A **Long table** (`8`) has no size of
+its own at all: touching copies are one top, so a bench down the length of a
+mess is painted rather than fitted together out of two-by-twos. A **Potted
+plant** (`5`) is one tile of something that was being kept alive.
+
+All of it stops the unit and none of it stops sight, which is what furniture
+is: low. The one that is not only decoration is the **Wall heater** (`9`) — it
+is on a circuit like anything else that draws, so a compartment with the power
+pulled has a cold panel on the wall of it, and from overhead that is the whole
+of what tells an operator the heating went with the lights.
+
+What a room is left as is the other half. A **Skeleton** (`ś`) is two tiles of
+crew, crossed slowly and not quietly, where the **Dead body** (`Y`) is three
+and the **Skull** (`S`) is one. **Wall debris** (`ŵ`) is what a bulkhead becomes
+when it stops being one: as big as it is painted, one heap, and neither crossed
+nor read through — a wall in every way that matters, drawn as a wall that
+failed. The rest of the wreckage is ground, and ground that is heard: see
+**A deck that can be heard**.
+
 ## Somewhere to be that is not the deck
 
 A **Hollow locker** (`{`) and a **Hollow desk** (`}`) are the crew locker and
@@ -1608,18 +1727,30 @@ buried in the driver that does it:
 | 2       | A step on carpet |
 | 4       | A step on plating — the quiet one, on purpose |
 | 6       | Something small lifted off the deck, or set down on it |
-| 7–9     | A step on sludge, debris, bone or open grating |
+| 6       | A step on fractured plating |
+| 7–9     | A step on sludge, debris, bone, a skeleton or open grating |
 | 9       | A control struck, and a fire going out under water |
 | 10      | Coming down off a jump — and any step through water |
-| 11      | A fuse seated in a way, or pulled back out of one |
-| 13      | Machinery: a platform called, a car, a duct cover, a station's arm, a flight of steps |
+| 11      | A fuse seated in a way, or pulled back out of one — and a step through a fallen light fitting |
+| 13      | Machinery: a platform called, a car, a duct cover, a station's arm, a flight of steps — and a door driven over, rather than driven |
 | 15      | A door, a gate or a bar driven |
+| 20      | A generator catching, and every turn it takes afterwards |
 | 60      | A laser alarm, which is the whole deck and a good way past the edges of it |
 
 A tile says how loud a step onto it is with `noisy`, so what a deck sounds like
 underfoot is a property of what it is built out of. Carpet is the quiet one and
 water is the loud one, and everything between them is a decision about where
-the route through a room ought to go.
+the route through a room ought to go. Wreckage is how that decision is drawn:
+**Fractured floor** (`'`) is ground that costs nothing to cross and tells the
+deck you crossed it, a **Debris field** (`ð`) is slower and louder again, a
+**Fallen light fixture** (`ł`) is glass, and a **Broken door** (`ď`) is the
+loudest floor on the ship — two and a half steps' worth of time and a ring the
+length of the deck. Put one across a doorway and you have made that doorway
+cost something without closing it.
+
+Two of the three sounds that are not a step are worth the same attention. A
+fuse seated is the sound of a deck coming back on. A generator is the sound of
+one staying on, every few seconds, for the rest of the run.
 
 The feed draws a ring off every noise, as wide as the noise carried, without
 reference to the optics — because a unit that has just given itself away should

@@ -40,6 +40,9 @@
              control and no [E] will ever drive
    spent   — alternate look and bump line for a one-shot block that has been
              used up: a station whose stock is fitted, a beacon gone quiet
+   run     — alternate look and bump line for a block that has been started
+             and is turning rather than standing cold. A generator with fuel
+             in it is read at a glance, from overhead, by this and nothing else
    ping    — it transmits: the unit reads it through walls, and it goes quiet
              once the unit is within its own `range`
    sized   — its log line reports how big the copy the unit found actually is
@@ -299,6 +302,7 @@ const NOISE = {
   fuse:   11,     // a fuse seated in a way, or pulled back out of one
   gear:   13,     // machinery: a platform called, a car, a duct cover, an arm
   door:   15,     // a door, a gate or a bar driven
+  engine: 20,     // a generator set catching, and every turn it takes after
   alarm:  60,     // the whole deck, and a good way past the edges of it
 };
 
@@ -338,6 +342,10 @@ const KEY_OPTS = Object.keys(KEYS).map(k=>({value:k, label:KEYS[k].name}));
 const ITEMS = {
   fuse: {id:'fuse', name:'Fuse', tile:'f', kinds:FUSES},
   key:  {id:'key',  name:'Key',  tile:'k', kinds:KEYS},
+  /* The one that comes in no variants: a can is a can. A fuse is cut for a
+     rating and a key for a lock, and fuel is only ever fuel — which is why it
+     declares no `kinds` and every canister on the ship fits every set. */
+  fuel: {id:'fuel', name:'Fuel canister', tile:'ƒ'},
 };
 /* How many small objects the manipulator holds at once. */
 const CARRY = 6;
@@ -346,6 +354,16 @@ const CARRY = 6;
    each of them below rather than repeated: blank means the block is live from
    the moment the run starts, and a name means it waits on that circuit. */
 const CIRCUIT = {type:'text', label:'On circuit (blank: always live)', def:''};
+
+/* ---------- what is behind the fusebox ----------
+   A circuit is live because a way in a box holds the fuse that way takes. A
+   box is live because something is supplying the box. Left blank that is the
+   ship's own supply and the box has worked since the day it was fitted;
+   stencilled, it waits on a generator stencilled the same, and every fuse
+   seated in it carries nothing at all until that set is turning. It is the
+   one setting a generator and a box both declare, because it is the one name
+   the two of them have to agree on. */
+const SUPPLY = {type:'text', label:'On supply (blank: the ship’s own)', def:''};
 
 /* Every link between decks carries these two. Left blank a crossing is only a
    crossing. Filled in, the screen holds on the black the link was already
@@ -524,6 +542,7 @@ const TILES = {
         props:{ways:{type:'slots', label:'Ways it feeds', def:[],
                      fields:{circuit:{type:'text', label:'Circuit', def:''},
                              rating:{type:'pick', label:'Takes', def:'a15', opts:FUSE_OPTS}}},
+               supply:Object.assign({}, SUPPLY),
                label:{type:'text', label:'Stencilled', def:''}}},
   '^': {key:'^', id:'lift',   name:'Elevator',  walk:true,  fill:'rgba(255,59,47,.14)',  line:'rgba(255,59,47,.6)',  glyph:'⇕',
         beacon:true, press:'lift', signal:'lift', powered:true,
@@ -612,6 +631,55 @@ const TILES = {
                enter:'Empty clip. Whatever sat in it has been lifted.'},
         props:{rating:{type:'pick', label:'Rating', def:'a15', opts:FUSE_OPTS},
                label:{type:'text', label:'Stencilled', def:''}}},
+  /* ---------- making power, rather than distributing it ----------
+     A fuse decides which way out of a box is live. It decides nothing at all
+     about whether the box has anything to give: that is the supply behind it,
+     and on most decks the supply is the ship and the question never comes up.
+     Stencil a box with a supply and it comes up: the box carries nothing,
+     whatever is seated in it, until a generator stencilled the same name is
+     turning. Which makes a dark deck two errands instead of one — find the
+     fuel, then find the fuse — and makes the loudest thing an operator can
+     do to a deck something it has to do on purpose. */
+  'ƒ': {key:'ƒ', id:'fuel', name:'Fuel canister', walk:true, clear:true,
+        fill:'rgba(255,180,74,.12)', line:'rgba(255,180,74,.52)', glyph:'▬',
+        press:'take', take:{kind:'fuel'},
+        enter:'Canister on the deck, and there is still weight in it. [E] lifts it.',
+        spent:{fill:'rgba(255,180,74,.03)', line:'rgba(255,180,74,.2)', glyph:'▫',
+               enter:'Empty cradle. Whatever stood in it has been lifted.'},
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
+  /* Six tiles by three of it, and nothing about it answers a control: a
+     generator is started by hand, with a canister, and it goes on turning
+     from then on. What it costs is noise — it catches loudly and it runs
+     loudly, every few seconds, for as long as the deck needs the power. */
+  'ĝ': {key:'ĝ', id:'generator', name:'Generator', walk:false,
+        foot:{len:6, wide:3},
+        parts:[['╔','═','═','═','═','╗'],
+               ['║','◉','≡','≡','▤','║'],
+               ['╚','═','═','═','═','╝']],
+        fill:'rgba(255,180,74,.12)', line:'rgba(255,180,74,.45)',
+        press:'generator',
+        bump:'Generator set. Six tiles of it, cold, and the tank dry. [E] puts a canister in and turns it over.',
+        run:{fill:'rgba(255,180,74,.26)', line:'rgba(255,210,120,.9)',
+             bump:'Generator set, turning over. Everything on its supply reads live, and the whole deck can hear it.'},
+        props:{dir:{type:'dir',  label:'Runs', def:'right'},
+               supply:Object.assign({}, SUPPLY, {label:'Supply it feeds'}),
+               run:{type:'bool', label:'Starts turning', def:false},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* The box that is not a box on a post: four squares of panel let into the
+     bulkhead. Everything a fusebox is — the same ways, the same fuses, the
+     same screen — in the size a compartment that mattered got. */
+  'ü': {key:'ü', id:'panel', name:'Distribution panel', walk:false, clear:true,
+        foot:{len:2, wide:2},
+        parts:[['⊞','⊞'],['⊞','⊞']],
+        fill:'rgba(255,180,74,.14)', line:'rgba(255,180,74,.6)',
+        press:'fusebox',
+        bump:'Distribution panel, four squares of it let into the bulkhead. [E] opens the ways.',
+        props:{dir:{type:'dir', label:'Runs', def:'right'},
+               ways:{type:'slots', label:'Ways it feeds', def:[],
+                     fields:{circuit:{type:'text', label:'Circuit', def:''},
+                             rating:{type:'pick', label:'Takes', def:'a15', opts:FUSE_OPTS}}},
+               supply:Object.assign({}, SUPPLY),
+               label:{type:'text', label:'Stencilled', def:''}}},
 
   /* ---------- remains: what the crew left on the deck ----------
      None of it stops the unit. Blood and bone are read on the way past; a
@@ -631,6 +699,55 @@ const TILES = {
         fill:'rgba(150,18,18,.22)', line:'rgba(255,59,47,.45)',
         enter:'Crew remains, full length across the deck. The chassis climbs rather than walks.',
         props:{dir:{type:'dir', label:'Lies', def:'right'}}},
+  /* What is left of one that has been out here long enough. Two tiles rather
+     than three, because there is less of it than there was, and it cracks:
+     stepping over a skeleton is quieter than wading and louder than walking. */
+  'ś': {key:'ś', id:'skeleton', name:'Skeleton', walk:true, slow:1.9, noisy:7,
+        foot:{len:2}, parts:['☠','‡'],
+        fill:'rgba(214,226,220,.12)', line:'rgba(214,226,220,.45)',
+        enter:'Articulated remains, picked clean and still lying the way they went down. The chassis steps over, and something under it gives.',
+        props:{dir:{type:'dir', label:'Lies', def:'right'}}},
+
+  /* ---------- what the deck came down as ----------
+     Five blocks of wreckage, and the difference between them is the only
+     thing worth knowing about wreckage: how much of it there is, whether it
+     can be crossed, and what crossing it costs. Loose material is walked
+     through loudly; a door off its hinges is driven over slowly and more
+     loudly still; what came out of a bulkhead is not crossed at all. A deck
+     drawn out of these is a deck an operator routes round by ear rather
+     than by eye, which is the whole reason for having them. */
+  /* Debris as big as it is painted: one square of grit, or half a bay of
+     collapse. Touching copies are one drift and the log says how much of it
+     the unit has walked into. */
+  'ð': {key:'ð', id:'rubble', name:'Debris field', walk:true, merge:true, sized:true,
+        slow:1.3, noisy:9, glyph:'⁂',
+        fill:'rgba(28,240,28,.09)', line:'rgba(28,240,28,.26)',
+        enter:'Collapse debris underfoot, and it shifts. Every square of this is a square something heard the chassis cross.'},
+  /* Plating that has gone, without going through. It carries the chassis and
+     complains about it — which is all a fracture is: ground that costs
+     nothing to cross and tells the deck you crossed it. */
+  '\'': {key:'\'', id:'fracture', name:'Fractured floor', walk:true, noisy:6, glyph:'↯',
+        fill:'rgba(28,240,28,.07)', line:'rgba(28,240,28,.3)',
+        enter:'Plating fractured clean across. It takes the weight, flexes, and rings when it settles.'},
+  /* A door is either a way or a wall. This one is neither: it is down, it is
+     in the way, and the chassis drives over it at a crawl with the whole of
+     the deck listening to the plate ring under it. */
+  'ď': {key:'ď', id:'downdoor', name:'Broken door', walk:true, slow:2.4, noisy:13,
+        glyph:'╱',
+        fill:'rgba(255,180,74,.12)', line:'rgba(255,180,74,.45)',
+        enter:'Door off its hinges and down flat across the way. The chassis drives over it slowly, and it rings the length of the deck.'},
+  /* Out of the deckhead, glass first. */
+  'ł': {key:'ł', id:'fallenlight', name:'Fallen light fixture', walk:true, slow:1.4, noisy:11,
+        glyph:'¤',
+        fill:'rgba(191,247,220,.1)', line:'rgba(191,247,220,.42)',
+        enter:'Light fitting down out of the deckhead, tube and housing together. It goes under the chassis in pieces.'},
+  /* And what a bulkhead becomes when it stops being one: as big as it is
+     painted, and not crossed. Sight stops in it the way it stops in the wall
+     this used to be. */
+  'ŵ': {key:'ŵ', id:'walldebris', name:'Wall debris', walk:false, merge:true, sized:true,
+        glyph:'▓',
+        fill:'rgba(28,240,28,.17)', line:'rgba(28,240,28,.38)',
+        bump:'Structure down across the way — plate, insulation and frame, in a heap. Nothing reads through it and nothing climbs it.'},
 
   /* ---------- a hole with a deck under it ----------
      Three tiles by three of missing plating. The unit walks in and goes down,
@@ -845,6 +962,44 @@ const TILES = {
         props:{title:{type:'text', label:'Header',    def:'BROADCAST'},
                text:{type:'lines',label:'On screen',  def:'Colour bars. Nothing behind them.'},
                label:{type:'text',label:'Stencilled', def:''}}},
+
+  /* ---------- the rest of what furnishes a room ----------
+     Five blocks that are the sizes the first five were not. A room is read
+     from overhead as its furniture, and furniture that only ever comes one
+     tile square or two tiles long makes every room on the ship the same
+     room: this is a seat wide enough for two, a table small enough for one,
+     a table as long as it is painted, something growing in a pot, and the
+     thing on the bulkhead that was keeping the compartment warm. */
+  '5': {key:'5', id:'planter', name:'Potted plant', walk:false, clear:true, glyph:'✿',
+        fill:'rgba(120,200,96,.12)', line:'rgba(120,200,96,.44)',
+        bump:'Planter. Dry to the bottom of the pot, and the stem in it still standing up.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
+  /* Two tiles across its facing rather than two along it: a bench seat faces
+     a way and seats two, where a sofa runs a length and faces nowhere. */
+  '6': {key:'6', id:'widechair', name:'Wide chair', walk:false, clear:true,
+        foot:{len:1, wide:2}, parts:[['⊓'],['⊓']],
+        fill:'rgba(28,240,28,.11)', line:'rgba(28,240,28,.36)',
+        bump:'Bench seat, two places of it, facing something that is not there any more.',
+        props:{dir:{type:'dir', label:'Faces', def:'right'}}},
+  '7': {key:'7', id:'stand',  name:'Side table', walk:false, clear:true, glyph:'⊡',
+        fill:'rgba(28,240,28,.1)', line:'rgba(28,240,28,.34)',
+        bump:'Side table, one square of it. A cup ring, and nothing standing in it.'},
+  /* The table with no size of its own: touching copies are one top, so a
+     refectory bench down the length of a mess is painted rather than fitted
+     together out of two-by-twos. */
+  '8': {key:'8', id:'longtable', name:'Long table', walk:false, clear:true,
+        merge:true, sized:true, glyph:'≡',
+        fill:'rgba(28,240,28,.1)', line:'rgba(28,240,28,.34)',
+        bump:'Table top, run the length of the room and low enough to read over.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
+  /* On the bulkhead rather than on the deck, and on a circuit like anything
+     else that draws: a compartment with the power pulled has a cold panel on
+     the wall of it, and from overhead that is the whole of what tells an
+     operator the heating went with the lights. */
+  '9': {key:'9', id:'heater', name:'Wall heater', walk:false, clear:true, glyph:'♨',
+        fill:'rgba(255,180,74,.13)', line:'rgba(255,180,74,.5)', powered:true,
+        bump:'Bulkhead heater. Element behind a grille, and the grille furred with dust.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
 
   /* ---------- what is grown here ----------
      Crop is ground the unit can walk into, and the only ground on a deck that
@@ -1072,13 +1227,14 @@ const CATS = [
   {id:'land',      name:'Open land',   keys:'dgpr_P'},
   {id:'structure', name:'Structure',   keys:'#%oxWG]'},
   {id:'building',  name:'Buildings',   keys:'HhiQK>'},
-  {id:'controls',  name:'Controls',    keys:'bcun?'},
+  {id:'controls',  name:'Controls',    keys:'bcun?üĝ'},
   {id:'transit',   name:'Transit',     keys:'T^sVO'},
   {id:'fixtures',  name:'Fixtures',    keys:'LBACFDR){}'},
-  {id:'home',      name:'Furnishings', keys:'ZaUtm'},
+  {id:'home',      name:'Furnishings', keys:'ZaUtm56789'},
   {id:'farm',      name:'Farm',        keys:'|w&yj@'},
-  {id:'remains',   name:'Remains',     keys:';SXY'},
-  {id:'kit',       name:'Unit & kit',  keys:'M*fk'},
+  {id:'remains',   name:'Remains',     keys:';SXYś'},
+  {id:'wreck',     name:'Wreckage',    keys:'ð\'ďłŵ'},
+  {id:'kit',       name:'Unit & kit',  keys:'M*fkƒ'},
   {id:'command',   name:'Command deck', keys:'J-(qlNI['},
   {id:'hazard',    name:'Hazards',     keys:'$123'},
   {id:'contacts',  name:'Contacts',    keys:'Ee<z04'},
@@ -1413,6 +1569,22 @@ function boxes(map){
 /* Is this circuit so much as wired to a box on this deck? Whether it is made
    up with a fuse is a question about a run; this is a question about the record. */
 const circuitFed = (map,name) => boxes(map).some(b=>b.ways.some(w=>w.circuit === name));
+/* …and which boxes those are, because a circuit made up with the right fuse
+   can still read dead: the box holding it may be waiting on a supply. */
+const boxesFor = (map,name) => boxes(map).filter(b=>b.ways.some(w=>w.circuit === name));
+/* The supply a block declares — a box waiting on one, a generator feeding
+   one. Blank on a box is the ship's own supply, which has never been off. */
+const supplyOf = (map,x,y) => String((propsAt(map,x,y)||{}).supply || '').trim();
+/* Every generator on this deck, the way boxes() is every box. */
+function gens(map){
+  const out = [];
+  for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++)
+    if(def(tileAt(map,x,y)).press === 'generator') out.push({x, y, supply:supplyOf(map,x,y)});
+  return out;
+}
+/* Is there so much as a set on this deck stencilled for this supply? A box on
+   a supply nothing feeds is a box that will never carry, however it is made up. */
+const supplyFed = (map,name) => gens(map).some(g=>g.supply === name);
 
 /* ---------- small objects ----------
    What a takeable tile is holding, in the form the unit carries it in. */
@@ -1725,7 +1897,9 @@ function audit(map){
      same mistake, and this is what both are checked against */
   const tally = m => { for(let y=0;y<m.h;y++)for(let x=0;x<m.w;x++){
     const it = itemAt(m,x,y);
-    if(it && it.variant){ const k = it.kind+':'+it.variant; stock[k] = (stock[k]|0) + 1 }
+    /* keyed by kind and variant both, and an object that comes in no variants
+       — a canister is a canister — is tallied under its kind alone */
+    if(it){ const k = it.kind+':'+(it.variant||''); stock[k] = (stock[k]|0) + 1 }
   } };
   tally(map);
   for(const id in MAPS) if(id !== map.id) tally(MAPS[id]);
@@ -1825,17 +1999,35 @@ function audit(map){
         out.issues.push(t.name+where+' takes the '+want.name.toLowerCase()+
                         ', and no key of that cut is placed on any deck.');
     }
+    if(t.press === 'generator'){
+      const s = supplyOf(map,x,y);
+      if(!s)
+        out.issues.push(t.name+where+' feeds no supply. Stencil it, and stencil the boxes '+
+                        'that wait on it to match, or nothing on this deck reads it.');
+      else if(!boxes(map).some(b=>supplyOf(map,b.x,b.y) === s))
+        out.issues.push(t.name+where+' feeds supply "'+s+'", which no fusebox on this deck waits on. '+
+                        'Starting it changes nothing.');
+      if(!p.run && !stock['fuel:'])
+        out.issues.push(t.name+where+' starts cold, and there is no fuel placed on any deck '+
+                        'to start it with.');
+    }
     if(t.press === 'fusebox'){
       const ways = waysOf(map,x,y);
-      if(!ways.length) out.issues.push('Fusebox'+where+' feeds nothing. Give it a way.');
+      if(!ways.length) out.issues.push(t.name+where+' feeds nothing. Give it a way.');
+      /* a box on a supply no set feeds carries nothing, whatever is seated in
+         it — and from the canvas it reads exactly like a box that works */
+      const sup = supplyOf(map,x,y);
+      if(sup && !supplyFed(map,sup))
+        out.issues.push(t.name+where+' waits on supply "'+sup+'", which no generator on this deck feeds. '+
+                        'Nothing seated in it will ever read live.');
       ways.forEach((w,i)=>{
         const way = ' way '+(i+1);
         if(!w.circuit)
-          out.issues.push('Fusebox'+where+way+' is stencilled with no circuit, so nothing reads from it.');
+          out.issues.push(t.name+where+way+' is stencilled with no circuit, so nothing reads from it.');
         else if(!onCircuit[w.circuit])
-          out.issues.push('Fusebox'+where+' feeds circuit "'+w.circuit+'", which nothing on this deck is on.');
+          out.issues.push(t.name+where+' feeds circuit "'+w.circuit+'", which nothing on this deck is on.');
         if(!stock['fuse:'+w.rating])
-          out.issues.push('Fusebox'+where+way+' takes a '+((FUSES[w.rating]||{}).name || w.rating)+
+          out.issues.push(t.name+where+way+' takes a '+((FUSES[w.rating]||{}).name || w.rating)+
                           ', and no fuse of that rating is placed on any deck.');
       });
     }
@@ -2126,6 +2318,9 @@ function lookOf(t, state){
   if(state && state.open   && t.open)  return Object.assign({}, t, t.open);
   if(state && state.locked && t.lock)  return Object.assign({}, t, t.lock);
   if(state && state.inside && t.inside)return Object.assign({}, t, t.inside);
+  /* a set that is turning reads as one, which is the whole of how an operator
+     tells a generator it has started from one it has walked past twice */
+  if(state && state.run    && t.run)   return Object.assign({}, t, t.run);
   if(state && state.spent  && t.spent) return Object.assign({}, t, t.spent);
   /* a hole with a deck under it is drawn as a way through rather than as a
      square of black, so whatever is down there can be read through it */
@@ -2164,7 +2359,7 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
 }
 
 global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, KEYS, ITEMS, CARRY, NOISE,
-               circuitOf, waysOf, boxes, circuitFed, itemAt,
+               circuitOf, waysOf, boxes, circuitFed, boxesFor, supplyOf, gens, supplyFed, itemAt,
                FILE_KINDS, OS_SCHEMA, filesOf, osOf, osCard, foldersOf, inFolder,
                chapterOf, chapters,
                def, MAPS, register, makeMap, normalize, resize, trim,
