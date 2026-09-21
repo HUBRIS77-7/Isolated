@@ -974,6 +974,12 @@ const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
                  fuse is seated in a way. All of it is deck state: it is put
                  away with the deck and comes back with it. */
               parts:new Set(), cleared:new Set(), faces:new Set(), sockets:new Map(),
+              /* what has been put to a core, by the core and the words. A
+                 core does not forget: a question stays asked for the rest of
+                 the deck's life, and a thread that opens after it stays open,
+                 so a channel closed and opened again is the same conversation
+                 rather than a fresh one */
+              asked:new Set(),
               /* fuel that is alight: where the fire in a spill has got to,
                  how long each square of it has left to burn, and which
                  squares are about to catch. A spill is ground until
@@ -1003,6 +1009,7 @@ function buildWorld(){
   world.pipes.length=0; world.flood.t=0; world.armed.clear(); world.alarm=null;
   world.running.clear(); world.genPulse=0;
   world.parts.clear(); world.cleared.clear(); world.faces.clear(); world.sockets.clear();
+  world.asked.clear();
   world.ablaze.clear(); world.catching.clear(); world.spills.length=0;
   world.din.length=0; pool.key='';
   sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
@@ -1076,7 +1083,7 @@ function stashDeck(){
                     /* what the plant on this deck has had done to it, and how
                        far the fuel on it has burnt */
                     parts:new Set(world.parts), cleared:new Set(world.cleared),
-                    faces:new Set(world.faces),
+                    faces:new Set(world.faces), asked:new Set(world.asked),
                     sockets:new Map([...world.sockets].map(([k,s])=>[k,s.slice()])),
                     ablaze:new Map(world.ablaze), catching:new Map(world.catching),
                     alarm:world.alarm?Object.assign({},world.alarm):null,
@@ -1098,7 +1105,7 @@ function restoreDeck(d){
   world.flood.t=d.flood||0; world.armed=new Set(d.armed||[]);
   world.running=new Set(d.running||[]);
   world.parts=new Set(d.parts||[]); world.cleared=new Set(d.cleared||[]);
-  world.faces=new Set(d.faces||[]);
+  world.faces=new Set(d.faces||[]); world.asked=new Set(d.asked||[]);
   world.sockets=new Map([...(d.sockets||[])].map(([k,s])=>[k,s.slice()]));
   world.ablaze=new Map(d.ablaze||[]); world.catching=new Map(d.catching||[]);
   world.alarm=d.alarm?Object.assign({},d.alarm):null;
@@ -2637,25 +2644,33 @@ function workWay(i){
    thing the fusebox is: it takes the message log's place in the column, and
    closing it gives the log back with everything that happened written in it.
 
-     aicore  — one row per thing the core will answer to. Asking is the
-               press: a question wired to blocks drives them, so asking for
-               a door is how a door gets opened
+     aicore  — one row per thing the core will answer to, as far as the
+               channel has got: a question written to open after another is
+               not on the list until that one has been asked, so an answer
+               is a thing that can put the next question on the screen.
+               Asking is the press: a question wired to blocks drives them,
+               so asking for a door is how a door gets opened
      keypad  — one row per measure its author turned on. Each is cleared on
                its own and stays cleared, and the last one clearing is what
                drives whatever the pad is wired to
      reactor — two sockets and a count. Keys go in the way fuses go into a
                fusebox way; the count only begins once both are turned      */
 const dlg={on:false, kind:'', x:0, y:0, sel:0, hand:0, ask:false, typed:'',
-           head:'', note:'', body:'', hint:'', lines:[],
-           /* what has been asked of the core while this channel has been
-              open. A core does not forget, but it does not repeat itself
-              unprompted either — the list says which of them have been put
-              to it already */
-           asked:new Set()};
+           head:'', note:'', body:'', hint:'', lines:[]};
+/* ---------- what has been put to a core ----------
+   Which questions have been asked is the core's own state rather than the
+   channel's: it is kept on the deck, the way a keypad's cleared measures are,
+   so closing the channel and opening it again picks the conversation up where
+   it was left. A thread named on another row as the one that opens it is only
+   on the list once that one has been asked — which is how an answer puts a
+   new question on the screen. */
+const askKey=(x,y,ask)=>K(x,y)+'/'+ISO.talkKey(ask);
+const wasAsked=(x,y,ask)=>world.asked.has(askKey(x,y,ask));
+const openThreads=(x,y)=>ISO.talkOpen(MAP,x,y,k=>world.asked.has(K(x,y)+'/'+k));
 function openPanel(kind,x,y,head){
   dlg.on=true; dlg.kind=kind; dlg.x=x; dlg.y=y;
   dlg.sel=0; dlg.hand=0; dlg.ask=false; dlg.typed='';
-  dlg.head=head; dlg.note=''; dlg.body=''; dlg.lines=[]; dlg.asked=new Set();
+  dlg.head=head; dlg.note=''; dlg.body=''; dlg.lines=[];
   $('#logBox').style.display='none'; $('#dlgWin').style.display='';
   $('#dlgKind').innerHTML='&lt;'+PANEL_NAME[kind]+'&gt;';
   renderPanel();
@@ -2680,9 +2695,12 @@ const heldItem=(kind,variant)=>game.carry.find(it=>it.kind===kind&&
 function panelRows(){
   const p=propsOf(dlg.x,dlg.y), k=K(dlg.x,dlg.y);
   if(dlg.kind==='aicore')
-    return ISO.talkOf(MAP,dlg.x,dlg.y).map(w=>({
+    /* only the threads that are open: a question written to open after
+       another is not on this list until that other has been put to it */
+    return openThreads(dlg.x,dlg.y).map(w=>({
       name:w.ask, ask:w,
-      state:dlg.asked.has(w.ask)?{cls:'dead', text:'ASKED'}:{cls:'live', text:'ASK'}}));
+      state:wasAsked(dlg.x,dlg.y,w.ask)?{cls:'dead', text:'ASKED'}
+                                       :{cls:'live', text:'ASK'}}));
   if(dlg.kind==='keypad')
     return keypadMeasures(p).map(m=>({
       name:m.name, measure:m,
@@ -2803,14 +2821,19 @@ function openCore(x,y){
   if(!powered(x,y))return say(deadLine('Core',x,y,tag),'dim');
   openPanel('aicore',x,y,(p.label||p.title||'CORE INTELLIGENCE').toUpperCase());
   dlg.body=p.greet||'The channel opens.';
-  const n=ISO.talkOf(MAP,x,y).length;
-  panelNote(n?n+' THREAD'+(n===1?'':'S'):'NOTHING TO ASK');
+  const open=openThreads(x,y), n=open.length,
+        left=open.filter(w=>!wasAsked(x,y,w.ask)).length;
+  /* the channel says what is on it and how much of it is new, because a core
+     that has been talked to before opens on a list already half worked */
+  panelNote(!n?'NOTHING TO ASK'
+            :n+' THREAD'+(n===1?'':'S')+(left<n?' · '+left+' UNASKED':''));
   say('Channel open to the core'+tag+'.','b');
   noise(x,y,ISO.NOISE.press,true);
   renderPanel();
 }
 function askCore(w){
-  dlg.asked.add(w.ask);
+  const x=dlg.x, y=dlg.y, had=openThreads(x,y).map(q=>ISO.talkKey(q.ask));
+  world.asked.add(askKey(x,y,w.ask)); world.rev++;
   dlg.body=w.reply||'It does not answer that.';
   dlg.lines=[];
   say('Asked the core: '+w.ask,'dim');
@@ -2824,7 +2847,19 @@ function askCore(w){
     const go=dlg.lines.find(l=>l.go);
     if(go){closePanel();return transit(go.go.fade,()=>travelTo(go.go.deck,go.go.want),go.go.card)}
   }
-  panelNote('ANSWERED');
+  /* and what the answer opened. A reply can put a question on the list that
+     was not on it a moment ago — the operator is told once, under the answer
+     that did it, because a new row appearing unannounced reads as a fault */
+  const now=openThreads(x,y), fresh=now.filter(q=>!had.includes(ISO.talkKey(q.ask)));
+  for(const q of fresh){
+    dlg.lines.push({cls:'b', text:'The channel opens a thread: '+q.ask});
+    say('The core opens a thread: '+q.ask,'b');
+  }
+  /* the row just worked keeps the selection, wherever the new ones landed */
+  dlg.sel=Math.max(0,now.findIndex(q=>ISO.talkKey(q.ask)===ISO.talkKey(w.ask)));
+  panelNote(fresh.length?'ANSWERED · '+fresh.length+' NEW THREAD'+
+                         (fresh.length===1?'':'S')
+                        :'ANSWERED');
   renderPanel();
 }
 

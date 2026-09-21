@@ -1311,9 +1311,16 @@ const TILES = {
                /* one row is one thing it will answer to. `ask` is the line
                   the operator puts to it, `reply` is what comes back, and
                   `targets` are the blocks the asking drives — which is what
-                  makes a core a control as well as a voice */
+                  makes a core a control as well as a voice. `after` is the
+                  question that has to have been put to it first: a row with
+                  nothing in it is on the list from the moment the channel
+                  opens, and a row with a question in it is not there at all
+                  until that question has been asked. An answer is therefore
+                  a thing that can open another thread, which is how a core
+                  holds a conversation rather than a menu */
                talk:{type:'slots', label:'It will answer', def:[],
                      fields:{ask:{type:'text',  label:'Asked',   def:''},
+                             after:{type:'text', label:'Opens after', def:''},
                              reply:{type:'lines',label:'Answers', def:''},
                              targets:{type:'points', label:'Asking presses', def:[]}}},
                label:{type:'text', label:'Stencilled', def:''}}},
@@ -1723,11 +1730,39 @@ function cleanFiles(rows){
 const filesOf = (map,x,y) => cleanFiles((propsAt(map,x,y)||{}).files);
 /* What a core will answer to, tidied the way filing is: a row with nothing
    asked on it is not a question, and the blocks a question drives are the
-   same list of squares a control on a desktop carries. */
+   same list of squares a control on a desktop carries. A row also says which
+   question opens it, and one question is the same question as another when
+   the words match — a thread is named by what is asked, the way a circuit is
+   named by what is stencilled on it, so both ends are compared alike. */
+const talkKey = ask => String(ask||'').trim().toLowerCase();
 const talkOf = (map,x,y) => (((propsAt(map,x,y)||{}).talk) || [])
   .filter(r=>String(r.ask||'').trim())
   .map(r=>({ask:String(r.ask).trim(), reply:String(r.reply||''),
+            after:String(r.after||'').trim(),
             targets:coerce(FILE_SLOTS.fields.targets, r.targets)}));
+/* The questions a core will take at a given moment: one that opens after
+   nothing is there from the start, and one that opens after another is there
+   only once that other has been put to it. `asked` says what has been. */
+const talkOpen = (map,x,y,asked) => talkOf(map,x,y)
+  .filter(w=>!w.after || (asked && asked(talkKey(w.after))));
+/* Which of a core's rows can ever be reached, worked the way the channel
+   works them: start with the rows nothing gates, and open what those open,
+   until nothing more opens. Whatever is left over is a thread with no way
+   in — a question that names one the core will not answer, or a pair that
+   wait on each other for ever. */
+function talkReach(talk){
+  const have = new Set(), open = new Set();
+  for(const w of talk) have.add(talkKey(w.ask));
+  for(let more=true; more;){
+    more = false;
+    for(const w of talk){
+      if(open.has(talkKey(w.ask))) continue;
+      if(w.after && !open.has(talkKey(w.after))) continue;
+      open.add(talkKey(w.ask)); more = true;
+    }
+  }
+  return {have, open};
+}
 const foldersOf = files => {
   const out = [];
   for(const f of files) if(f.folder && !out.includes(f.folder)) out.push(f.folder);
@@ -2242,6 +2277,23 @@ function audit(map){
         out.issues.push(t.name+where+' will answer nothing. Give it something to be asked.');
       if(!String(p.greet||'').trim())
         out.issues.push(t.name+where+' opens on nothing. Give it a line to open with.');
+      /* a thread opens after another, and a thread that opens after one the
+         core does not answer — or after one that never opens itself, which is
+         what two rows waiting on each other come to — is a question nothing
+         on the deck can ever put to it */
+      const reach = talkReach(talk);
+      for(const w of talk){
+        if(!w.after) continue;
+        if(!reach.have.has(talkKey(w.after)))
+          out.issues.push(t.name+where+', asked "'+w.ask+'", opens after "'+w.after+
+                          '", which it will not answer.');
+        else if(!reach.open.has(talkKey(w.ask)))
+          out.issues.push(t.name+where+', asked "'+w.ask+
+                          '", opens after a question that never opens itself.');
+      }
+      if(talk.length && !talk.some(w=>!w.after))
+        out.issues.push(t.name+where+' opens on an empty list: every question on it '+
+                        'waits on another. Leave one of them opening after nothing.');
       for(const w of talk) for(const c of w.targets){
         if(!inside(map,c.x,c.y))
           out.issues.push(t.name+where+', asked "'+w.ask+'", presses a square outside the record.');
@@ -2658,7 +2710,8 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
 
 global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, KEYS, ITEMS, CARRY, NOISE,
                circuitOf, waysOf, boxes, circuitFed, boxesFor, supplyOf, gens, supplyFed, itemAt,
-               FILE_KINDS, OS_SCHEMA, filesOf, talkOf, osOf, osCard, foldersOf, inFolder,
+               FILE_KINDS, OS_SCHEMA, filesOf, talkOf, talkOpen, talkKey, osOf, osCard,
+               foldersOf, inFolder,
                PARTS,
                chapterOf, chapters,
                def, MAPS, register, makeMap, normalize, resize, trim,
