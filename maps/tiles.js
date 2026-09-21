@@ -104,8 +104,8 @@
              whole of the body and burns itself out. Water washes one away
              before it ever catches
    silent  — a noise made on it is not made at all: there is no air on this
-             square to carry one. It is the one ground on the ship a step
-             costs nothing, and the reason vacuum is worth crossing
+             square to carry one, so nothing that hunts by sound ever hears
+             what happened here
    airless — no atmosphere, so no weather either: a flood will not run across
              it, because water put onto this square is water that is gone
    charged — a line of current laid across the deck. It is the one block whose
@@ -316,6 +316,17 @@ const FOES = {
      it wants after a plate has turned one \u2014 longer, because being turned
      costs it more than missing does.
 
+     `back` and `bolt` are what being turned costs it in ground rather than in
+     time. A plate does not buy a pause: it breaks the thing off the chassis
+     altogether, and it walks the whole way back to the square it was painted
+     on before it is interested in the unit again \u2014 `back` seconds of
+     walking at `bolt` times its pace, and it gives the errand up at the end
+     of them wherever it has got to. That is the room an operator who read the
+     tell has earned, and it is the difference between a plate that survives
+     one lunge and a plate that gets the unit across the deck. Leaving `back`
+     off is how an author asks for the old behaviour, where it stood off where
+     it landed and came straight back in.
+
      `ward` is the other half, and it is the fair half: it will not set itself
      while the unit is standing within `within` squares of any of the blocks
      named in it. A fusebox is where an operator has to stand still, with the
@@ -333,13 +344,15 @@ const FOES = {
                is still up when it arrives, and one brought up late is up for
                the part that matters. An author who widens `reach` or slows
                `dash` is quietly taking the plate away. */
-            lunge:{reach:4, tell:.6, dash:16, run:.45, rest:4.2, turned:7.5},
+            lunge:{reach:4, tell:.6, dash:16, run:.45, rest:4.2, turned:9,
+                   back:9, bolt:1.6},
             ward:{blocks:['fusebox','panel'], within:3},
             fill:'rgba(168,130,255,.2)', line:'rgba(200,172,255,.9)',
             kills:'THE SPECTRE CROSSED THE WHOLE OF THE GAP IN ONE MOVEMENT. CHASSIS OPENED.',
             notice:'CONTACT. Command pattern, and it is standing off the unit rather than closing on it.',
             sets:'THE SPECTRE SETS ITSELF. Whatever it is about to do, it is about to do all at once.',
-            turned:'LUNGE TURNED ON THE PLATE. It comes off the chassis and gives ground.',
+            turned:'LUNGE TURNED ON THE PLATE. It comes off the chassis hard and breaks contact.',
+            retreats:'THE SPECTRE GIVES THE GROUND UP ALTOGETHER. It is walking back the way it came.',
             missed:'THE LUNGE GOES THROUGH WHERE THE UNIT WAS STANDING. It recovers and stands off again.',
             warded:'THE SPECTRE WILL NOT COME IN OFF THE BOX. It holds where it is while the unit is on the fusebox.'},
   block:   {id:'block',   name:'Block', bulk:1, slides:true, speed:4.4, prowl:3,
@@ -1475,13 +1488,18 @@ const TILES = {
 
   /* ---------- the other side of the hull ----------
      A deck that runs out into space is not a deck with a wall at the end of
-     it. Vacuum is ground: the chassis is rated for it and crosses it exactly
-     as it crosses plating — and nothing it does out there makes a sound,
-     because there is nothing out there to carry one. On a deck with
-     something listening on it that is not a detail. It is the route. */
-  'ṽ': {key:'ṽ', id:'vacuum', name:'Vacuum', walk:true, silent:true, airless:true, alert:true,
+     it, and it is not ground either. Vacuum is the edge: the chassis stops at
+     it, because whatever the hull line is, the far side of it is not
+     somewhere a walking machine is going. Sight crosses it — there is
+     nothing out there to stop a reading — so it reads as open deck right
+     up until the unit walks into it and finds it is not. Nothing said or done
+     out there carries, and no flood runs across it: an author who lays a deck
+     along the hull gets an edge that is silent and dry on the far side of it
+     and a wall all the same. */
+  'ṽ': {key:'ṽ', id:'vacuum', name:'Vacuum', walk:false, clear:true,
+        silent:true, airless:true, alert:true,
         fill:'rgba(6,10,22,.86)', line:'rgba(150,205,255,.28)', glyph:'·',
-        enter:'ATMOSPHERE READS NIL. The chassis is rated for it — and out here it makes no sound at all.'},
+        bump:'ATMOSPHERE READS NIL BEYOND THIS LINE. The hull ends here and there is nothing past it to stand on.'},
   /* The glass that holds the last of it in. Rated for the pressure it stands
      against and as big as the author paints it: one body, solid, and the only
      thing on the ship worth looking through. */

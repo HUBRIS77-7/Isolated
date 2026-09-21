@@ -177,7 +177,7 @@ ISO.register({
 | `ø`  | Tissue sample | yes | Small enough to carry off. `[E]` lifts it, `[Q]` sets it down. The only thing a scanner reads |
 | `ş`  | Fuel spill | yes | Touching copies become one spill. Ground until something sets light to it, and a fire that works across the whole of itself afterwards. Water washes it away |
 | `ƀ`  | Barrel    | no   | Decoration                                   |
-| `ṽ`  | Vacuum    | yes  | Open space, and the chassis is rated for it. Nothing done out here makes a sound, and no flood crosses it |
+| `ṽ`  | Vacuum    | no   | Open space past the hull line. Sight crosses it, the chassis does not. Nothing done out here makes a sound, and no flood crosses it |
 | `ï`  | Astro-Grade Window | no | Blocks like a wall; the stars read clear through it. Touching copies become one port — as big as you paint it |
 | `ā`  | Comms Array | no | Twelve tiles by twelve; turns with its `dir`. Transmits through walls while it is live, the way a beacon does |
 | `ħ`  | Hull Steel Flooring | yes | Structural plate over the frame. Ordinary ground, and louder than plating |
@@ -625,8 +625,9 @@ plate is an answer to what is walking about, never to where the unit is
 standing.
 
 A turned blow costs whatever swung it. A contact that can be staggered breaks
-and gives ground; an emplacement loses its next shot; a spectre is put a good
-deal further out of its next lunge than a miss would have put it. And the
+and gives ground; an emplacement loses its next shot; a spectre breaks contact
+altogether and walks the whole way back to the square it was painted on. And
+the
 plate is spent on the blow it turned, whatever was left of the second — one
 plate is one blow. The housing then takes the better part of two seconds to
 reset, so leaning on the key is worse than reading the tell, which is the
@@ -1813,16 +1814,19 @@ A drum stops the unit, holds whatever is in it, and does nothing else.
 
 ## The hull line
 
-**Vacuum** (`ṽ`) is not a wall at the end of a deck. It is ground: the chassis
-is rated for it, it is crossed at walking pace, and the optics read across it
-exactly as they read across plating. Two things are different out there, and
-both of them are the absence of air.
+**Vacuum** (`ṽ`) is where the deck stops. It is not ground — nothing
+walks out onto it, the unit or anything hunting the unit — but it is not a
+wall either, because the optics read straight across it exactly as they read
+across plating. That is the whole of what makes it awkward to stand beside: it
+looks like open deck right up until the chassis walks into it and finds there
+is nothing under the next square. An author laying a walkway along the hull
+gets an edge rather than a railing, and the operator gets the view.
 
-* **Nothing done on it makes a sound.** A step, a control struck, a canister
-  set down — a noise made on a vacuum square is not made at all, so it never
-  reaches a ravager and it never draws anything. It is the only ground on the
-  ship that costs an operator nothing to cross, and on a deck with something
-  listening on it that is not a detail. It is the route.
+Two things are true of the far side of it, and both of them are the absence of
+air.
+
+* **Nothing done on it makes a sound.** A noise made on a vacuum square is not
+  made at all, so nothing that hunts by sound ever hears one.
 * **No flood crosses it.** Water put onto a square with no atmosphere over it
   is water that is gone, so a burst line stops at the hull line rather than
   running out of it.
@@ -1992,7 +1996,7 @@ buried in the driver that does it:
 
 | Squares | What makes it |
 |---------|---------------|
-| 0       | Anything at all done in vacuum — there is no air out there to carry it |
+| 0       | Anything at all done in vacuum — there is no air out there to carry it (nothing walks there, but a hazard can still happen there) |
 | 2       | A step on carpet |
 | 4       | A step on plating — the quiet one, on purpose |
 | 6       | Something small lifted off the deck, or set down on it |
@@ -2007,8 +2011,8 @@ buried in the driver that does it:
 | 60      | A laser alarm, which is the whole deck and a good way past the edges of it |
 
 A tile says how loud a step onto it is with `noisy`, so what a deck sounds like
-underfoot is a property of what it is built out of. Vacuum is silent outright —
-see **The hull line** — carpet is the quiet one and water is the loud one, and everything between them is a decision about where
+underfoot is a property of what it is built out of. Carpet is the quiet one and
+water is the loud one, and everything between them is a decision about where
 the route through a room ought to go. Wreckage is how that decision is drawn:
 **Fractured floor** (`'`) is ground that costs nothing to cross and tells the
 deck you crossed it, a **Debris field** (`ð`) is slower and louder again, a
@@ -2112,8 +2116,23 @@ taking the plate away, which is worth doing on purpose or not at all.
 square the unit was standing on when the tell ran out and holds that heading
 whatever happens next, so a unit that is somewhere else by the time it arrives
 is a unit it goes straight past. Then it stands off for four seconds and
-starts again. A turned lunge costs it the better part of eight, which is the
-difference the plate makes.
+starts again.
+
+A turned lunge costs it something else entirely. It does not stand off where it
+landed: it **gives the ground up and goes home**, walking back to the square it
+was painted on at half again its own pace, and it is not interested in the unit
+again until it is standing on it. Nine seconds of walking is all it will spend
+on the trip — one that cannot find its way back gives the errand up
+wherever it has got to — and it will not set itself for nine seconds
+either way. That is what the second the plate cost actually buys: not a pause
+in front of the unit, but the room to cross the deck. It is the whole
+difference between a plate that survives one lunge and a plate that gets the
+unit where it was going.
+
+The trip is `back` and `bolt` on the lunge in `FOES` — seconds of walking,
+and the multiple of its own speed it walks them at. Leave `back` off and the
+old behaviour comes back: it stands off where it landed and comes straight in
+again when the rest runs out.
 
 ### The box it will not come in off
 
@@ -2145,9 +2164,10 @@ without anything walking on it.
 **Hull Steel Flooring** (`ħ`) is the ground of it: structural plate bolted
 straight onto the frame, with nothing under it but the outside. Ordinary
 walkable ground, and honest about the trade — a step on it carries six squares
-where a step on plating carries four, so the safe footing across the hull line
-is also the loud way across it. Beside it, **Vacuum** (`ṽ`) is silent and
-**Astro-Grade Window** (`ï`) is what holds the rest of it out; a **Stuck
+where a step on plating carries four, so the footing across the hull line is
+also the loud way across it — and it is the only way across it, because
+**Vacuum** (`ṽ`) either side is where the deck ends rather than more of it.
+An **Astro-Grade Window** (`ï`) is what holds the rest of it out; a **Stuck
 Asteroid** (`ǒ`) is a rock that came through the deckhead and stopped, one body
 as big as it is painted, solid, and the only cover out here.
 
