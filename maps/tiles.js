@@ -99,6 +99,15 @@
    take    — it is holding something small enough for the unit to carry off:
              {kind, from} — which kind of object, and which of this block's own
              settings names the variant
+   spill   — fuel on the plating. It is ground until something sets light to
+             it, and from then on it is a fire that works its way across the
+             whole of the body and burns itself out. Water washes one away
+             before it ever catches
+   silent  — a noise made on it is not made at all: there is no air on this
+             square to carry one. It is the one ground on the ship a step
+             costs nothing, and the reason vacuum is worth crossing
+   airless — no atmosphere, so no weather either: a flood will not run across
+             it, because water put onto this square is water that is gone
    foe     — the square is where a contact starts rather than a block that
              stands there: the name of the entry in FOES that says what walks
              off it. The tile itself is plain ground from then on
@@ -329,8 +338,26 @@ const KEYS = {
   house: {id:'house', tag:'HOUSE', name:'Farmhouse key'},
   barn:  {id:'barn',  tag:'BARN',  name:'Barn key'},
   store: {id:'store', tag:'STORE', name:'Store key'},
+  /* The two the command deck was run on. An operator key opens the face of
+     the reactor and nothing else; a sacrifice key goes into a socket in it
+     and does not come out again, which is the whole of why there are two of
+     them and why they are called that. */
+  operator:  {id:'operator',  tag:'OPERATOR',  name:'Operator key'},
+  sacrifice: {id:'sacrifice', tag:'SACRIFICE', name:'Sacrifice key'},
 };
 const KEY_OPTS = Object.keys(KEYS).map(k=>({value:k, label:KEYS[k].name}));
+
+/* ---------- what is cut off a body ----------
+   The third thing the unit carries that something is keyed to, and the one
+   the ship never issued. A scanner does not want a word or a cut of brass:
+   it wants the crew member, and the crew member is lying in the corridor.
+   These are the variants a sample comes in, read by the keypad exactly the
+   way a lock reads a key's cut. */
+const PARTS = {
+  hand: {id:'hand', tag:'HAND', name:'Severed hand'},
+  eye:  {id:'eye',  tag:'EYE',  name:'Excised eye'},
+};
+const PART_OPTS = Object.keys(PARTS).map(k=>({value:k, label:PARTS[k].name}));
 
 /* ---------- small objects ----------
    Anything loose enough for the unit to lift off the deck and carry. A tile
@@ -346,6 +373,11 @@ const ITEMS = {
      rating and a key for a lock, and fuel is only ever fuel — which is why it
      declares no `kinds` and every canister on the ship fits every set. */
   fuel: {id:'fuel', name:'Fuel canister', tile:'ƒ'},
+  /* Not issued, not manufactured, and not found lying about unless something
+     went very wrong here: a piece of somebody, carried in the manipulator
+     because a scanner somewhere else on the deck will not read anything
+     else. */
+  organ: {id:'organ', name:'Tissue sample', tile:'ø', kinds:PARTS},
 };
 /* How many small objects the manipulator holds at once. */
 const CARRY = 6;
@@ -476,6 +508,39 @@ const CMD_PALE = {fill:'rgba(150,205,255,.14)',line:'rgba(190,228,255,.7)'};
 const OFF_DEEP = {fill:'rgba(14,32,66,.42)',  line:'rgba(52,88,146,.55)'};   // paint on a bulkhead
 const OFF_SOFT = {fill:'rgba(26,50,94,.26)',  line:'rgba(58,104,168,.36)'};  // carpet
 const OFF_DESK = {fill:'rgba(34,66,120,.3)',  line:'rgba(88,142,208,.6)'};   // a working counter
+
+/* ---------- the face of something too big to type ----------
+   `parts` is one glyph per cell, which is fine for a forklift and absurd for
+   fourteen tiles by twelve: an AI core is a hundred and sixty-eight glyphs,
+   and a literal that size is a thing nobody can read a change to. So the
+   large plant draws its own face — a welded border, ribs down it at whatever
+   interval it was built with, and one mark at the middle of it — and the
+   entry says how big the thing is rather than what every square of it looks
+   like. It is still `parts`: the block turns with its `dir` exactly as a
+   desk does, because the grid is read off the footprint either way. */
+function faceParts(len, wide, mark, inner, rib){
+  const rows = [];
+  /* the middle of it, which is one cell across an odd side and two across an
+     even one — a mark has to sit in the middle of the face or the thing
+     reads as though it were pointed somewhere */
+  const mi0 = Math.floor((len-1)/2),  mi1 = Math.ceil((len-1)/2);
+  const mj0 = Math.floor((wide-1)/2), mj1 = Math.ceil((wide-1)/2);
+  for(let j=0;j<wide;j++){
+    const row = [];
+    for(let i=0;i<len;i++){
+      const top = j === 0, bot = j === wide-1, lf = i === 0, rt = i === len-1;
+      row.push(top&&lf ? '\u2554' : top&&rt ? '\u2557'
+             : bot&&lf ? '\u255a' : bot&&rt ? '\u255d'
+             : top||bot ? '\u2550' : lf||rt ? '\u2551'
+             /* the middle of it, which is the only square of the body that
+                says what the body is */
+             : (i >= mi0 && i <= mi1 && j >= mj0 && j <= mj1) ? mark
+             : (rib && i % rib === 0) ? '\u25ae' : inner);
+    }
+    rows.push(row);
+  }
+  return rows;
+}
 
 const TILES = {
   ' ': {key:' ', id:'void',   name:'Unmapped',  walk:false, fill:null,
@@ -1216,6 +1281,150 @@ const TILES = {
                files:Object.assign({}, FILE_SLOTS, {label:'Desktop holds'}),
                card:{type:'text',   label:'Words the locked file ends on', def:''},
                cardsub:{type:'text',label:'Line under them',               def:''}}},
+
+  /* ---------- the plant the command deck was built round ----------
+     Everything above is furniture beside these two. A deck with a core on it
+     is a deck the ship was thinking with, and a deck with a reactor on it is
+     a deck that can be taken off the ship entirely — and both of them are
+     drawn at the size that actually means, rather than at the size a tile
+     happens to be. Fourteen by twelve and twenty-seven by six: an operator
+     walks the length of either one before it has read what is stencilled on
+     it, which is the whole reason for building them this big. */
+  /* Fourteen tiles by twelve of it, and one press anywhere along it opens the
+     thing to be talked to. It is not a terminal: a terminal hands over a
+     record and a core answers questions, one at a time, in whatever order
+     the operator thinks to ask them — and a question may be wired to blocks
+     the way a control filed on a desktop is, so asking for a door is how a
+     door gets opened. */
+  'ĉ': {key:'ĉ', id:'aicore', name:'AI Core', walk:false,
+        foot:{len:14, wide:12},
+        parts:faceParts(14, 12, '◉', '·', 3),
+        fill:CMD_DEEP.fill, line:CMD_BLUE.line,
+        press:'aicore', powered:true,
+        bump:'Core housing. Fourteen tiles of it, and something behind the glass is still answering. [E] opens a channel.',
+        spent:{fill:'rgba(18,48,116,.1)', line:'rgba(74,132,214,.3)',
+               bump:'Core housing. The lattice is dark end to end. Nothing in there is answering.'},
+        props:{dir:{type:'dir', label:'Runs', def:'right'},
+               title:{type:'text', label:'Header', def:'CORE INTELLIGENCE'},
+               greet:{type:'lines', label:'Opens with',
+                      def:'The channel opens. Something on the other side of it was already waiting.'},
+               /* one row is one thing it will answer to. `ask` is the line
+                  the operator puts to it, `reply` is what comes back, and
+                  `targets` are the blocks the asking drives — which is what
+                  makes a core a control as well as a voice */
+               talk:{type:'slots', label:'It will answer', def:[],
+                     fields:{ask:{type:'text',  label:'Asked',   def:''},
+                             reply:{type:'lines',label:'Answers', def:''},
+                             targets:{type:'points', label:'Asking presses', def:[]}}},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* Twenty-seven tiles by six, and shut. The face of it opens to an operator
+     key and to nothing else — no control reaches a reactor and no circuit
+     wakes one — and what is behind the face is two sockets and a count. Two
+     sacrifice keys go in, neither of them comes out, and from the moment the
+     second one is turned the deck has as long as its author gave it. */
+  'ř': {key:'ř', id:'reactor', name:'Fusion Reactor', walk:false,
+        foot:{len:27, wide:6},
+        parts:faceParts(27, 6, '◎', '≡', 4),
+        fill:'rgba(150,205,255,.12)', line:'rgba(190,228,255,.5)',
+        press:'reactor', powered:true,
+        bump:'Fusion plant. Twenty-seven tiles of it, holding, and the operator face is shut. [E] tries the manipulator against it.',
+        run:{fill:'rgba(255,59,47,.3)', line:'rgba(255,120,80,.95)',
+             bump:'Fusion plant, and the sequence is running. Nothing on this deck stops it now.'},
+        props:{dir:{type:'dir', label:'Runs', def:'right'},
+               opens:{type:'pick', label:'Face opens to', def:'operator', opts:KEY_OPTS},
+               arms:{type:'pick', label:'Sockets take',   def:'sacrifice', opts:KEY_OPTS},
+               count:{type:'int', label:'Seconds on the count', def:120, min:10, max:900},
+               card:{type:'text', label:'Words the count ends on', def:''},
+               cardsub:{type:'text', label:'Line under them', def:''},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* The door furniture the rest of the command deck is shut with. A keypad is
+     a button with conditions on it: a word typed, a hand held up to a plate,
+     an eye held up to a lens — any of the three, all of the three, or none of
+     them, which is a button. What it does once it is satisfied is what a
+     button does: it drives whatever lines run out of it, and it stays
+     satisfied for the rest of the run. */
+  'ķ': {key:'ķ', id:'keypad', name:'Keypad', walk:false, clear:true,
+        fill:'rgba(255,180,74,.15)', line:'rgba(255,180,74,.65)', glyph:'⌸',
+        press:'keypad', powered:true,
+        bump:'Security keypad, and the lamp on it is red. [E] works it.',
+        spent:{fill:'rgba(28,240,28,.14)', line:'rgba(28,240,28,.6)', glyph:'⌷',
+               bump:'Security keypad, cleared. The lamp on it is green and it presses like any other control.'},
+        props:{code:{type:'text', label:'Code', def:'0000'},
+               pass:{type:'bool',  label:'Asks for the code',  def:true},
+               finger:{type:'bool',label:'Fingerprint scan',   def:false},
+               retina:{type:'bool',label:'Retina scan',        def:false},
+               targets:{type:'points', label:'Signals blocks at', def:[]},
+               label:{type:'text', label:'Stencilled', def:''}}},
+
+  /* ---------- what a scanner wants, and where it is lying ----------
+     A dead body is read on the way past. This one is worked: three tiles of
+     crew with a hand and an eye still on it, and a keypad two rooms away that
+     will not open for anything else. What it costs to take them is nothing at
+     all, which is the point — the deck asks the operator to do it rather than
+     to solve it. */
+  'ÿ': {key:'ÿ', id:'corpse', name:'Corpse', walk:true, slow:2.6,
+        foot:{len:3}, parts:['◍','≣','≡'],
+        fill:'rgba(150,18,18,.24)', line:'rgba(255,120,80,.5)',
+        press:'scavenge',
+        enter:'Crew remains, and recent enough to still be worth something to a scanner. [E] takes what is left on it.',
+        spent:{fill:'rgba(150,18,18,.1)', line:'rgba(255,59,47,.28)',
+               enter:'Crew remains, stripped of everything a scanner would read.'},
+        props:{dir:{type:'dir',  label:'Lies', def:'right'},
+               hand:{type:'bool', label:'A hand still on it', def:true},
+               eye:{type:'bool',  label:'An eye still in it', def:true},
+               label:{type:'text',label:'Stencilled', def:''}}},
+  /* The sample itself, lying on the deck: lifted, carried and set down the
+     way a fuse and a key are, and read by a scanner the way a lock reads a
+     cut. An author may paint one straight onto a deck — somebody else got
+     here first — or leave the corpse to hand them over. */
+  'ø': {key:'ø', id:'organ', name:'Tissue sample', walk:true, clear:true,
+        fill:'rgba(255,120,80,.12)', line:'rgba(255,120,80,.5)', glyph:'❀',
+        press:'take', take:{kind:'organ', from:'part'},
+        enter:'Something on the deck that came off somebody. [E] lifts it.',
+        spent:{fill:'rgba(255,120,80,.03)', line:'rgba(255,120,80,.2)', glyph:'◌',
+               enter:'A mark on the plating where something was lying. It has been lifted.'},
+        props:{part:{type:'pick', label:'Which', def:'hand', opts:PART_OPTS},
+               label:{type:'text', label:'Stencilled', def:''}}},
+
+  /* ---------- what is on the deck that should not be ----------
+     Fuel out of a drum, spreading as far as the author painted it. It is
+     ordinary ground until something sets light to it: then the whole of the
+     body goes up, a square at a time, and burns until there is nothing left
+     of it. Water reaching a spill washes it away before it ever catches,
+     which is the only answer to one that does not involve being somewhere
+     else. */
+  'ş': {key:'ş', id:'spill', name:'Fuel spill', walk:true, merge:true, sized:true,
+        spill:true, slow:1.4, noisy:6, alert:true,
+        fill:'rgba(199,148,74,.22)', line:'rgba(255,180,74,.45)', glyph:'≈',
+        enter:'Fuel across the plating, ankle deep and still spreading. The chassis wades it, and anything alight anywhere near it is a problem.',
+        spent:{fill:'rgba(120,116,110,.14)', line:'rgba(170,166,160,.4)', glyph:'▒',
+               enter:'Scorched plating where the fuel was. It has burnt out, or the water got to it first.'},
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
+  /* And what it came out of. A drum is a drum: it stands where it was rolled
+     to, it stops the unit, and whatever is in it is not coming out for
+     anything the chassis can do. */
+  'ƀ': {key:'ƀ', id:'barrel', name:'Barrel', walk:false,
+        fill:'rgba(255,180,74,.16)', line:'rgba(255,180,74,.55)', glyph:'◙',
+        bump:'Steel drum, banded and standing. Too heavy to shift, and whatever is in it stays in it.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
+
+  /* ---------- the other side of the hull ----------
+     A deck that runs out into space is not a deck with a wall at the end of
+     it. Vacuum is ground: the chassis is rated for it and crosses it exactly
+     as it crosses plating — and nothing it does out there makes a sound,
+     because there is nothing out there to carry one. On a deck with
+     something listening on it that is not a detail. It is the route. */
+  'ṽ': {key:'ṽ', id:'vacuum', name:'Vacuum', walk:true, silent:true, airless:true, alert:true,
+        fill:'rgba(6,10,22,.86)', line:'rgba(150,205,255,.28)', glyph:'·',
+        enter:'ATMOSPHERE READS NIL. The chassis is rated for it — and out here it makes no sound at all.'},
+  /* The glass that holds the last of it in. Rated for the pressure it stands
+     against and as big as the author paints it: one body, solid, and the only
+     thing on the ship worth looking through. */
+  'ï': {key:'ï', id:'astrowindow', name:'Astro-Grade Window', walk:false, clear:true,
+        merge:true, sized:true,
+        fill:'rgba(150,205,255,.09)', line:'rgba(190,228,255,.55)', glyph:'◧',
+        bump:'Astro-grade glazing, laminated and rated for the pressure it is holding back. It reads clear and it holds.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
 };
 
 /* ---------- palette categories ----------
@@ -1225,18 +1434,18 @@ const TILES = {
 const CATS = [
   {id:'ground',    name:'Ground',      keys:' .,=+~!v/:`'},
   {id:'land',      name:'Open land',   keys:'dgpr_P'},
-  {id:'structure', name:'Structure',   keys:'#%oxWG]'},
+  {id:'structure', name:'Structure',   keys:'#%oxWG]ï'},
   {id:'building',  name:'Buildings',   keys:'HhiQK>'},
   {id:'controls',  name:'Controls',    keys:'bcun?üĝ'},
   {id:'transit',   name:'Transit',     keys:'T^sVO'},
-  {id:'fixtures',  name:'Fixtures',    keys:'LBACFDR){}'},
+  {id:'fixtures',  name:'Fixtures',    keys:'LBACFDR){}ƀ'},
   {id:'home',      name:'Furnishings', keys:'ZaUtm56789'},
   {id:'farm',      name:'Farm',        keys:'|w&yj@'},
-  {id:'remains',   name:'Remains',     keys:';SXYś'},
+  {id:'remains',   name:'Remains',     keys:';SXYśÿ'},
   {id:'wreck',     name:'Wreckage',    keys:'ð\'ďłŵ'},
-  {id:'kit',       name:'Unit & kit',  keys:'M*fkƒ'},
-  {id:'command',   name:'Command deck', keys:'J-(qlNI['},
-  {id:'hazard',    name:'Hazards',     keys:'$123'},
+  {id:'kit',       name:'Unit & kit',  keys:'M*fkƒø'},
+  {id:'command',   name:'Command deck', keys:'J-(qlNI[ĉřķ'},
+  {id:'hazard',    name:'Hazards',     keys:'$123şṽ'},
   {id:'contacts',  name:'Contacts',    keys:'Ee<z04'},
 ];
 /* One setting, fitted to every block that runs on power. */
@@ -1512,6 +1721,13 @@ function cleanFiles(rows){
                              text:String(r.text||'')}));
 }
 const filesOf = (map,x,y) => cleanFiles((propsAt(map,x,y)||{}).files);
+/* What a core will answer to, tidied the way filing is: a row with nothing
+   asked on it is not a question, and the blocks a question drives are the
+   same list of squares a control on a desktop carries. */
+const talkOf = (map,x,y) => (((propsAt(map,x,y)||{}).talk) || [])
+  .filter(r=>String(r.ask||'').trim())
+  .map(r=>({ask:String(r.ask).trim(), reply:String(r.reply||''),
+            targets:coerce(FILE_SLOTS.fields.targets, r.targets)}));
 const foldersOf = files => {
   const out = [];
   for(const f of files) if(f.folder && !out.includes(f.folder)) out.push(f.folder);
@@ -1535,6 +1751,15 @@ function signalSources(map){
     if(t.press === 'terminal')
       for(const f of filesOf(map,x,y))
         if(f.kind === 'app') out.push({x, y, what:'Control "'+f.name+'"', targets:f.targets});
+    /* a keypad is a button with conditions on it, and a core answers a
+       question by driving whatever the question was wired to: both of them
+       press, so both of them are counted, or a bulkhead opened by one reads
+       as a bulkhead nothing opens */
+    if(t.press === 'keypad')
+      out.push({x, y, what:'Keypad', targets:signalTargets(map,x,y)});
+    if(t.press === 'aicore')
+      for(const w of talkOf(map,x,y))
+        if((w.targets||[]).length) out.push({x, y, what:'Core, asked "'+w.ask+'"', targets:w.targets});
   }
   for(const f of osOf(map))
     if(f.kind === 'app')
@@ -1900,6 +2125,14 @@ function audit(map){
     /* keyed by kind and variant both, and an object that comes in no variants
        — a canister is a canister — is tallied under its kind alone */
     if(it){ const k = it.kind+':'+(it.variant||''); stock[k] = (stock[k]|0) + 1 }
+    /* a corpse is somewhere a sample comes from, so it counts as one placed:
+       a scanner wanting an eye is answered by a body with an eye in it as
+       readily as by an eye lying on the deck */
+    if(def(tileAt(m,x,y)).press === 'scavenge'){
+      const q = propsAt(m,x,y) || {};
+      for(const part in PARTS)
+        if(q[part]) stock['organ:'+part] = (stock['organ:'+part]|0) + 1;
+    }
   } };
   tally(map);
   for(const id in MAPS) if(id !== map.id) tally(MAPS[id]);
@@ -1999,6 +2232,71 @@ function audit(map){
         out.issues.push(t.name+where+' takes the '+want.name.toLowerCase()+
                         ', and no key of that cut is placed on any deck.');
     }
+    /* ---------- the plant ----------
+       A core with nothing to answer is a channel that opens on an empty
+       list, and a question wired to a square that answers nothing is the
+       same mistake a button's line is. */
+    if(t.press === 'aicore'){
+      const talk = talkOf(map,x,y);
+      if(!talk.length)
+        out.issues.push(t.name+where+' will answer nothing. Give it something to be asked.');
+      if(!String(p.greet||'').trim())
+        out.issues.push(t.name+where+' opens on nothing. Give it a line to open with.');
+      for(const w of talk) for(const c of w.targets){
+        if(!inside(map,c.x,c.y))
+          out.issues.push(t.name+where+', asked "'+w.ask+'", presses a square outside the record.');
+        else if(!at(map,c.x,c.y).signal)
+          out.issues.push(t.name+where+', asked "'+w.ask+'", presses '+at(map,c.x,c.y).name+
+                          ' at '+c.x+','+c.y+', which does not answer signals.');
+      }
+    }
+    /* A reactor asks for three keys and gets nowhere without all three: one
+       to open the face, and two of the cut its sockets take. Two is not a
+       setting — it is what the sockets are — so the record has to hold two. */
+    if(t.press === 'reactor'){
+      const face = KEYS[p.opens], arm = KEYS[p.arms];
+      if(!face) out.issues.push(t.name+where+' opens to no key the record knows of.');
+      else if(!stock['key:'+p.opens])
+        out.issues.push(t.name+where+' opens to the '+face.name.toLowerCase()+
+                        ', and no key of that cut is placed on any deck. The face never opens.');
+      if(!arm) out.issues.push(t.name+where+' takes no key the record knows of in its sockets.');
+      else if((stock['key:'+p.arms]|0) < 2)
+        out.issues.push(t.name+where+' takes two '+arm.name.toLowerCase()+'s, and '+
+                        (stock['key:'+p.arms]|0)+' of that cut is placed across the record. '+
+                        'The sequence can never be begun.');
+      if(p.arms && p.arms === p.opens)
+        out.issues.push(t.name+where+' opens to the same cut its sockets take, so the key that '+
+                        'opened the face is one of the two that go into it.');
+      if(String(p.cardsub||'').trim() && !String(p.card||'').trim())
+        out.issues.push(t.name+where+' has a line for under its card and no card to put it under.');
+    }
+    /* A keypad with nothing wired to it is a door furniture that opens
+       nothing, and a scanner with nothing on any deck to read is a measure
+       nothing clears — the same mistake as a lock with no key cut for it. */
+    if(t.press === 'keypad'){
+      const targets = signalTargets(map,x,y);
+      if(!targets.length) out.issues.push(t.name+where+' signals nothing.');
+      for(const c of targets){
+        if(!inside(map,c.x,c.y))
+          out.issues.push(t.name+where+' signals a square outside the record.');
+        else if(!at(map,c.x,c.y).signal)
+          out.issues.push(t.name+where+' signals '+at(map,c.x,c.y).name+
+                          ' at '+c.x+','+c.y+', which does not answer signals.');
+      }
+      if(p.pass && !String(p.code||'').trim())
+        out.issues.push(t.name+where+' asks for a code and has none set, so anything typed opens it.');
+      if(p.finger && !stock['organ:hand'])
+        out.issues.push(t.name+where+' reads a fingerprint, and there is no hand placed on any deck '+
+                        'and no corpse with one still on it.');
+      if(p.retina && !stock['organ:eye'])
+        out.issues.push(t.name+where+' reads a retina, and there is no eye placed on any deck '+
+                        'and no corpse with one still in it.');
+      if(!p.pass && !p.finger && !p.retina)
+        out.issues.push(t.name+where+' has every measure turned off. It is a button with a screen on it.');
+    }
+    /* A body nothing is left on is a body the unit walks to for nothing. */
+    if(t.press === 'scavenge' && !p.hand && !p.eye)
+      out.issues.push(t.name+where+' has nothing left on it to take.');
     if(t.press === 'generator'){
       const s = supplyOf(map,x,y);
       if(!s)
@@ -2360,7 +2658,8 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
 
 global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, KEYS, ITEMS, CARRY, NOISE,
                circuitOf, waysOf, boxes, circuitFed, boxesFor, supplyOf, gens, supplyFed, itemAt,
-               FILE_KINDS, OS_SCHEMA, filesOf, osOf, osCard, foldersOf, inFolder,
+               FILE_KINDS, OS_SCHEMA, filesOf, talkOf, osOf, osCard, foldersOf, inFolder,
+               PARTS,
                chapterOf, chapters,
                def, MAPS, register, makeMap, normalize, resize, trim,
                inside, tileAt, at, bodyAt, walkable, vaultable, setTile, reachable, audit,
