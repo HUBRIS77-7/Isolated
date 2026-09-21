@@ -146,6 +146,16 @@ ISO.register({
 | `[`  | Command Elevator | yes | A car to another deck, and the command deck's own. `[E]` rides it, and so does a button |
 | `N`  | Command Signage | no | `[E]` reads it. Paint on steel: it needs no circuit |
 | `I`  | Command Terminal | no | `[E]` opens it. Everything a terminal is, in command blue |
+| `` ` `` | Carpet   | yes  | Dark blue tile. The quietest ground on the ship          |
+| `]`  | Painted wall | no | Bulkhead under dark blue paint                          |
+| `)`  | Reception desk | no | Counter. Touching copies become one desk — as long as you paint it. Low enough to read over |
+| `{`  | Hollow locker | no | The back is out of it. `[E]` folds the unit inside, where nothing can find it |
+| `}`  | Hollow desk  | no  | Three tiles long; turns with its `dir`. The well under it is clear — `[E]` folds the unit in |
+| `$`  | Broken pipe | no   | It is putting water on the deck. Floods as far as its `reach`, and only while its circuit is live |
+| `1`  | Water     | yes  | Standing water. Slower to cross, and the loudest ground there is. Touching copies become one pool |
+| `2`  | Fire      | no   | Nothing crosses it. Water puts it out, and what is left is ash the unit walks over |
+| `3`  | Laser alarm | yes | A beam across the way. Walk through an armed one and the deck sounds. A control disarms it. Touching copies are one beam |
+| `4`  | Ravager   | yes  | Where a contact starts. It is blind, and it hunts the deck by sound |
 
 To add a tile type, add one entry to `TILES` in `tiles.js`. It shows up in the
 editor palette on its own and the game obeys it straight away — walkability,
@@ -231,6 +241,15 @@ costs one line in `tiles.js` and nothing anywhere else.
 | Command Signage | `title`, `text` | What the board says                       |
 | Command Elevator | `dest`, `arrive`, `label`, `fade`, `card`, `cardsub` | Read exactly as an elevator's are |
 | Sentry turret | `label`      | Name shown in the message log                  |
+| Reception desk, Hollow locker, Hollow desk | `label` | Stencilled name     |
+| Hollow desk | `dir`         | Which way it runs                              |
+| Broken pipe | `reach`      | Squares of ground the flood works out to       |
+| Broken pipe | `label`      | Stencilled name                                |
+| Laser alarm | `armed`      | Starts with the beam across the way            |
+| Laser alarm | `label`      | Name shown in the message log                  |
+| Ravager  | `hears`        | Squares a noise carries to it                  |
+| Ravager  | `range`        | Squares from its mark it will wander. `0` — the default — turns it loose on the whole deck |
+| Ravager  | `label`        | Name shown in the message log                  |
 | Security drone, Block | `wake` | Squares of route at which it takes an interest |
 | Security drone, Block | `range` | Squares from its mark it will wander. `0` — the default — turns it loose on the whole deck |
 | Security drone, Block | `label` | Name shown in the message log                |
@@ -238,7 +257,7 @@ costs one line in `tiles.js` and nothing anywhere else.
 
 The palette is filed under headings — **Ground**, **Open land**, **Structure**,
 **Buildings**, **Controls**, **Transit**, **Fixtures**, **Furnishings**, **Farm**,
-**Remains**, **Unit & kit**, **Command deck**, **Contacts** — and each heading folds away with a
+**Remains**, **Unit & kit**, **Command deck**, **Hazards**, **Contacts** — and each heading folds away with a
 click, so a room is laid out from the six or seven blocks it actually uses
 rather than from a list of thirty. Which headings are folded is kept between
 visits, like the draft is. The number keys still reach the first ten blocks
@@ -405,7 +424,7 @@ jump would cross, the one it would come down on, and how far along the charge
 has got, so nothing is committed blind.
 
 What it clears is ground of any kind, the empty space the record does not reach
-into, and anything low enough to see over — mesh, a console, a desk. A wall, a
+into, fire, and anything low enough to see over — mesh, a console, a desk. A wall, a
 sealed bulkhead or a stack of crating is as high as it is solid, and turns a
 jump back the way it turns a step back. **A pit is cleared, never landed on:**
 the unit sails over one and comes down on the far side, so the widest gap a
@@ -526,6 +545,7 @@ halfway.
 | `<`  | Sentry turret | Never. It is bolted where it was painted | It does not have to: it shoots | Command side. It lays onto anything not of its own side — a stalker, a hunter, a block — and onto the unit whatever happens, and puts a round through it. What it never fires at is a security drone |
 | `z`  | Security drone | At a pace of its own, always | Onto the unit, and lifts it | Command side, and it cannot end a run. It takes hold of the chassis, carries it off, and sets it down wherever it was going. The movement keys become the struggle while it has hold |
 | `0`  | Block | Along one heading until the whole of it is stopped | It does not steer: it arrives | Three tiles by three of freight. Whatever it comes over is under it, and that ends the run. It needs the whole of its body's width, so a doorway is somewhere it can never be |
+| `4`  | Ravager | At a pace of its own, always — casting about or coming | Onto whatever it heard, and strikes it if it is still making a noise, which ends the run | It cannot see. Nothing about where the unit is standing reaches it: what it has is the last square the deck made a noise at, and it walks to that. Holding still is no answer to it — being quiet is |
 
 ### Hunting by movement
 
@@ -1455,6 +1475,199 @@ Nothing else in the family is new behaviour, and that is deliberate.
   sight crosses them. Which is worth knowing where there is a turret about:
   cover that reads clear is cover the gun fires over.
 
+## The offices
+
+Three blocks and a colour, for the decks between the plating and the command
+deck — where the ship was administered rather than run. **Carpet** (`` ` ``) is
+ordinary ground, a **Painted wall** (`]`) is ordinary wall, and a **Reception
+desk** (`)`) is a counter as long as it is painted, one body, solid and low
+enough to read over.
+
+They are blue, and command is blue, and that is not the collision it looks
+like. Command is the lit blue of glass and steel; this is the dull, deep,
+unlit blue of paint and carpet. An operator that has crossed a deck of each
+knows which it is standing on before it has read a stencil, which was always
+the whole of what the colour was for.
+
+The carpet is the one that is not only a colour. It is the **quietest ground
+on the ship** — a step taken on it carries two squares where a step on plating
+carries four — and on a deck with something listening on it that is the
+difference between a route and a mistake. See **A deck that can be heard**.
+
+## Somewhere to be that is not the deck
+
+A **Hollow locker** (`{`) and a **Hollow desk** (`}`) are the crew locker and
+the work surface with their backs taken out. They are the only two blocks on a
+deck the unit can get *inside* rather than round: `[E]` from an adjacent square
+folds the chassis in, `[E]` climbs it back out, and so does any movement key,
+which is what makes coming out of one a single press rather than a hunt for the
+right one.
+
+While it is in there the deck stops being able to find it. Nothing hunting
+works out a route to a unit that is not standing on the deck — a hunter loses
+the trail, a stalker has nothing to pace, a drone has nothing to lift, a
+ravager has nothing to walk to — and a turret has nothing to lay its barrel
+onto. It is not a disguise and it is not a chance: it is simply not there.
+
+What it costs is the feed. **Sight closes to one square**, which is the slats
+and nothing else, so the operator that hides gives up everything it can read
+about the deck in exchange for not being read off it. A locker is somewhere to
+wait, and the interesting question is never whether to get in but when to come
+out — because from in there the only thing still working is the message log and
+the tracker, and the tracker only reads what is moving.
+
+The one thing it is no answer to is a **Block**: nine squares of freight
+arriving over the top of a locker has the unit under it whether the locker is
+shut or not.
+
+A hollow desk is three tiles long and turns with its `dir`, and **any tile of
+it is a way in** — the unit presses the tile it is standing beside, not the one
+the block was painted on. Survey flags either of them painted somewhere with no
+ground beside it to work `[E]` from, which is a hiding place nothing ever gets
+into.
+
+## Water, and the line that is putting it there
+
+A flood is not painted square by square. What an author paints is a **Broken
+pipe** (`$`) and, if the deck wants one, whatever **Water** (`1`) is already
+lying about; the water that ends up on the plating is worked out from those.
+
+A pipe sweeps outward over anything the flood could run across, as far as its
+own `reach`, one square every half-second or so — so a deck fills while it is
+being crossed rather than being wet from the start. What the flood runs across
+is ground the unit could stand on **and fire**, which it puts out on the way
+past. What it does not run across is a wall, a shut bulkhead or a hole in the
+deck: a door is as good a dam as it looks, and a room the unit has not opened
+yet is a room that stays dry.
+
+Water already on the deck is wet from the start and spreads nothing by itself.
+What it does is **cost a pipe nothing to cross** — so a pool already lying
+between a burst line and a doorway carries that line's reach out past where
+bare plating would have stopped it. That is the whole of "water spreads
+depending on how close it is to a broken pipe": what decides how far the flood
+gets is the reach of the nearest live pipe, and what a painted pool does is
+lend that reach a running start.
+
+A pipe is **powered**, which is the other half of it. Put one on a circuit and
+the flood runs only while that circuit is live — pull the fuse and the deck
+**drains back the way it came**, faster than it filled. So a flooded room is
+not a fact about a deck, it is a state of one, and somewhere else on the deck
+there is a fusebox that decides which state it is in.
+
+Water underfoot costs the unit two things. It is **slower to cross** than plain
+deck, the way sludge is, and it is the **loudest ground on the ship** — a step
+taken through it carries ten squares. A deck with a ravager on it and a burst
+line running is a deck where the water is doing the hunting.
+
+## Fire
+
+**Fire** (`2`) is as solid as a wall while it burns. The unit will not cross
+one, and neither will anything walking about — a contact routes round a fire
+exactly as it routes round a bulkhead, so a fire is a wall an author can put
+across a room without building one. A jump clears it the way a jump clears a
+pit: sailed over, never landed on.
+
+The only thing that answers a fire is **water**. Where the flood reaches one it
+goes out, loudly, and what is left is wet ash — ordinary ground the unit walks
+over from then on. Which makes the two of them a pair: a fire is a door, and
+somewhere on the deck there is a pipe, and between them is an author deciding
+in what order the room is allowed to be crossed. `[R]` lights every fire again
+along with everything else.
+
+## The beam across the way
+
+A **Laser alarm** (`3`) does nothing whatever until something walks through it.
+Then it sounds, and goes on sounding for a quarter of a minute, and what it is
+really doing while it sounds is making **the loudest noise on the deck** once
+every couple of seconds. So the cost of tripping one is not a line in the log.
+It is every blind thing on the deck walking to where the unit is standing.
+
+A control takes it down. It answers a signal the way a bulkhead does — from a
+**Button** (`b`) on a wall, or from a control filed on a console's desktop, both
+through the same driver — and a beam is as wide as it is painted and one body,
+so a line across a corridor is disarmed with one press. Disarming the emitter
+that is screaming is also what stops the screaming. It runs on power like
+anything else: a beam on a dead circuit is a beam that is not there.
+
+Survey asks for a control the way it asks for one on a bulkhead, and says what
+the absence means — an alarm nothing disarms is a route that always sounds.
+
+## A deck that can be heard
+
+Everything else on a deck is *read*: the optics resolve it, the tracker reads
+it, the record already held it. Sound is the one thing that is not. It goes out
+from wherever it was made, in every direction, **through whatever is standing
+in the way**, and reaches whatever is listening whether or not that thing could
+ever have seen the square it came from. A wall is no answer to a noise.
+
+How loud each thing is lives in one table, `NOISE` in `tiles.js`, rather than
+buried in the driver that does it:
+
+| Squares | What makes it |
+|---------|---------------|
+| 2       | A step on carpet |
+| 4       | A step on plating — the quiet one, on purpose |
+| 6       | Something small lifted off the deck, or set down on it |
+| 7–9     | A step on sludge, debris, bone or open grating |
+| 9       | A control struck, and a fire going out under water |
+| 10      | Coming down off a jump — and any step through water |
+| 11      | A fuse seated in a way, or pulled back out of one |
+| 13      | Machinery: a platform called, a car, a duct cover, a station's arm, a flight of steps |
+| 15      | A door, a gate or a bar driven |
+| 60      | A laser alarm, which is the whole deck and a good way past the edges of it |
+
+A tile says how loud a step onto it is with `noisy`, so what a deck sounds like
+underfoot is a property of what it is built out of. Carpet is the quiet one and
+water is the loud one, and everything between them is a decision about where
+the route through a room ought to go.
+
+The feed draws a ring off every noise, as wide as the noise carried, without
+reference to the optics — because a unit that has just given itself away should
+never have to guess that it has.
+
+## The one that cannot see — the Ravager
+
+A **Ravager** (`4`) has no optics and nothing that stands in for them. Nothing
+about where the unit is standing reaches it: it will walk straight past a unit
+in the open, at any range, indefinitely. What it has is a **mark** — the last
+square the deck was heard doing something at — and it walks to that, stands
+over it, casts about for a couple of seconds, and gives it up.
+
+Everything in the table above is a mark. A door driven two rooms away is a
+mark. A fuse seated in a fusebox is a mark. A control struck, a duct crawled, a
+platform called, a body of water waded through, an alarm tripped: all marks,
+and the freshest one wins, so a deck that goes on making noise leads one along
+rather than letting it settle.
+
+`hears` is the furthest a noise is worth listening for, in squares and through
+anything at all. A ravager with `hears: 26` on a deck forty squares across is
+one that hears most of what happens on it, and one with `hears: 10` is one an
+operator can work round.
+
+It **strikes at noise**, and this is the tight one: it closes whether the unit
+is making a sound or not, and when it arrives it is standing over the unit
+either way — but it can only place a chassis that is **making a noise**. So the
+answer to a ravager is to go quiet, and it is worth being clear about how that
+differs from the hunter:
+
+| | Hunter (`e`) | Ravager (`4`) |
+|---|---|---|
+| Finds by | movement | noise |
+| Loses by | the unit holding still | the deck going quiet |
+| Can be beaten by | stopping | not doing anything loud |
+| A shut door | keeps it out altogether | is nothing to it, and driving one is what called it |
+| Standing still | is the whole defence | does nothing by itself: an alarm sounding gives the unit away where it stands |
+
+Which is what makes the two of them worth putting on one deck. Everything that
+answers a hunter — bolting for a door, driving it shut behind you, seating a
+fuse to get the lights on — is a thing a ravager hears. And everything that
+answers a ravager — standing on carpet, leaving the door where it is, staying
+out of the water — is a thing that leaves a hunter's trail exactly where it
+was.
+
+A **hollow locker** answers both. So does a turret: a ravager belongs to
+nobody, so leading one past a gun is the same trick it always was.
+
 ## A field to walk into
 
 Crop is the one ground the unit can walk into that costs it something. **Wheat**
@@ -1486,8 +1699,10 @@ opens, a tram whose rail runs into a wall, a vent with no far end or one that
 comes out inside a wall, a station stocked with nothing, a beacon that spawn
 already stands inside the range of, a car whose deck is not one the game will
 have, a breach with nothing registered under it or nothing stencilled to come
-down at, a forklift, desk or body with nowhere to lie, and a contact bigger
-than a square whose mark has not the room to stand it up in. On power it flags a fusebox that feeds nothing, a way stencilled with no
+down at, a forklift, desk or body with nowhere to lie, a contact bigger
+than a square whose mark has not the room to stand it up in, a laser alarm no
+control disarms, a broken pipe with no reach to flood with, and a hiding place
+with no ground beside it to work `[E]` from. On power it flags a fusebox that feeds nothing, a way stencilled with no
 circuit, a way that feeds a circuit nothing on the deck is on, a way whose fuse
 is placed on no deck at all, and a block waiting on a circuit no box on its
 deck feeds — the one that would otherwise look exactly like a block that

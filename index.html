@@ -854,13 +854,23 @@ const bodyDef=(x,y)=>ISO.bodyAt(MAP,x,y);
 const propsOf=(x,y)=>ISO.propsAt(MAP,x,y)||{};
 /* The words a block ends a chapter on, or nothing — most blocks end nothing. */
 const cardOf=p=>String(p.card||'').trim()?{title:p.card,sub:p.cardsub||''}:null;
+/* Whether a block is showing its spent look: used up, or — for an emitter,
+   which is armed rather than stocked — taken down by a control. */
+function usedUp(x,y,t){
+  const k=K(x,y);
+  if(t.alarm)return !world.armed.has(k);
+  /* and a burst line reads dry when there is nothing behind it: the supply
+     pulled, or an author who gave it no reach to flood */
+  if(t.pipe)return !powered(x,y)||!(propsOf(x,y).reach|0);
+  return world.spent.has(k);
+}
 /* A block built out of however many tiles the author used says how big the
    copy in front of the unit turned out to be, and answers to the name
    stencilled anywhere on it — a tank is painted from forty tiles and named on
    one of them, so reading it off the tile the unit happens to be facing would
    leave most of the wall anonymous. */
 function bumpLine(x,y,t){
-  if(t.spent&&t.spent.bump&&world.spent.has(K(x,y)))return t.spent.bump;
+  if(t.spent&&t.spent.bump&&usedUp(x,y,t))return t.spent.bump;
   if(t.lock&&t.lock.bump&&propsOf(x,y).locked)return t.lock.bump;
   if(!t.bump||(!t.sized&&!t.merge))return t.bump;
   const b=ISO.cluster(MAP,x,y);
@@ -901,6 +911,24 @@ const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
                  fired — what lives in here is the tracer, which is the only
                  part of it the operator ever sees */
               shots:[],
+              /* every burst feed line on the deck, indexed once so the flood
+                 does not have to go looking for them every frame */
+              pipes:[],
+              /* how long the water has been running, in seconds. The front is
+                 this over FLOOD_STEP — it works outward while a pipe is live
+                 and drains back when the supply is pulled */
+              flood:{t:0},
+              /* laser emitters still armed. A control takes a body out of
+                 here; walking through what is left in it sounds the deck */
+              armed:new Set(),
+              /* the alarm that is sounding, if one is: where it was tripped,
+                 how long it has left, and when the next pulse goes out */
+              alarm:null,
+              /* noises the deck has made lately — where, how loud, and when.
+                 Whatever hunts by sound has already been told; what is kept
+                 here is the ring the operator sees, so a unit that has just
+                 given itself away knows that it has */
+              din:[],
               /* bumped whenever the ground itself changes under a route —
                  a door driven, a deck rebuilt. What is counting on it is the
                  cached sweep, which must not be reused across a change it
@@ -914,8 +942,10 @@ function buildWorld(){
   world.open.clear(); world.trams.length=0; world.lit.clear();
   world.spent.clear(); world.beacons.clear();
   world.ways.clear(); world.drops.clear(); world.foes.length=0; world.rev++;
-  world.shots.length=0; game.held=null; game.struggle=0;
+  world.shots.length=0; game.held=null; game.struggle=0; game.hide=null;
   world.slides.clear(); world.unlocked.clear();
+  world.pipes.length=0; world.flood.t=0; world.armed.clear(); world.alarm=null;
+  world.din.length=0; pool.key='';
   sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
     const t=tileDef(x,y), p=propsOf(x,y);
@@ -930,6 +960,12 @@ function buildWorld(){
        re-initialise arms them all again */
     if(t.ping&&p.armed) world.beacons.set(K(x,y),{x, y, range:p.range|0,
                                                   label:p.label||'', objective:p.objective||''});
+    /* a burst line is indexed rather than searched for: the flood is worked
+       out from this list every time the supply or the ground changes */
+    if(t.pipe) world.pipes.push({x, y, reach:Math.max(0,p.reach|0)});
+    /* an emitter armed by its author is armed from the moment the run starts,
+       and a re-initialise arms every one of them again */
+    if(t.alarm&&p.armed) world.armed.add(K(x,y));
     /* the mark is where a contact starts, not a block standing there: it is
        built once, walks off, and the square it came from is plain ground */
     if(t.foe&&ISO.FOES[t.foe]) world.foes.push(makeFoe(t.foe,x,y,p));
@@ -959,6 +995,10 @@ function stashDeck(){
                     slides:new Map([...world.slides].map(([k,s])=>
                       [k,Object.assign({},s,{cells:s.cells.slice()})])),
                     unlocked:new Set(world.unlocked),
+                    /* the deck keeps its own weather: how far the water has
+                       got, and which emitters are still across the way */
+                    flood:world.flood.t, armed:new Set(world.armed),
+                    alarm:world.alarm?Object.assign({},world.alarm):null,
                     ways:new Map([...world.ways].map(([k,w])=>[k,w.map(o=>Object.assign({},o))])),
                     drops:new Map(world.drops),
                     trams:world.trams.map(t=>Object.assign({},t)),
@@ -974,13 +1014,16 @@ function restoreDeck(d){
   world.slides=new Map([...(d.slides||[])].map(([k,s])=>
     [k,Object.assign({},s,{cells:s.cells.slice()})]));
   world.unlocked=new Set(d.unlocked||[]);
+  world.flood.t=d.flood||0; world.armed=new Set(d.armed||[]);
+  world.alarm=d.alarm?Object.assign({},d.alarm):null;
+  world.din.length=0; pool.key='';
   world.trams=d.trams.map(t=>Object.assign({},t));
   /* a deck is left standing as it was, and whatever was following the unit
      across it is still standing where it stopped */
   world.foes=d.foes.map(foeCopy);
   /* a round in the air belongs to the deck it was fired on, and nothing that
      has hold of the unit keeps hold of it across a crossing */
-  world.shots.length=0; game.held=null; game.struggle=0;
+  world.shots.length=0; game.held=null; game.struggle=0; game.hide=null;
   world.rev++;
   world.lit.clear();
   sight.live.clear(); sight.seen.clear();     // optical memory does not ride the car
@@ -1176,6 +1219,9 @@ function walkableAt(x,y){
   const t=tileDef(x,y);
   if(t.signal==='toggle')return world.open.has(K(x,y));
   if(t.signal==='move')return false;                 // bare rail; platform is elsewhere
+  /* a fire is as solid as a wall while it burns, and wet ash the moment the
+     water reaches it — the one block on a deck that is opened by weather */
+  if(t.burn)return world.spent.has(K(x,y));
   return t.walk;
 }
 /* What a jump passes over without coming down on it, and what it may come
@@ -1191,6 +1237,104 @@ function vaultAt(x,y){
 }
 const landAt=(x,y)=>ISO.inside(MAP,x,y)&&walkableAt(x,y)&&!(bodyDef(x,y).deadly&&!tramOn(x,y));
 
+/* ---------- water, and the line that is putting it there ----------
+   A flood is not painted square by square. What an author paints is a burst
+   feed line and, if the deck wants one, whatever standing water is already
+   lying about; the water that ends up on the plating is worked out from
+   those. Each live pipe sweeps outward over anything the flood could run
+   across — ground the unit could walk on, and fire, which it puts out on the
+   way past — as far as its own `reach`, and crossing water that is already
+   there costs it nothing. So a pool on the deck is not scenery: it is what
+   carries a burst line's reach out past where bare plating would stop it.
+
+   The front is time rather than distance. It works out one square every
+   FLOOD_STEP while a pipe is live, and when the supply is pulled it drains
+   back the way it came, faster than it came — which is what makes a fusebox
+   somewhere else on the deck a thing that can turn a flooded room back into
+   a room. */
+const FLOOD_STEP=.55;              // seconds the front takes to work out one square
+const FLOOD_DRY=1.7;               // and how much quicker it drains once the pipe is dead
+const WADE_SLOW=1.6;               // how much longer a step through water takes
+const pool={key:'', d:new Map(), max:0};
+/* Every square the water could reach, and how many squares of dry ground the
+   nearest live pipe has to push through to get there. Rebuilt only when the
+   supply or the ground changes, because that is the only time the answer can
+   have changed. */
+function floodField(){
+  const pipes=world.pipes.filter(p=>p.reach>0&&powered(p.x,p.y));
+  const key=MAP.id+'|'+world.rev+'|'+pipes.map(p=>p.x+','+p.y+':'+p.reach).join(';');
+  if(pool.key===key)return pool.d;
+  const d=new Map(); let max=0;
+  /* what water runs over: anything the unit could stand on, and a fire, which
+     it runs into in order to put out. A hole in the deck takes it away */
+  const runs=(x,y)=>{
+    if(!ISO.inside(MAP,x,y))return false;
+    const t=bodyDef(x,y);
+    if(t.fall||(t.deadly&&t.see))return false;
+    return walkableAt(x,y)||!!t.burn;
+  };
+  const cost=(x,y)=>bodyDef(x,y).wet?0:1;
+  for(const p of pipes){
+    /* one pipe, one reach, and a 0-1 sweep out of it: standing water is free
+       to cross and every other square costs a square of reach */
+    const best=new Map(), q=[];
+    const seed=(x,y,c)=>{
+      if(c>p.reach)return;
+      const k=K(x,y), had=best.get(k);
+      if(had!==undefined&&had<=c)return;
+      best.set(k,c);
+      if(c===0)q.unshift({x,y,c}); else q.push({x,y,c});
+    };
+    for(const dir in DIRV){
+      const nx=p.x+DIRV[dir][0], ny=p.y+DIRV[dir][1];
+      if(runs(nx,ny))seed(nx,ny,cost(nx,ny));
+    }
+    for(let guard=0;q.length&&guard<20000;guard++){
+      const n=q.shift();
+      if(best.get(K(n.x,n.y))<n.c)continue;           // a shorter way here turned up later
+      for(const dir in DIRV){
+        const nx=n.x+DIRV[dir][0], ny=n.y+DIRV[dir][1];
+        if(runs(nx,ny))seed(nx,ny,n.c+cost(nx,ny));
+      }
+    }
+    best.forEach((c,k)=>{
+      const had=d.get(k);
+      if(had===undefined||c<had)d.set(k,c);
+      if(c>max)max=c;
+    });
+  }
+  pool.key=key; pool.d=d; pool.max=max;
+  return d;
+}
+const floodFront=()=>world.flood.t/FLOOD_STEP;
+/* Whether there is water on this square: painted there, or worked out to here
+   by a pipe that has been running long enough. */
+function wetAt(x,y){
+  if(bodyDef(x,y).wet)return true;
+  const d=floodField().get(K(x,y));
+  return d!==undefined&&d<=floodFront();
+}
+/* The front, advanced. Fire it reaches goes out — which is the one thing on a
+   deck that changes what is solid without anything having pressed anything. */
+function updateFlood(dt){
+  floodField();
+  const was=floodFront();
+  world.flood.t=pool.max>0?Math.min(pool.max*FLOOD_STEP,world.flood.t+dt)
+                          :Math.max(0,world.flood.t-dt*FLOOD_DRY);
+  const now=floodFront();
+  if(Math.floor(now)<=Math.floor(was))return;         // it has not covered new ground yet
+  let put=0;
+  pool.d.forEach((d,k)=>{
+    if(d<=was||d>now||world.spent.has(k))return;
+    const [x,y]=k.split(',').map(Number);
+    if(!bodyDef(x,y).burn)return;
+    world.spent.add(k); world.rev++; put++;
+    noise(x,y,ISO.NOISE.press,false);                 // it goes out loudly
+  });
+  if(put)say('Water reaches the fire. '+(put===1?'It goes out':put+' squares of it go out')+
+             ' in a wall of steam. The plating is walkable.','b');
+}
+
 /* ---------- ground that takes longer to cross ----------
    Most of a deck is plain: one step, one beat. A block that says `slow` is
    something the chassis has to labour over — sludge underfoot, a body lying
@@ -1199,8 +1343,11 @@ const landAt=(x,y)=>ISO.inside(MAP,x,y)&&walkableAt(x,y)&&!(bodyDef(x,y).deadly&
    as climbing on. */
 function slowAt(x,y){
   if(tramOn(x,y))return 1;                           // the platform carries it
-  const s=bodyDef(x,y).slow;
-  return s>1?s:1;
+  const s=bodyDef(x,y).slow, base=s>1?s:1;
+  /* and water is the other kind of labour: a square the flood has reached is
+     waded through whether the author painted water on it or a pipe put it
+     there, so the two cost the same */
+  return wetAt(x,y)?Math.max(base,WADE_SLOW):base;
 }
 const stepCost=(nx,ny)=>Math.max(slowAt(game.px,game.py),slowAt(nx,ny));
 
@@ -1233,7 +1380,9 @@ const sight={live:new Set(), seen:new Map()};
    and a struck floodlamp opens it back up to the full rating. */
 const lamp={on:false, told:false, battery:100};   // whether the lamp is struck — see [F], below
 const darkDeck=()=>!!MAP.dark;
-const sightRange=()=>(darkDeck()&&!lamp.on)?DARK_SIGHT:SIGHT;
+const HIDE_SIGHT=1;              // and how little is left of it from inside a locker
+const sightRange=()=>hidden()?HIDE_SIGHT
+                    :(darkDeck()&&!lamp.on)?DARK_SIGHT:SIGHT;
 
 /* Sight stops at whatever a body stops at: structure, a door still shut, a
    block tall enough to stand behind. Mesh, consoles and low surfaces are
@@ -1309,6 +1458,8 @@ const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,mdu
   active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0,toldAbout:new Set(),
   face:'down',dead:false,sink:0,useLog:0,baseObj:'',
   stir:-1e9,                    // when the chassis last covered ground, for whatever hunts by it
+  noised:-1e9,                  // and when it last made a sound, for whatever hunts by that
+  hide:null,                    // the block the chassis is folded into, if it is in one
   held:null,                    // the drone that has the chassis off the deck, if one has
   struggle:0,                   // and how much the operator has worked against its grip
   abilities:new Set(),          // what a modification station has fitted so far
@@ -1411,12 +1562,19 @@ function startConsole(){
 }
 
 const DIRV={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
+/* The line a square writes the first time the unit stands on it, reading the
+   spent look where there is one: ash is ash rather than fire, and an emitter
+   that has been taken down says so. */
+const enterLine=(x,y,t)=>(t.spent&&t.spent.enter&&usedUp(x,y,t))?t.spent.enter:t.enter;
 /* `arc` is how many squares the move is covering when it is a jump, and 0 for
    an ordinary step — it is what the drawing reads to lift the unit off the
    deck, so every other way of moving clears it on its way past. */
 function stepTo(nx,ny,dur,arc){
   game.fx=game.px;game.fy=game.py;game.px=nx;game.py=ny;game.mt=0;game.mdur=dur;game.arc=arc|0;
   game.stir=performance.now();               // something may be listening for exactly this
+  /* and something else may be listening for the other thing entirely: a step
+     is a sound, and how loud it is is the ground it was taken on */
+  noise(nx,ny,arc?ISO.NOISE.jump:stepLoud(nx,ny),true);
   game.visited.set(K(nx,ny),performance.now());
   arrived();
 }
@@ -1424,6 +1582,7 @@ function stepTo(nx,ny,dur,arc){
    got there: a step, a jump, a duct, or a platform carrying it. */
 function arrived(){
   checkBeacons();
+  checkAlarm();
   refreshObjective();
 }
 /* A beacon transmits until the unit is close enough to read it directly, and
@@ -1438,6 +1597,146 @@ function checkBeacons(){
     say('Beacon'+(b.label?' ['+b.label+']':'')+' reached. Transmitter goes quiet.','b');
   }
 }
+/* ---------- noise ----------
+   Everything else on a deck is read: the optics resolve it, or the tracker
+   does, or the record already held it. Sound is the one thing that is not.
+   It goes out from wherever it was made, in every direction, through
+   whatever happens to be standing in the way, and it reaches whatever is
+   listening whether or not that thing could ever have seen the square it
+   came from. A wall is no answer to a noise.
+
+   Every driver on the deck calls this — the doors, the gates, the fusebox,
+   the controls, the steps the unit takes — with a loudness out of ISO.NOISE.
+   `mine` says the unit made it, which is what decides whether something that
+   strikes at noise has anything to strike at. The ring the operator sees is
+   drawn off the same list, so a unit that has just given itself away is
+   never left guessing that it did. */
+const DIN_LIFE=1.2;                        // seconds a ring stays on the feed
+const DIN_KEEP=16;                         // and how many are worth keeping at once
+function noise(x,y,loud,mine){
+  if(!loud||!ISO.inside(MAP,x,y))return;
+  const n=performance.now();
+  if(mine)game.noised=n;
+  world.din.push({x, y, loud, t:n});
+  while(world.din.length>DIN_KEEP)world.din.shift();
+  /* whatever hunts by sound is told the instant the noise is made. Distance
+     is straight-line and in squares, because that is how sound travels —
+     never along a route, the way everything else on a deck is counted */
+  for(const f of world.foes){
+    const d=foeDef(f);
+    if(d.hunts!=='sound'||f.mood==='carry')continue;
+    const far=Math.max(Math.abs(Math.round(f.rx)-x),Math.abs(Math.round(f.ry)-y));
+    if(far>Math.min(loud,f.hears||d.hears||0))continue;
+    heard(f,x,y,n);
+  }
+}
+/* One contact, given somewhere to go. It does not know what made the sound
+   and it never will: what it has is a square, and it walks to it. */
+function heard(f,x,y,n){
+  const d=foeDef(f);
+  /* a fresher mark replaces an older one, so a deck that goes on making
+     noise leads one along rather than letting it settle on the first thing */
+  f.mark={x, y}; f.heard=n; f.path=null; f.rest=0;
+  if(f.mood!=='follow'){
+    f.mood='follow';
+    if(!f.met){f.met=true;say(d.notice,'alert')}
+  }
+}
+/* How loud a step onto a square is. Water is the loud one wherever it is,
+   whether the author painted it or a burst line put it there; carpet is the
+   quiet one, and everything else is a step on plating. */
+const stepLoud=(x,y)=>wetAt(x,y)?Math.max(ISO.NOISE.step,ISO.def('1').noisy)
+                                :(bodyDef(x,y).noisy||ISO.NOISE.step);
+
+/* ---------- the beam across the way ----------
+   A laser alarm does nothing whatever until something walks through it. Then
+   it sounds, and goes on sounding, and what it is really doing while it
+   sounds is making the loudest noise on the deck once every couple of
+   seconds — so the cost of tripping one is not a line in the log, it is
+   every blind thing on the deck walking to where the unit is standing.
+
+   A control takes it down. It answers `signal:'arm'`, which a button on a
+   wall and a control filed on a console reach through the same driver, and
+   it is one body however many tiles it was painted across. */
+const ALARM_FOR=14;                        // seconds it sounds for once it is tripped
+const ALARM_PULSE=1.8;                     // and how often it puts that out over the deck
+function driveAlarm(x,y,tag){
+  const t=tileDef(x,y), cells=ISO.cluster(MAP,x,y).cells, name=t.name;
+  const dead=cells.find(c=>!powered(c.x,c.y));
+  if(dead)return {text:deadLine(name,dead.x,dead.y,tag),cls:'dim'};
+  const was=cells.some(c=>world.armed.has(K(c.x,c.y)));
+  cells.forEach(c=>{
+    const k=K(c.x,c.y);
+    if(was)world.armed.delete(k); else world.armed.add(k);
+    world.lit.set(k,performance.now());
+  });
+  /* disarming the emitter that is screaming is what stops the screaming */
+  if(was&&world.alarm&&cells.some(c=>c.x===world.alarm.x&&c.y===world.alarm.y))silenceAlarm();
+  return {text:name+tag+(was?' disarmed. The beam goes down.':' armed. The beam is back across the way.'),
+          cls:was?undefined:'dim'};
+}
+/* The square the unit has come to rest on, if it is one with a beam still
+   across it. Read however the unit got there — a step, a jump, a duct. */
+function checkAlarm(){
+  const x=game.px, y=game.py, t=tileDef(x,y);
+  if(!t.alarm||!world.armed.has(K(x,y))||!powered(x,y))return;
+  if(world.alarm)return;                             // already sounding: it cannot sound twice
+  const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  world.alarm={x, y, tag, left:ALARM_FOR, pulse:0};
+  world.lit.set(K(x,y),performance.now());
+  say('BEAM BROKEN'+tag+'. THE DECK IS SOUNDING.','alert');
+  say('Everything on this deck that listens has somewhere to be now.','alert');
+}
+function silenceAlarm(){
+  if(!world.alarm)return;
+  say('Alarm'+world.alarm.tag+' cuts out. The deck goes quiet again.','dim');
+  world.alarm=null;
+}
+function updateAlarm(dt){
+  const a=world.alarm;
+  if(!a)return;
+  a.left-=dt; a.pulse-=dt;
+  if(a.pulse<=0){a.pulse=ALARM_PULSE;noise(a.x,a.y,ISO.NOISE.alarm,true)}
+  if(a.left<=0)silenceAlarm();
+}
+
+/* ---------- somewhere to be that is not the deck ----------
+   A hollow locker and a hollow desk are the only two blocks on a deck the
+   unit can get inside rather than round. [E] from beside one folds the
+   chassis in and [E] climbs back out, and while it is in there the deck
+   stops being able to find it: nothing hunting works out a route to a unit
+   that is not standing on the deck, and a gun has nothing to lay onto.
+
+   What it costs is the feed. The optics read the slats and one square of
+   deck, so hiding is the operator trading everything it can see for not
+   being found — which is why the interesting question is never whether to
+   hide but when to come out. The one thing it is no answer to is nine
+   squares of freight arriving over the top of the locker. */
+const hidden=()=>!!game.hide;
+function useHide(x,y){
+  if(game.hide)return leaveHide();
+  if(!game.active||game.dead)return;
+  const f=ISO.coveredBy(MAP,x,y), ax=f?f.x:x, ay=f?f.y:y;
+  const t=tileDef(ax,ay), p=propsOf(ax,ay), tag=p.label?' ['+p.label+']':'';
+  world.lit.set(K(ax,ay),performance.now());
+  game.hide={x, y, ax, ay};
+  cancelJump(); closeTerminal(); closeFusebox(); closeDesk();
+  sight.live.clear();
+  say('Folded into the '+t.name.toLowerCase()+tag+'. The door pulls to behind the chassis.','b');
+  say('Nothing on this deck can find the unit in here. The optics have the slats and nothing else. [E] climbs out.','dim');
+  noise(ax,ay,ISO.NOISE.lift,true);
+  refreshObjective();
+}
+function leaveHide(){
+  if(!game.hide)return;
+  const {ax,ay}=game.hide, t=tileDef(ax,ay);
+  game.hide=null;
+  world.lit.set(K(ax,ay),performance.now());
+  say('Out of the '+t.name.toLowerCase()+'. The deck reads again.','dim');
+  noise(game.px,game.py,ISO.NOISE.lift,true);        // climbing out is not silent either
+  arrived();
+}
+
 /* Either of the two screens the unit can open. While one is up the deck keys
    belong to it, not to the chassis. */
 const uiOpen=()=>term.on||fuse.on||desk.on;
@@ -1446,6 +1745,9 @@ function tryMove(dir){
   /* nothing the keys say to the motors reaches the deck while the deck is not
      under the chassis: the same key works against the grip instead */
   if(game.held)return void struggleAt(dir);
+  /* and from inside a locker the first thing any of them does is get out of
+     it, because there is nowhere else a movement key could mean */
+  if(game.hide){game.face=dir;litKey(dir);return void leaveHide()}
   if(game.mt<1)return;
   game.face=dir;
   const [dx,dy]=DIRV[dir],nx=game.px+dx,ny=game.py+dy,t=bodyDef(nx,ny);
@@ -1457,7 +1759,8 @@ function tryMove(dir){
   }else{
     stepTo(nx,ny,.11*stepCost(nx,ny));
     if(game.dead)return;                       // something was waiting on that square
-    if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
+    const line=enterLine(nx,ny,t);
+    if(line&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(line,t.alert?'alert':'dim')}
     /* a hole answers before a drop does: what is under the breach decides
        whether the unit lands on a deck or on nothing at all */
     if(holeAt(nx,ny)&&!tramOn(nx,ny))return fallThrough(nx,ny);
@@ -1473,6 +1776,7 @@ function tryMove(dir){
 function startJump(){
   if(!game.active||game.dead||uiOpen())return;
   if(game.held)return void heldLine('The legs wind up against nothing. There is no deck under them.');
+  if(game.hide)return void heldLine('There is no room to wind up in here. [E] climbs out first.');
   if(!game.abilities.has('jump')){
     const n=performance.now();
     if(n-game.useLog>2500){game.useLog=n;say('No mobility package fitted. The legs will not wind up.','dim')}
@@ -1536,6 +1840,9 @@ function interact(){
   if(fuse.on)return closeFusebox();
   if(!game.active||game.dead)return;
   if(game.held)return void heldLine('Nothing is within reach of a manipulator this far off the deck.');
+  /* while the chassis is folded into something, the press is what gets it
+     back out: there is nothing else within reach of a manipulator in there */
+  if(game.hide){litKey('use');return leaveHide()}
   litKey('use');
   for(const [x,y] of inReach()){
     /* something set down is lifted before anything built into the deck */
@@ -1544,6 +1851,10 @@ function interact(){
     /* an empty clip answers nothing, so the press carries on to whatever else
        is within reach rather than being swallowed by it */
     if(t.press==='take'&&!world.spent.has(K(x,y)))return takeItem(x,y);
+    /* a hiding place is pressed from any tile of it, so the whole of a desk
+       three tiles long is a way in rather than the one square it was painted on */
+    const hb=ISO.coveredBy(MAP,x,y);
+    if(tileDef(hb?hb.x:x,hb?hb.y:y).press==='hide')return useHide(x,y);
     if(t.press==='fusebox')return openFusebox(x,y);
     if(t.press==='button')return pressButton(x,y);
     if(t.press==='terminal')return openTerminal(x,y);
@@ -1570,6 +1881,7 @@ function driveAll(targets,tag){
     const t=tileDef(c.x,c.y);
     const r=t.slide            ?driveSlide(c.x,c.y,tag)
            :t.signal==='toggle'?driveDoor(c.x,c.y,tag)
+           :t.signal==='arm'   ?driveAlarm(c.x,c.y,tag)
            :t.signal==='move'  ?callTram(c.x,c.y,tag)
            :t.signal==='lift'  ?rideLift(c.x,c.y,tag,true):null;
     if(r&&!lines.some(l=>l.text===r.text))lines.push(r);
@@ -1579,6 +1891,7 @@ function driveAll(targets,tag){
 function pressButton(x,y){
   world.lit.set(K(x,y),performance.now());
   const p=propsOf(x,y), tag=p.label?' ['+p.label+']':'';
+  noise(x,y,ISO.NOISE.press,true);             // a control is struck, and struck audibly
   if(!powered(x,y))return say(deadLine('Control',x,y,tag),'dim');
   const targets=ISO.signalTargets(MAP,x,y);
   if(!targets.length)return say('Control'+tag+' pressed. No line runs from it.','dim');
@@ -1607,12 +1920,14 @@ function driveDoor(x,y,tag){
   if(cells.some(c=>!world.open.has(K(c.x,c.y)))){
     cells.forEach(c=>world.open.add(K(c.x,c.y)));
     world.rev++;
+    noise(x,y,ISO.NOISE.door,true);            // a door is the loudest ordinary thing on a deck
     return {text:name+tag+' driven open.'};
   }
   if(cells.some(c=>game.px===c.x&&game.py===c.y))
     return {text:name+tag+' obstructed. It holds open.',cls:'dim'};
   cells.forEach(c=>world.open.delete(K(c.x,c.y)));
   world.rev++;
+  noise(x,y,ISO.NOISE.door,true);
   return {text:name+tag+' driven shut.',cls:'dim'};
 }
 function driveGate(x,y){
@@ -1658,6 +1973,7 @@ function driveSlide(x,y,tag){
   if(!want.length)
     return {text:name+tag+(opening?' already stands open.':' already stands shut.'),cls:'dim'};
   world.slides.set(k,{cells:want, i:0, t:0, open:opening, name, tag});
+  noise(head.x,head.y,ISO.NOISE.door,true);    // a gate that size is heard starting
   return {text:name+tag+(opening?' runs open.':' runs shut.'),cls:opening?undefined:'dim'};
 }
 /* One tile at a time, and the deck plays on while it crosses. */
@@ -1702,6 +2018,7 @@ function useKeyDoor(x,y){
     if(game.px===x&&game.py===y)
       return say(t.name+tag+' cannot be swung with the unit standing in it.','dim');
     world.open.delete(k); world.rev++;
+    noise(x,y,ISO.NOISE.door,true);
     return say(t.name+tag+' pulled shut.','dim');
   }
   if(!world.unlocked.has(k)){
@@ -1715,6 +2032,7 @@ function useKeyDoor(x,y){
     say('The '+game.carry[held].name.toLowerCase()+' turns. The lock gives.','b');
   }
   world.open.add(k); world.rev++;
+  noise(x,y,ISO.NOISE.door,true);
   say(t.name+tag+' stands open.','dim');
 }
 
@@ -1733,8 +2051,10 @@ function useVent(x,y){
   game.visited.set(K(d.x,d.y),performance.now());
   world.lit.set(K(d.x,d.y),performance.now());
   say('Crawled the duct'+tag+'. Surfaced at '+d.x+','+d.y+'.','dim');
-  const t=bodyDef(d.x,d.y);
-  if(t.enter&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(t.enter,t.alert?'alert':'dim')}
+  /* a cover off and a cover back on, at both ends of it */
+  noise(x,y,ISO.NOISE.gear,true); noise(d.x,d.y,ISO.NOISE.gear,true);
+  const t=bodyDef(d.x,d.y), line=enterLine(d.x,d.y,t);
+  if(line&&!game.toldAbout.has(t.id)){game.toldAbout.add(t.id);say(line,t.alert?'alert':'dim')}
   checkFooting();arrived();
 }
 /* ---------- elevators ----------
@@ -1751,6 +2071,7 @@ function rideLift(x,y,tag,called){
   if(deck===MAP)  return {text:'Carriage'+tag+' answers. The shaft comes out on this deck.',cls:'dim'};
   if(called&&!aboard)
                   return {text:'Carriage'+tag+' called. The unit is not aboard.',cls:'dim'};
+  noise(x,y,ISO.NOISE.gear,true);              // the shaft answering is machinery
   return {text:'Carriage'+tag+(aboard?' answers. Doors close.':' answers. The unit steps aboard.'),
           go:{deck, want:p.arrive||p.label||'', fade:!!p.fade, card:cardOf(p)}};
 }
@@ -1772,6 +2093,7 @@ function useStair(x,y){
   if(!p.dest)    return say('Companionway'+tag+' is bricked up. The steps run to no deck.','dim');
   if(!deck)      return say('Companionway'+tag+'. Deck '+p.dest+' is not in the record.','dim');
   if(deck===MAP) return say('Companionway'+tag+' comes back out on this deck.','dim');
+  noise(x,y,ISO.NOISE.gear,true);              // the chassis climbing is not a quiet thing
   say('Companionway'+tag+'. The chassis takes the steps.','dim');
   transit(p.fade,()=>travelTo(deck,p.arrive||p.label||'','stair'),cardOf(p));
 }
@@ -1796,7 +2118,7 @@ function travelTo(deck,want,how,square){
   level.entry={x:land.x, y:land.y};
   cancelJump();closeTerminal();closeFusebox();closeDesk();
   game.px=game.fx=land.x;game.py=game.fy=land.y;
-  game.mt=1;game.bt=1;game.arc=0;game.sink=0;game.held=null;game.struggle=0;
+  game.mt=1;game.bt=1;game.arc=0;game.sink=0;game.held=null;game.struggle=0;game.hide=null;
   game.visited.clear();game.visited.set(K(land.x,land.y),performance.now());
   view.ready=false;                        // the camera does not fly between decks
   say(how==='drop'?'FALL ARRESTED. CHASSIS READS INTACT.':'TRANSIT LINK ENGAGED.','b');
@@ -1858,6 +2180,7 @@ function useStation(x,y){
   if(!a)return say('Station'+tag+' reads empty. Nothing on the rack registers.','dim');
   if(world.spent.has(K(x,y)))return say('Station'+tag+' is spent. Nothing left to fit.','dim');
   world.spent.add(K(x,y));
+  noise(x,y,ISO.NOISE.gear,true);              // the arm coming out is machinery too
   if(!grantAbility(a.id,tag))say(a.name+tag+' already fitted. The arm withdraws.','dim');
 }
 
@@ -1892,11 +2215,13 @@ function takeItem(x,y){
     return say('Manipulator full. It holds '+ISO.CARRY+' objects and no more.','dim');
   if(drop)world.drops.delete(k); else world.spent.add(k);
   game.carry.push(it);
+  noise(x,y,ISO.NOISE.lift,true);
   say('Lifted '+it.name+(it.label?' ['+it.label+']':'')+'.','dim');
   syncCarry();
 }
 function dropItem(){
   if(!game.active||game.dead||uiOpen())return;
+  if(game.hide)return void heldLine('Nothing can be set down on a deck the chassis is not standing on.');
   if(!game.carry.length)return say('Nothing in the manipulator to set down.','dim');
   const k=K(game.px,game.py);
   if(world.drops.has(k))return say('Something is already set down here.','dim');
@@ -1905,6 +2230,7 @@ function dropItem(){
   const it=game.carry.pop();
   world.drops.set(k,it);
   world.lit.set(k,performance.now());
+  noise(game.px,game.py,ISO.NOISE.lift,true);
   say(it.name+' set down at '+game.px+','+game.py+'.','dim');
   syncCarry();
 }
@@ -1996,6 +2322,9 @@ function workWay(i){
         ok?'b':'dim');
     fuseNote(ok?'Seated. Circuit reads live.':'Seated, but the rating is wrong. The way stays dead.');
   }
+  /* a fuse seated is the sound of the whole deck coming back on, and a fuse
+     pulled is the sound of it going off. Either way it carries */
+  noise(fuse.x,fuse.y,ISO.NOISE.fuse,true);
   syncCarry(); renderFuse(); refreshObjective();
 }
 
@@ -2004,6 +2333,7 @@ function callTram(x,y,tag){
   if(!tr)return {text:'Signal sent. Nothing on that rail answers.',cls:'dim'};
   if(!powered(x,y))return {text:deadLine('Platform',x,y,tag),cls:'dim'};
   tr.dest=tr.dest===0?tr.path.length-1:0;
+  noise(x,y,ISO.NOISE.gear,true);
   return {text:'Platform'+tag+' called. Under way.',cls:'dim'};
 }
 
@@ -2071,6 +2401,10 @@ function makeFoe(kind,x,y,p){
           mood:d.fixed?'watch':'roam',
           path:null, rest:Math.random()*1.5, flee:0, wary:0, said:-1e9,
           moved:-1e9, wake:((p&&p.wake)|0)||d.wake, range:(p&&p.range)|0,
+          /* what a blind one goes by: how far a noise reaches it, the last
+             square it heard one at, and when. `mark` is the whole of what it
+             knows about the deck — it never learns what made the sound */
+          hears:((p&&p.hears)|0)||d.hears||0, mark:null, heard:-1e9,
           label:(p&&p.label)||'',
           hull:d.hull||1,             // rounds it takes to put down
           face:Math.random()*6.283,   // where a gun is laid, in radians
@@ -2143,10 +2477,15 @@ const FOE_REACH=30;                        // squares the sweep runs out to
 const flows=new Map();
 function foeFlow(f){
   const kind=f?f.kind:'', held=flows.get(kind);
-  const key=MAP.id+'|'+K(game.px,game.py)+'|'+world.rev+'|'+
+  const key=MAP.id+'|'+K(game.px,game.py)+'|'+world.rev+'|'+(game.hide?'H':'-')+'|'+
             world.trams.map(t=>t.i).join(',');
   if(held&&held.key===key)return held.d;
   const d=new Map(); let edge=[[game.px,game.py]];
+  /* a unit folded into a locker is not on the deck as far as any of this is
+     concerned: the sweep reaches nothing, so every contact reads the unit as
+     unreachable and goes back to looking. That is the whole of hiding, and
+     it is one line rather than a special case in every mood */
+  if(game.hide){flows.set(kind,{key, d});return d}
   d.set(K(game.px,game.py),0);
   for(let r=1;r<=FOE_REACH&&edge.length;r++){
     const next=[];
@@ -2171,6 +2510,8 @@ const SCATTER_FOR=2.4;                     // seconds a thing that breaks keeps 
 const WARY_FOR=6;                          // and how long afterwards it will not come back in
 const TRAIL_HOLD=3.2;                      // seconds a stopped unit still reads as a trail
 const STRIKE_HOLD=.5;                       // and how long it stays something worth striking at
+const SOUND_HOLD=9;                        // and how long a blind one keeps walking to a noise
+const CAST_ABOUT=2.6;                      // and how long it stands over one before giving it up
 /* Whether the chassis has covered ground lately enough to be found by it, or
    hit. Standing still is not hiding from something that hunts by sight — but
    it is the whole of the answer to something that hunts by movement. */
@@ -2190,6 +2531,30 @@ function foeMood(f,dt){
       f.mood=(here!==undefined&&here<=f.wake)?'follow':'roam';
       f.path=null;
     }
+    return;
+  }
+  /* ---------- the blind one ----------
+     Nothing about where the unit is reaches it, so none of the sweep below
+     means anything to it. What it has is a mark — the last square the deck
+     was heard doing something at — and it walks to that and stands over it.
+     The mark goes stale on its own, and it is given up the moment the thing
+     arrives at it with nothing more to hear. */
+  if(d.hunts==='sound'){
+    const n=performance.now();
+    /* standing over the mark, it casts about for a moment before it gives up
+       on it — so a deck that goes on making noise at the same square keeps
+       one standing there, and one that goes quiet loses it */
+    const over=f.mark&&f.x===f.mark.x&&f.y===f.mark.y&&!f.path;
+    const spent=f.mark&&(n-f.heard>SOUND_HOLD*1000||
+                         (over&&n-f.heard>CAST_ABOUT*1000));
+    if(spent){
+      f.mark=null; f.path=null;
+      if(f.mood==='follow'){
+        f.mood='roam';
+        if(d.cools&&n-f.said>6000){f.said=n;say(d.cools,'dim')}
+      }
+    }
+    if(f.mark&&f.mood!=='follow'){f.mood='follow'; f.path=null}
     return;
   }
   /* one that hunts by movement has nothing to go on while the unit is still:
@@ -2259,6 +2624,54 @@ function foeRoute(f){
   }
   return path.length?path:null;
 }
+/* ---------- the way to somewhere in particular ----------
+   A sweep out from the contact rather than from the unit, because a mark is
+   not the unit: it is a square the deck made a noise at, and whatever is
+   walking to it may be walking to a square it cannot stand on — a control in
+   a wall, a fusebox, a door. So the sweep keeps the best square it reached as
+   well as the exact one, and a thing that cannot get to the noise gets as
+   near to it as the ground allows and stands there. */
+const MARK_REACH=34;                       // squares a mark is worth walking for
+function foePathTo(f,tx,ty){
+  const from=K(f.x,f.y), parent=new Map([[from,null]]);
+  const near=(x,y)=>Math.max(Math.abs(x-tx),Math.abs(y-ty));
+  const trace=k=>{
+    const path=[];
+    while(k&&k!==from){const [x,y]=k.split(',').map(Number);path.unshift({x,y});k=parent.get(k)}
+    return path.length?path:null;
+  };
+  let edge=[[f.x,f.y]], best=null, bestd=near(f.x,f.y);
+  for(let r=1;r<=MARK_REACH&&edge.length;r++){
+    const next=[];
+    for(const [x,y] of edge)for(const dir in DIRV){
+      const nx=x+DIRV[dir][0], ny=y+DIRV[dir][1], k=K(nx,ny);
+      if(parent.has(k)||!foeGround(nx,ny,f))continue;
+      parent.set(k,K(x,y)); next.push([nx,ny]);
+      if(nx===tx&&ny===ty)return trace(k);
+      const h=near(nx,ny);
+      if(h<bestd){bestd=h;best=k}
+    }
+    edge=next;
+  }
+  return best?trace(best):null;
+}
+/* One square of the way to a mark. Unlike a wander it is allowed to step onto
+   the unit's square, because arriving at the noise is the whole errand — and
+   what it does when it gets there is a separate question. */
+function foeAimMark(f){
+  if(f.rest>0)return false;
+  if(!f.path){
+    f.path=foePathTo(f,f.mark.x,f.mark.y);
+    if(!f.path){f.mark=null;f.rest=.8;return false}
+  }
+  const n=f.path.shift();
+  const gone=!n||!foeGround(n.x,n.y,f)||foeAt(n.x,n.y)||
+             Math.abs(n.x-f.x)+Math.abs(n.y-f.y)!==1;
+  if(!f.path.length)f.path=null;
+  if(gone){f.path=null;f.rest=.25;return false}
+  f.x=n.x;f.y=n.y;
+  return true;
+}
 /* The next square of a route it is walking, or a new route when the last one
    runs out. It stands a moment at the end of each — which is what stops a
    wandering contact reading as a thing on rails, and what takes it off the
@@ -2307,7 +2720,8 @@ function foeAimUnit(f,flee){
   f.x=nx;f.y=ny;
   return true;
 }
-const foeAim=f=>(f.mood==='roam'||f.mood==='carry')?foeAimRoam(f)
+const foeAim=f=>(foeDef(f).hunts==='sound'&&f.mood==='follow'&&f.mark)?foeAimMark(f)
+               :(f.mood==='roam'||f.mood==='carry')?foeAimRoam(f)
                                                    :foeAimUnit(f,f.mood==='scatter');
 /* Ground crossed, rather than squares taken. A contact walks towards the
    square it is making for at whatever its mood moves it at, and picks the
@@ -2466,7 +2880,8 @@ function gunMark(f){
     if((foeDef(o).side||'')===side&&side)continue;     // its own side: never
     marks.push({o, x:o.rx, y:o.ry});
   }
-  if(game.active&&!game.dead)marks.push({o:null, x:game.px, y:game.py});
+  /* a unit folded into a locker is nothing for a barrel to come round onto */
+  if(game.active&&!game.dead&&!game.hide)marks.push({o:null, x:game.px, y:game.py});
   let best=null, bd=Infinity;
   for(const m of marks){
     const d=Math.hypot(m.x-f.rx, m.y-f.ry);
@@ -2565,6 +2980,7 @@ function carriedBy(f){
   game.stir=performance.now();                         // carried is moving, to whatever hunts by it
   const nx=Math.round(f.rx), ny=Math.round(f.ry);
   if(!ISO.inside(MAP,nx,ny)||(nx===game.px&&ny===game.py))return;
+  noise(nx,ny,ISO.NOISE.step,true);                    // and carried is audible, to whatever hunts by that
   game.fx=game.px;game.fy=game.py;
   game.px=nx;game.py=ny;game.mt=0;game.mdur=.12;game.arc=0;
   game.visited.set(K(nx,ny),performance.now());
@@ -2652,7 +3068,16 @@ function updateFoes(dt){
    it stands there, and a moment later the trail goes cold and it wanders off
    — which is the whole of the defence, and only works if the unit stops
    before it arrives rather than after. */
-const foeStrikes=f=>foeDef(f).hunts!=='motion'||stirring(STRIKE_HOLD);
+function foeStrikes(f){
+  const d=foeDef(f);
+  /* one that hunts by movement can only place a chassis that is moving */
+  if(d.hunts==='motion')return stirring(STRIKE_HOLD);
+  /* and one that hunts by sound can only place one that is making a noise.
+     Standing still is no help against it by itself — what it wants is for the
+     deck to go quiet, which is a different thing the operator has to learn */
+  if(d.hunts==='sound')return performance.now()-game.noised<STRIKE_HOLD*1000;
+  return true;
+}
 
 /* ---------- the motion tracker ----------
    A sensor package rather than a camera. It reads movement through structure
@@ -3137,7 +3562,8 @@ function deskPress(){
 /* ---------- ending the run ---------- */
 function die(reason){
   if(game.dead)return;
-  game.dead=true;game.active=false;game.sink=0;closeTerminal();closeFusebox();closeDesk();cancelJump();
+  game.dead=true;game.active=false;game.sink=0;game.hide=null;
+  closeTerminal();closeFusebox();closeDesk();cancelJump();
   letGo(game.held);
   say(reason,'alert');
   say('CHASSIS UNRECOVERABLE. SIGNAL LOST.','alert');
@@ -3147,6 +3573,8 @@ function die(reason){
 function respawn(){
   if(!game.dead)return;
   game.dead=false;game.sink=0;game.mt=1;game.mdur=.11;game.bt=1;game.face='down';game.arc=0;
+  /* a rebuilt chassis has not made a sound yet, whatever the last one was doing */
+  game.noised=-1e9;game.stir=-1e9;
   /* on whichever deck the unit is standing, at the record it set down on */
   game.px=game.fx=level.entry.x;game.py=game.fy=level.entry.y;
   cancelJump();
@@ -3215,7 +3643,10 @@ function drawFeed(now,dt){
   if(jump.on)jump.t=Math.min(JUMP_WIND,jump.t+dt);
   if(game.dead)game.sink=Math.min(1,game.sink+dt/.55);
   const e=ease(game.mt),bump=Math.sin(game.bt*Math.PI)*.16;
-  const rx=lerp(game.fx,game.px,e)+game.bx*bump,ry=lerp(game.fy,game.py,e)+game.by*bump;
+  let rx=lerp(game.fx,game.px,e)+game.bx*bump,ry=lerp(game.fy,game.py,e)+game.by*bump;
+  /* folded into something, the unit is drawn where it actually is — inside
+     the block — rather than on the square it worked [E] from */
+  if(game.hide){rx=game.hide.x;ry=game.hide.y}
 
   /* fit the whole map if it fits; otherwise scroll a window of it */
   const pad=8*D,availW=W-pad*2,availH=H-pad*2;
@@ -3257,10 +3688,19 @@ function drawFeed(now,dt){
        unit could be looking at it there is nothing standing there */
     if(tileDef(x,y).foe)
       ISO.drawTile(fx,'.',px,py,tile,D);
-    else if(tileDef(x,y).signal!=='move')
+    else if(tileDef(x,y).signal!=='move'){
+      const hd=game.hide, fp=hd?ISO.partAt(MAP,x,y):null;
       ISO.drawCell(fx,MAP,x,y,px,py,tile,D,
                    {open:world.open.has(K(x,y)), locked:propsOf(x,y).locked,
-                    spent:world.spent.has(K(x,y)), over:below});
+                    spent:usedUp(x,y,tileDef(x,y)), over:below,
+                    inside:!!hd&&(fp?fp.x===hd.ax&&fp.y===hd.ay:x===hd.ax&&y===hd.ay)});
+    }
+    /* the flood, drawn over whatever it has run across. Water painted on the
+       deck draws itself; this is the water a burst line put there */
+    if(wetAt(x,y)&&!tileDef(x,y).wet){
+      fx.globalAlpha=(dark?a*.42:a)*.8;
+      ISO.drawTile(fx,'1',px,py,tile,D);
+    }
     fx.globalAlpha=a;
     if(dark&&tile>=14){
       fx.fillStyle='rgba(255,59,47,.6)';
@@ -3295,6 +3735,7 @@ function drawFeed(now,dt){
   drawRails(ox,oy,tile,D,now);
   drawTrams(ox,oy,tile,D,now);
   drawFoes(ox,oy,tile,D,now);
+  drawDin(ox,oy,tile,D,now);
   drawShots(ox,oy,tile,D);
   world.lit.forEach((when,k)=>{                       // a control answering a press
     const age=(now-when)/450;
@@ -3318,7 +3759,8 @@ function drawFeed(now,dt){
      is the whole of how a leap reads from directly overhead */
   const lift=(game.arc&&game.mt<1)?Math.sin(game.mt*Math.PI):0;
   const cx=ox+(rx+.5)*tile,cy=oy+(ry+.5)*tile,
-        s=tile*.62*(1-.1*Math.sin(game.mt*Math.PI)*(game.arc?0:1)+lift*(.16+.04*game.arc))*(1-game.sink*.9);
+        s=tile*.62*(1-.1*Math.sin(game.mt*Math.PI)*(game.arc?0:1)+lift*(.16+.04*game.arc))*
+          (1-game.sink*.9)*(game.hide?.44:1);
   fx.fillStyle=`rgba(28,240,28,${.08-.03*lift})`;
   fx.fillRect(cx-s/2+tile*(.07+lift*.26),cy-s/2+tile*(.09+lift*.26),s*(1-lift*.25),s*(1-lift*.25));
   fx.fillStyle='#021402';fx.shadowColor='rgba(28,240,28,.8)';fx.shadowBlur=14*D;
@@ -3468,6 +3910,24 @@ function drawFoes(ox,oy,tile,D,now){
                 oy+(lerp(game.fy,game.py,ease(game.mt))+.5)*tile);
       fx.stroke();
     }
+    fx.globalAlpha=1;
+  }
+}
+/* ---------- what the deck sounded like ----------
+   A ring off every noise the deck has made lately, as wide as the noise
+   carried. It is the one thing on the feed drawn without reference to the
+   optics — sight has nothing to do with it, and a noise made three rooms
+   away is a noise the operator would have heard as readily as the unit did.
+   What it is for is simple: a unit that has just given itself away should
+   never have to guess that it has. */
+function drawDin(ox,oy,tile,D,now){
+  for(let i=world.din.length-1;i>=0;i--){
+    const n=world.din[i], age=(now-n.t)/1000;
+    if(age>DIN_LIFE){world.din.splice(i,1);continue}
+    const p=age/DIN_LIFE, r=tile*(.35+Math.min(n.loud,22)*.5*p);
+    fx.globalAlpha=(1-p)*.45;
+    fx.strokeStyle='rgba(255,230,180,.9)';fx.lineWidth=Math.max(1,1.4*D);
+    fx.beginPath();fx.arc(ox+(n.x+.5)*tile,oy+(n.y+.5)*tile,r,0,6.283);fx.stroke();
     fx.globalAlpha=1;
   }
 }
@@ -3695,7 +4155,8 @@ function loop(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;
   if((state==='menu'||state==='dive')&&!usingVideo)drawMenu(now,dt);
   if(state==='console'){
-    updateTrams(dt);updateSlides(dt);checkFooting();updateFoes(dt);updateLamp(dt);
+    updateTrams(dt);updateSlides(dt);updateFlood(dt);updateAlarm(dt);
+    checkFooting();updateFoes(dt);updateLamp(dt);
     /* a key held down walks the unit; it does not work against a grip. The
        struggle counts presses, so a drone is shaken off by an operator doing
        something rather than by one leaning on an arrow key */

@@ -55,6 +55,28 @@
              setting names the key that turns it, the unit has to be carrying
              that key, and nothing else — no control, no [E] on its own —
              will move it until the lock has been turned once
+   hide    — the unit can get inside it. [E] from an adjacent square folds the
+             chassis in and [E] climbs out again; while it is in there nothing
+             hunting the deck can find it, and the optics read the slats and
+             very little else. It is solid the whole time: a block the unit
+             hides in is not a block anything walks through
+   inside  — alternate look to draw while the unit is hidden in it
+   burn    — it is alight. Nothing crosses it — not the unit, not a contact —
+             and water puts it out. What is left is ash, and ash is walked
+             over, so a fire is a wall until the deck floods
+   pipe    — it is pushing water onto the deck. `reach` is how many squares of
+             ground the flood works out to, and it only runs while the pipe's
+             own circuit is live: kill the supply and the water drains back
+   wet     — the tile is standing water in its own right. The flood spreads
+             out of one as readily as out of a pipe, and crossing one costs a
+             pipe nothing of its reach — which is how a pool already on the
+             deck carries a burst line further than bare plating would
+   alarm   — a beam across the way. Walking through an armed one sounds the
+             deck, which is the loudest thing on it; a control disarms it, and
+             `signal:'arm'` is how a button or a console reaches one
+   noisy   — squares a step onto it carries to whatever hunts by sound. Left
+             out it is NOISE.step; carpet is quieter than plating, and water,
+             grating and loose debris are a great deal louder
    link    — it joins two decks and the unit can be set down on it: {kind,
              noun}. `kind` is what it pairs with at the far end — a car comes
              out at a car and a flight of steps at a flight — and `noun` is
@@ -132,8 +154,15 @@ const JUMP = 4;
               nothing else, so a unit that has been still for a few seconds
               is a unit it loses the trail of and wanders away from, and one
               it has caught up with it can only strike while that unit is
-              moving. Leave it out and it hunts whatever is there, still or
-              not
+              moving. 'sound': it cannot see at all. Nothing about where the
+              unit is standing reaches it — what it has is the last noise the
+              deck made, and it walks to where that noise was. Leave it out
+              and it hunts whatever is there, still or not
+     hears  — squares a noise carries to one that hunts by sound. Sound is the
+              one thing on a deck structure does not stop, so this is measured
+              straight through walls rather than along a route — but how far
+              any one noise actually carries is the noise's own, and this is
+              only the furthest it is worth listening
      speed  — tiles a second it crosses the deck at while it is following.
               A contact quicker than the unit is one no open ground escapes,
               so anything that kills wants to be slower than the chassis
@@ -229,12 +258,48 @@ const FOES = {
             drops:'SET DOWN. The drone lets go and stands off.',
             shaken:'GRIP BROKEN. The drone drops the unit where it stands.',
             felled:'DRONE DOWN. Whatever it was carrying it is not carrying now.'},
+  /* ---------- the one that cannot see ----------
+     A ravager has no optics and nothing that stands in for them. It works
+     entirely off what the deck sounds like: a door driven, a fuse seated, a
+     control struck, a chassis wading through standing water — each of those
+     is a mark on the deck it walks to and stands over. Holding still is not
+     the defence it is against a hunter, because standing still is not the
+     same as being quiet: it is what the unit does rather than whether it
+     moves. Which makes the two of them opposites worth putting on one deck. */
+  ravager: {id:'ravager', name:'Ravager', hunts:'sound', speed:5.8, prowl:2.6,
+            hears:26, wake:0, keep:0, glyph:'Ω',
+            fill:'rgba(214,226,220,.16)', line:'rgba(230,240,236,.85)',
+            kills:'THE RAVAGER PUT ITS WEIGHT THROUGH WHATEVER WAS MAKING THE NOISE.',
+            notice:'CONTACT. It has heard something. It is coming to where the sound was.',
+            cools:'CONTACT ARRIVES AT NOTHING. It casts about, hears nothing more, and moves off.'},
   block:   {id:'block',   name:'Block', bulk:1, slides:true, speed:4.4, prowl:3,
             wake:12, keep:0, hull:12, glyph:'\u25a0',
             fill:'rgba(255,59,47,.16)', line:'rgba(255,120,80,.85)',
             kills:'CHASSIS CAUGHT UNDER NINE SQUARES OF MOVING FREIGHT.',
             notice:'CONTACT. Nine squares of it, and it is already under way.',
             felled:'BLOCK STOPPED. Whatever was driving it has given out.'},
+};
+
+/* ---------- how far a noise carries ----------
+   Squares, in any direction, and through anything at all: sound is the one
+   reading on a deck that structure does not stop, so a door driven two rooms
+   away is a door something heard. Everything the deck can be made to do is
+   listed here rather than buried in the driver that does it, which is what
+   makes "how loud is this ship" one table an author can read in a glance.
+
+   A step is the quiet one on purpose. The chassis crossing plain plating
+   carries four squares and no further, so an operator who has worked out
+   what is on the deck with it can walk most of the way round one — and a
+   tile that says `noisy` is what takes that away. */
+const NOISE = {
+  step:   4,      // the chassis crossing plain plating
+  lift:   6,      // something small lifted off the deck or set down on it
+  press:  9,      // a control struck, or a fire going out under water
+  jump:   10,     // coming down off a full wind-up
+  fuse:   11,     // a fuse seated in a way, or pulled back out of one
+  gear:   13,     // machinery: a platform called, a car, a duct cover, an arm
+  door:   15,     // a door, a gate or a bar driven
+  alarm:  60,     // the whole deck, and a good way past the edges of it
 };
 
 /* ---------- fuses ----------
@@ -383,12 +448,24 @@ const CMD_DEEP = {fill:'rgba(18,48,116,.34)',  line:'rgba(74,132,214,.62)'};
 const CMD_BLUE = {fill:'rgba(52,116,214,.18)', line:'rgba(96,170,255,.66)'};
 const CMD_PALE = {fill:'rgba(150,205,255,.14)',line:'rgba(190,228,255,.7)'};
 
+/* ---------- the fitted-out decks ----------
+   Between the plating below and the command deck above, the ship was
+   administered: carpet down, paint rolled onto the bulkheads, a counter to
+   stand behind. It is blue too, and that is not an accident and not a
+   collision either — it is the dull, deep, unlit blue of paint and carpet,
+   where the command deck is the lit blue of glass and steel. One is where
+   the ship was steered from. This is where its paperwork was done. */
+const OFF_DEEP = {fill:'rgba(14,32,66,.42)',  line:'rgba(52,88,146,.55)'};   // paint on a bulkhead
+const OFF_SOFT = {fill:'rgba(26,50,94,.26)',  line:'rgba(58,104,168,.36)'};  // carpet
+const OFF_DESK = {fill:'rgba(34,66,120,.3)',  line:'rgba(88,142,208,.6)'};   // a working counter
+
 const TILES = {
   ' ': {key:' ', id:'void',   name:'Unmapped',  walk:false, fill:null,
         bump:'Edge of mapped space. Nothing registers beyond.'},
   '.': {key:'.', id:'floor',  name:'Floor',     walk:true,  fill:'rgba(28,240,28,.045)', line:'rgba(28,240,28,.14)'},
-  ',': {key:',', id:'debris', name:'Debris',    walk:true,  fill:'rgba(28,240,28,.085)', line:'rgba(28,240,28,.14)', glyph:'·',
-        enter:'Loose material underfoot. Composition unlogged.'},
+  ',': {key:',', id:'debris', name:'Debris',    walk:true,  noisy:8,
+        fill:'rgba(28,240,28,.085)', line:'rgba(28,240,28,.14)', glyph:'·',
+        enter:'Loose material underfoot. Composition unlogged. It carries \u2014 a step taken on this is a step something heard.'},
   '=': {key:'=', id:'plate',  name:'Plating',   walk:true,  fill:'rgba(28,240,28,.11)',  line:'rgba(28,240,28,.2)',  glyph:'='},
   '+': {key:'+', id:'door',   name:'Doorway',   walk:true,  fill:'rgba(255,180,74,.16)', line:'rgba(255,180,74,.55)',glyph:'+',
         enter:'Threshold registered.'},
@@ -399,7 +476,7 @@ const TILES = {
         signal:'toggle', powered:true,
         open:{fill:'rgba(191,247,220,.05)', line:'rgba(191,247,220,.3)', glyph:'▘'},
         props:{open:{type:'bool', label:'Starts open', def:false}}},
-  '~': {key:'~', id:'sludge', name:'Sludge',    walk:true,  slow:1.7,
+  '~': {key:'~', id:'sludge', name:'Sludge',    walk:true,  slow:1.7,  noisy:7,
         fill:'rgba(79,133,112,.28)', line:'rgba(79,133,112,.5)', glyph:'~',
         enter:'Surface unstable. Traction reduced.'},
   '!': {key:'!', id:'hazard', name:'Hazard',    walk:true,  fill:'rgba(255,59,47,.18)',  line:'rgba(255,59,47,.55)', glyph:'!',
@@ -480,7 +557,7 @@ const TILES = {
         bump:'Filing cabinet. Drawers jammed shut.'},
   '/': {key:'/', id:'gap',    name:'Broken wall', walk:true, fill:'rgba(28,240,28,.09)',  line:'rgba(28,240,28,.3)',  glyph:'▞',
         enter:'Wall breached here. The gap is wide enough to pass.'},
-  ':': {key:':', id:'grate',  name:'Catwalk',   walk:true,  see:true, clear:true,
+  ':': {key:':', id:'grate',  name:'Catwalk',   walk:true,  see:true, clear:true, noisy:9,
         fill:'rgba(28,240,28,.03)', line:'rgba(28,240,28,.32)', glyph:'┼',
         enter:'Open grating. The deck below reads straight through it.'},
   'C': {key:'C', id:'crate',  name:'Cargo container', walk:false, fill:'rgba(255,180,74,.1)', line:'rgba(255,180,74,.45)', glyph:'▩',
@@ -546,7 +623,7 @@ const TILES = {
   'S': {key:'S', id:'skull',  name:'Skull', walk:true,
         fill:'rgba(214,226,220,.14)', line:'rgba(214,226,220,.5)', glyph:'\u2620',
         enter:'Cranium. Human. The jaw is somewhere else.'},
-  'X': {key:'X', id:'bones',  name:'Bones', walk:true, merge:true,
+  'X': {key:'X', id:'bones',  name:'Bones', walk:true, merge:true, noisy:8,
         fill:'rgba(214,226,220,.1)', line:'rgba(214,226,220,.4)', glyph:'\u2021',
         enter:'Scattered bone, long and picked clean. It cracks underfoot.'},
   'Y': {key:'Y', id:'body',   name:'Dead body', walk:true, slow:2.6,
@@ -792,6 +869,99 @@ const TILES = {
         bump:'Figure on a cross-post. Sacking, straw and a coat. It read as a contact until the optics resolved it.',
         props:{label:{type:'text', label:'Stencilled', def:''}}},
 
+  /* ---------- the offices ----------
+     Three blocks and a colour. Carpet underfoot, paint on the bulkhead and a
+     counter across the way: what a deck looks like where the ship was
+     administered rather than run. The carpet is worth more than its colour —
+     it is the quietest ground on the ship, and on a deck with something
+     listening that is the difference between a route and a mistake. */
+  '`': {key:'`', id:'carpet', name:'Carpet', walk:true, noisy:2,
+        fill:OFF_SOFT.fill, line:OFF_SOFT.line,
+        enter:'Carpet tile, dark blue, laid square and still flat. It takes the sound out of a step.'},
+  ']': {key:']', id:'paint',  name:'Painted wall', walk:false,
+        fill:OFF_DEEP.fill, line:OFF_DEEP.line, glyph:'▓',
+        bump:'Bulkhead under dark blue paint, rolled on by hand and gone chalky. No route through it.'},
+  /* A counter rather than a desk: it is as long as it is painted, one body,
+     and low enough that the room behind it reads clear over the top. */
+  ')': {key:')', id:'reception', name:'Reception desk', walk:false, clear:true,
+        merge:true, sized:true,
+        fill:OFF_DESK.fill, line:OFF_DESK.line, glyph:'▄',
+        bump:'Reception counter. Run the length of the lobby, and low enough to read over.',
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
+
+  /* ---------- somewhere to be that is not the deck ----------
+     Two fixtures the unit can get inside rather than walk round. They are
+     the locker and the desk with their backs taken out, and what they do is
+     the one thing nothing else on a deck does: while the unit is folded into
+     one, nothing hunting the deck can find it at all. It is solid the whole
+     time — a hiding place is not a hole — and the optics read the slats and
+     almost nothing else, so hiding is also the operator giving up the feed.  */
+  '{': {key:'{', id:'hollowlocker', name:'Hollow locker', walk:false, hide:true,
+        press:'hide', fill:'rgba(28,240,28,.13)', line:'rgba(28,240,28,.42)', glyph:'▯',
+        bump:'Crew locker, and the back panel of it is out. [E] folds the chassis inside.',
+        inside:{fill:'rgba(28,240,28,.26)', line:'rgba(191,247,220,.8)', glyph:'▮',
+                bump:'The locker is occupied. [E] climbs back out of it.'},
+        props:{label:{type:'text', label:'Stencilled', def:''}}},
+  '}': {key:'}', id:'hollowdesk', name:'Hollow desk', walk:false, hide:true, clear:true,
+        press:'hide', foot:{len:3}, parts:['≡','⊓','≡'],
+        fill:'rgba(28,240,28,.12)', line:'rgba(28,240,28,.38)',
+        bump:'Work surface with the modesty panel gone and the well clear under it. [E] folds the chassis in.',
+        inside:{fill:'rgba(28,240,28,.24)', line:'rgba(191,247,220,.75)'},
+        props:{dir:{type:'dir', label:'Runs', def:'right'},
+               label:{type:'text', label:'Stencilled', def:''}}},
+
+  /* ---------- what is coming out of the walls ----------
+     A burst feed line and the water it is putting on the deck. The pipe is
+     what spreads it: `reach` is how far out of it the flood works, it runs
+     only while its own circuit is live, and killing that supply drains the
+     deck back again. Water already painted on the deck is wet from the start
+     and spreads nothing by itself — what it does is carry a pipe's reach
+     across itself for nothing, so a pool is a thing that makes a burst line
+     reach further than it otherwise would. */
+  '$': {key:'$', id:'pipe',   name:'Broken pipe', walk:false, clear:true,
+        pipe:true, powered:true,
+        fill:'rgba(96,170,255,.18)', line:'rgba(150,205,255,.62)', glyph:'╦',
+        bump:'Feed line, burst at the coupling. It is still pushing water out onto the deck.',
+        spent:{fill:'rgba(96,170,255,.05)', line:'rgba(150,205,255,.26)', glyph:'╥',
+               bump:'Feed line, burst at the coupling. Nothing behind it. It has stopped running.'},
+        props:{reach:{type:'int', label:'Floods within', def:6, min:0, max:40},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  '1': {key:'1', id:'water',  name:'Water', walk:true, merge:true, sized:true,
+        wet:true, slow:1.6, noisy:10,
+        fill:'rgba(52,116,214,.2)', line:'rgba(96,170,255,.5)', glyph:'≈',
+        enter:'Standing water across the plating. The chassis wades, and wading is the loudest thing it does.'},
+  /* Alight, and as solid as anything on the deck while it is. Nothing crosses
+     a fire — the unit turns back at one and so does everything walking about
+     — and the only thing that answers it is water. What is left once the
+     flood reaches it is wet ash, which is walked over like any other ground. */
+  '2': {key:'2', id:'fire',   name:'Fire', walk:false, clear:true, burn:true, alert:true,
+        fill:'rgba(255,120,80,.26)', line:'rgba(255,180,74,.8)', glyph:'▲',
+        bump:'OPEN FLAME ACROSS THE WAY. The chassis will not cross it.',
+        spent:{fill:'rgba(120,116,110,.16)', line:'rgba(170,166,160,.42)', glyph:'▒',
+               enter:'Wet ash where the fire was. It is out, and the deck is walkable again.'}},
+  /* A beam across the way, and the one block on a deck that does nothing at
+     all until it is walked through. Armed, it sounds the deck; a control
+     disarms it, on a wall or filed on a console, and `signal:'arm'` is how
+     both of them reach it. It is as wide as it is painted and one body, so a
+     beam across a corridor is disarmed by one press. */
+  '3': {key:'3', id:'alarm',  name:'Laser alarm', walk:true, clear:true, merge:true,
+        alarm:true, signal:'arm', powered:true, alert:true,
+        fill:'rgba(255,59,47,.12)', line:'rgba(255,59,47,.62)', glyph:'╎',
+        enter:'A beam across the way, and the unit is standing in it.',
+        spent:{fill:'rgba(255,59,47,.03)', line:'rgba(255,59,47,.2)', glyph:'╌',
+               enter:'Emitter dark. The beam is down and the way is clear.'},
+        props:{armed:{type:'bool', label:'Starts armed', def:true},
+               label:{type:'text', label:'Stencilled', def:''}}},
+  /* The mark something blind starts on. It takes `hears` rather than a wake:
+     nothing about how near the unit is reaches it, and what it goes to is
+     whatever the deck was last heard doing. */
+  '4': {key:'4', id:'ravager', name:'Ravager', walk:true, foe:'ravager',
+        fill:'rgba(214,226,220,.08)', line:'rgba(214,226,220,.4)', glyph:'Ω',
+        enter:'Plating scoured smooth in a wide arc, and not a mark on the walls either side of it. Whatever did this never touched them.',
+        props:{hears:{type:'int',  label:'Hears within', def:26, min:2, max:60},
+               range:{type:'int',  label:'Wanders within (0: the whole deck)', def:0, min:0, max:60},
+               label:{type:'text', label:'Stencilled', def:''}}},
+
   /* ---------- the command deck ----------
      Eight blocks that are the same eight blocks as everywhere else on the
      ship — a desk, a barrier, a console, a car — built to a standard nobody
@@ -898,19 +1068,20 @@ const TILES = {
    stays legible, not a second vocabulary. A tile named in none of them still
    shows up, under "Other", so adding a tile can never lose it. */
 const CATS = [
-  {id:'ground',    name:'Ground',      keys:' .,=+~!v/:'},
+  {id:'ground',    name:'Ground',      keys:' .,=+~!v/:`'},
   {id:'land',      name:'Open land',   keys:'dgpr_P'},
-  {id:'structure', name:'Structure',   keys:'#%oxWG'},
+  {id:'structure', name:'Structure',   keys:'#%oxWG]'},
   {id:'building',  name:'Buildings',   keys:'HhiQK>'},
   {id:'controls',  name:'Controls',    keys:'bcun?'},
   {id:'transit',   name:'Transit',     keys:'T^sVO'},
-  {id:'fixtures',  name:'Fixtures',    keys:'LBACFDR'},
+  {id:'fixtures',  name:'Fixtures',    keys:'LBACFDR){}'},
   {id:'home',      name:'Furnishings', keys:'ZaUtm'},
   {id:'farm',      name:'Farm',        keys:'|w&yj@'},
   {id:'remains',   name:'Remains',     keys:';SXY'},
   {id:'kit',       name:'Unit & kit',  keys:'M*fk'},
   {id:'command',   name:'Command deck', keys:'J-(qlNI['},
-  {id:'contacts',  name:'Contacts',    keys:'Ee<z0'},
+  {id:'hazard',    name:'Hazards',     keys:'$123'},
+  {id:'contacts',  name:'Contacts',    keys:'Ee<z04'},
 ];
 /* One setting, fitted to every block that runs on power. */
 for(const ch in TILES) if(TILES[ch].powered)
@@ -1689,15 +1860,30 @@ function audit(map){
         out.issues.push('Vent'+where+' comes out inside '+at(map,d.x,d.y).name+
                         ' at '+d.x+','+d.y+'.');
     }
+    /* a burst line with no reach is a fixture rather than a flood: it is
+       drawn dripping and the deck never gets wet */
+    if(t.pipe && !(p.reach|0))
+      out.issues.push(t.name+where+' floods within 0 squares, so it puts no water on the deck at all.');
+    /* a hiding place with nothing beside it is a hiding place the unit can
+       never press: [E] is worked from an adjacent square */
+    if(t.hide){
+      const cells = footprint(map,x,y), beside = new Set();
+      for(const c of cells) for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]])
+        if(walkable(map, c.x+dx, c.y+dy)) beside.add(pk(c.x+dx, c.y+dy));
+      if(!beside.size)
+        out.issues.push(t.name+where+' has no ground beside it to work [E] from, so nothing ever gets into it.');
+    }
     /* a gate the unit can drive itself does not need a control. One that is
        painted from several tiles is one body and one control: a line run to
        any tile of it drives the whole, so the body is asked once, from the
        tile it starts at, rather than tile by tile */
-    if(t.signal === 'toggle' && !t.press && !p.locked){
+    if((t.signal === 'toggle' || t.signal === 'arm') && !t.press && !p.locked){
       const body = t.merge ? cluster(map,x,y).cells : [{x, y}];
       const head = body.reduce((a,b)=>(b.y<a.y || (b.y===a.y && b.x<a.x)) ? b : a);
       if(head.x === x && head.y === y && !body.some(c=>wired[pk(c.x,c.y)]))
-        out.issues.push(t.name+where+' has no button wired to it.');
+        out.issues.push(t.name+where+(t.alarm
+          ? ' has no control wired to it, so there is no disarming it. Every route through it sounds the deck.'
+          : ' has no button wired to it.'));
     }
     if(t.signal && lockedShut(map,x,y) && wired[pk(x,y)])
       out.issues.push(t.name+where+' is locked, so the control wired to it cannot open it.');
@@ -1939,6 +2125,7 @@ function partGlyph(parts, i, j){
 function lookOf(t, state){
   if(state && state.open   && t.open)  return Object.assign({}, t, t.open);
   if(state && state.locked && t.lock)  return Object.assign({}, t, t.lock);
+  if(state && state.inside && t.inside)return Object.assign({}, t, t.inside);
   if(state && state.spent  && t.spent) return Object.assign({}, t, t.spent);
   /* a hole with a deck under it is drawn as a way through rather than as a
      square of black, so whatever is down there can be read through it */
@@ -1976,7 +2163,7 @@ function drawCell(ctx, map, x, y, px, py, size, scale, state){
   paintCell(ctx, lookOf(t, state), px, py, size, scale, null, t.glyph);
 }
 
-global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, KEYS, ITEMS, CARRY,
+global.ISO = {TILES, ORDER, VOID, DIRS, CATS, ABILITIES, JUMP, FOES, FUSES, KEYS, ITEMS, CARRY, NOISE,
                circuitOf, waysOf, boxes, circuitFed, itemAt,
                FILE_KINDS, OS_SCHEMA, filesOf, osOf, osCard, foldersOf, inFolder,
                chapterOf, chapters,
