@@ -735,8 +735,12 @@ function draw(){
       ISO.drawCell(cx, u.map, u.x, u.y, sx, sy, z, D, ISO.propsAt(u.map,u.x,u.y));
       cx.globalAlpha = 1;
     }
+    /* a block bigger than its own tile is one body, and the state the whole
+       of it is drawn in is its anchor's: a gate set to start open draws open
+       end to end, and a set left turning draws as one that is turning */
+    const big = ISO.partAt(map,x,y);
     ISO.drawCell(cx, map, x, y, sx, sy, z, D,
-                 Object.assign({over:!!u}, ISO.propsAt(map,x,y)));
+                 Object.assign({over:!!u}, ISO.propsAt(map, big?big.x:x, big?big.y:y)));
     if(sealed.has(x+','+y)){ cx.fillStyle = 'rgba(255,59,47,.22)'; cx.fillRect(sx,sy,z,z) }
     else if(gated.has(x+','+y)){ cx.fillStyle = 'rgba(255,180,74,.18)'; cx.fillRect(sx,sy,z,z) }
   }

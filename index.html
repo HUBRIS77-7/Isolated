@@ -825,6 +825,7 @@ if(typeof ISO==='undefined'){
     vaultable:(m,x,y)=>ISO.at(m,x,y).walk, ABILITIES:{}, JUMP:4, FOES:{},
     FUSES:{}, KEYS:{}, ITEMS:{}, CATS:[], CARRY:6,
     circuitOf:()=>'', waysOf:()=>[], boxes:()=>[], circuitFed:()=>false, itemAt:()=>null,
+    boxesFor:()=>[], supplyOf:()=>'', gens:()=>[], supplyFed:()=>false,
     lifts:()=>[], liftLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), register:m=>m,
     links:()=>[], linkLanding:m=>({x:m.spawn.x, y:m.spawn.y, car:false}), linkNoun:()=>'link',
     stencilled:()=>null, dropLanding:m=>({x:m.spawn.x, y:m.spawn.y, spot:false}),
@@ -870,6 +871,11 @@ function usedUp(x,y,t){
    one of them, so reading it off the tile the unit happens to be facing would
    leave most of the wall anonymous. */
 function bumpLine(x,y,t){
+  /* what the unit has walked into is the block, not the corner it was painted
+     on: a set turning says so from any square of its six, and a mast that has
+     dropped its carrier says so from any square of its nine */
+  const f=ISO.coveredBy(MAP,x,y); if(f){x=f.x;y=f.y}
+  if(t.run&&t.run.bump&&world.running.has(K(x,y)))return t.run.bump;
   if(t.spent&&t.spent.bump&&usedUp(x,y,t))return t.spent.bump;
   if(t.lock&&t.lock.bump&&propsOf(x,y).locked)return t.lock.bump;
   if(!t.bump||(!t.sized&&!t.merge))return t.bump;
@@ -921,6 +927,12 @@ const world={open:new Set(), trams:[], tramAt:new Map(), lit:new Map(),
               /* laser emitters still armed. A control takes a body out of
                  here; walking through what is left in it sounds the deck */
               armed:new Set(),
+              /* generator sets that have been fuelled and are turning. Every
+                 box stencilled for a supply one of these feeds reads live
+                 from the moment it catches, and goes dead again on a reset —
+                 and `genPulse` is how long until the next turn of them is
+                 heard, because a set that is running is a set making a noise */
+              running:new Set(), genPulse:0,
               /* the alarm that is sounding, if one is: where it was tripped,
                  how long it has left, and when the next pulse goes out */
               alarm:null,
@@ -945,6 +957,7 @@ function buildWorld(){
   world.shots.length=0; game.held=null; game.struggle=0; game.hide=null;
   world.slides.clear(); world.unlocked.clear();
   world.pipes.length=0; world.flood.t=0; world.armed.clear(); world.alarm=null;
+  world.running.clear(); world.genPulse=0;
   world.din.length=0; pool.key='';
   sight.live.clear(); sight.seen.clear();     // a reset unlearns the ground too
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
@@ -966,6 +979,9 @@ function buildWorld(){
     /* an emitter armed by its author is armed from the moment the run starts,
        and a re-initialise arms every one of them again */
     if(t.alarm&&p.armed) world.armed.add(K(x,y));
+    /* a set an author left turning is turning, and a re-initialise puts every
+       other one back to cold with its tank empty */
+    if(t.press==='generator'&&p.run) world.running.add(K(x,y));
     /* the mark is where a contact starts, not a block standing there: it is
        built once, walks off, and the square it came from is plain ground */
     if(t.foe&&ISO.FOES[t.foe]) world.foes.push(makeFoe(t.foe,x,y,p));
@@ -998,6 +1014,7 @@ function stashDeck(){
                     /* the deck keeps its own weather: how far the water has
                        got, and which emitters are still across the way */
                     flood:world.flood.t, armed:new Set(world.armed),
+                    running:new Set(world.running),
                     alarm:world.alarm?Object.assign({},world.alarm):null,
                     ways:new Map([...world.ways].map(([k,w])=>[k,w.map(o=>Object.assign({},o))])),
                     drops:new Map(world.drops),
@@ -1015,6 +1032,7 @@ function restoreDeck(d){
     [k,Object.assign({},s,{cells:s.cells.slice()})]));
   world.unlocked=new Set(d.unlocked||[]);
   world.flood.t=d.flood||0; world.armed=new Set(d.armed||[]);
+  world.running=new Set(d.running||[]);
   world.alarm=d.alarm?Object.assign({},d.alarm):null;
   world.din.length=0; pool.key='';
   world.trams=d.trams.map(t=>Object.assign({},t));
@@ -1192,20 +1210,47 @@ function resumeRun(rec){
    way takes. Nothing here changes what the unit can stand on — an unpowered
    block is not a hole in the deck, it is a block that will not answer. */
 const circuitAt=(x,y)=>ISO.circuitOf(MAP,x,y);
+/* ---------- and what is behind the fusebox ----------
+   A fuse decides which way out of a box is live. Whether the box has anything
+   to give at all is the supply behind it, and a box that names no supply is on
+   the ship's own, which has never been off. One that names a supply carries
+   nothing — whatever is seated in it — until a generator stencilled with
+   that name is turning, which is how a deck is drawn with the power off at the
+   source rather than merely unfused. */
+const supplyAt=(x,y)=>ISO.supplyOf(MAP,x,y);
+function supplyUp(name){
+  if(!name)return true;                     // the ship's own, and it never stopped
+  for(const k of world.running){
+    const [gx,gy]=k.split(',').map(Number);
+    if(supplyAt(gx,gy)===name)return true;
+  }
+  return false;
+}
+/* Is this box carrying? A box is only as live as what is behind it. */
+const boxLive=(x,y)=>supplyUp(supplyAt(x,y));
 function circuitLive(name){
   if(!name)return true;                     // nothing was ever switched off
-  for(const ways of world.ways.values())
+  for(const [k,ways] of world.ways){
+    const [bx,by]=k.split(',').map(Number);
+    if(!boxLive(bx,by))continue;            // the right fuse in a box with nothing behind it
     for(const w of ways) if(w.circuit===name&&w.fuse&&w.fuse.variant===w.rating)return true;
+  }
   return false;
 }
 const powered=(x,y)=>circuitLive(circuitAt(x,y));
-/* What the log says when something dead is prodded. A block on a circuit no
-   box on this deck feeds reads differently from one merely waiting on a fuse:
-   the first is a dead end, the second is an errand. */
+/* What the log says when something dead is prodded. Three different dead ends,
+   and an operator can act on exactly one of them: a circuit no box on this deck
+   feeds is finished, a box with no supply behind it is a generator to find, and
+   an empty way is a fuse to find. */
 function deadLine(name,x,y,tag){
-  const c=circuitAt(x,y);
-  return name+(tag||'')+' does not answer. Circuit ['+c+'] reads dead'+
-         (ISO.circuitFed(MAP,c)?'. The way for it sits empty.':' — no fusebox on this deck feeds it.');
+  const c=circuitAt(x,y), feeds=ISO.boxesFor(MAP,c);
+  if(!feeds.length)
+    return name+(tag||'')+' does not answer. Circuit ['+c+'] reads dead — no fusebox on this deck feeds it.';
+  const cold=feeds.find(b=>!boxLive(b.x,b.y));
+  if(cold&&!feeds.some(b=>boxLive(b.x,b.y)))
+    return name+(tag||'')+' does not answer. Circuit ['+c+'] reads dead. The box that feeds it waits on supply ['+
+           supplyAt(cold.x,cold.y)+'], and nothing is turning.';
+  return name+(tag||'')+' does not answer. Circuit ['+c+'] reads dead. The way for it sits empty.';
 }
 
 /* What the unit can stand on: the tile, plus whatever the power has changed. */
@@ -1851,11 +1896,14 @@ function interact(){
     /* an empty clip answers nothing, so the press carries on to whatever else
        is within reach rather than being swallowed by it */
     if(t.press==='take'&&!world.spent.has(K(x,y)))return takeItem(x,y);
-    /* a hiding place is pressed from any tile of it, so the whole of a desk
-       three tiles long is a way in rather than the one square it was painted on */
-    const hb=ISO.coveredBy(MAP,x,y);
-    if(tileDef(hb?hb.x:x,hb?hb.y:y).press==='hide')return useHide(x,y);
-    if(t.press==='fusebox')return openFusebox(x,y);
+    /* a block bigger than its own tile is pressed from any square of it, so
+       the whole of a desk three tiles long is a way in, the whole of a panel
+       opens its ways, and a generator is started from anywhere along it
+       rather than from the one corner it was painted on */
+    const hb=ISO.coveredBy(MAP,x,y), ax=hb?hb.x:x, ay=hb?hb.y:y, bt=tileDef(ax,ay);
+    if(bt.press==='hide')return useHide(x,y);
+    if(bt.press==='generator')return useGenerator(ax,ay);
+    if(bt.press==='fusebox')return openFusebox(ax,ay);
     if(t.press==='button')return pressButton(x,y);
     if(t.press==='terminal')return openTerminal(x,y);
     if(t.press==='note')return readNote(x,y);
@@ -2235,6 +2283,50 @@ function dropItem(){
   syncCarry();
 }
 
+/* ---------- the generator ----------
+   The one block on a deck that is started by hand and by nothing else. No
+   control reaches it, no circuit wakes it and no fuse has anything to do with
+   it: it takes a canister out of the manipulator, it catches, and from then on
+   every box stencilled for its supply carries whatever is seated in it.
+
+   What it costs is the deck. A set catching is the loudest thing an operator
+   can do short of walking through a beam, and it does not stop being loud: it
+   turns over every few seconds for as long as it runs, which is a mark on the
+   deck that anything hunting by sound will walk to and stand over. Powering a
+   deck and being quiet on it are two things the same run cannot have. */
+const GEN_PULSE=3.4;                       // seconds between one turn of a running set and the next
+function useGenerator(x,y){
+  const k=K(x,y), p=propsOf(x,y), tag=p.label?' ['+p.label+']':'', sup=supplyAt(x,y);
+  world.lit.set(k,performance.now());
+  if(world.running.has(k))
+    return say('Generator'+tag+' is already turning'+(sup?', and supply ['+sup+'] reads live.':'.'),'dim');
+  const i=game.carry.findIndex(it=>it.kind==='fuel');
+  if(i<0)return say('Generator'+tag+'. The tank is dry, and there is nothing in the manipulator '+
+                    'to fill it with.','dim');
+  const can=game.carry.splice(i,1)[0];
+  world.running.add(k); world.rev++; world.genPulse=GEN_PULSE;
+  noise(x,y,ISO.NOISE.engine,true);        // it catches, and the whole deck is told
+  syncCarry();
+  say(can.name+' emptied into the generator'+tag+'. It turns over twice, catches, and holds.','b');
+  say(sup?'Supply ['+sup+'] reads live. Every box stencilled for it carries now — and this thing '+
+          'is going to go on making that noise.'
+         :'It is turning, and it supplies nothing: no box on this deck is stencilled for it.','dim');
+  refreshObjective();
+}
+/* Every few seconds, wherever it is, for as long as it runs. It is not the
+   unit's noise — nothing about it says where the chassis is standing, which
+   is what makes a running set worth walking away from and leaving on. */
+function updateGens(dt){
+  if(!world.running.size)return;
+  world.genPulse-=dt;
+  if(world.genPulse>0)return;
+  world.genPulse=GEN_PULSE;
+  world.running.forEach(k=>{
+    const [x,y]=k.split(',').map(Number);
+    noise(x,y,ISO.NOISE.engine,false);
+  });
+}
+
 /* ---------- the fusebox ----------
    It takes the message log's place in the column while it is open, because it
    is the same kind of thing: a panel the operator reads. One row per way the
@@ -2248,7 +2340,7 @@ function openFusebox(x,y){
   fuse.on=true; fuse.x=x; fuse.y=y; fuse.way=0; fuse.hand=0;
   $('#logBox').style.display='none'; $('#fuseWin').style.display='';
   $('#fuseNote').textContent='';
-  say('Fusebox'+tag+' opened.','dim');
+  say(tileDef(x,y).name+tag+' opened.','dim');
   renderFuse();
 }
 function closeFusebox(){
@@ -2260,19 +2352,25 @@ const fuseNote=t=>{$('#fuseNote').textContent=t};
 /* A way is live when what is seated in it is what it takes. A fuse of the
    wrong rating seats perfectly well and carries nothing — which is the whole
    reason the screen says what each way takes. */
-function wayState(w){
+function wayState(w,fed){
   if(!w.fuse)return {cls:'dead', text:'EMPTY'};
-  if(w.fuse.variant===w.rating)return {cls:'live', text:'LIVE'};
-  return {cls:'bad', text:'WRONG RATING'};
+  if(w.fuse.variant!==w.rating)return {cls:'bad', text:'WRONG RATING'};
+  /* the right fuse, seated properly, in a box with nothing behind it: the way
+     is made up and it is still carrying nothing, and the screen has to say so
+     or the operator goes looking for a second fuse it does not need */
+  if(!fed)return {cls:'bad', text:'NO SUPPLY'};
+  return {cls:'live', text:'LIVE'};
 }
 const ratingName=r=>(ISO.FUSES[r]||{}).name||r;
 function renderFuse(){
   if(!fuse.on)return;
   const ways=world.ways.get(K(fuse.x,fuse.y))||[], p=propsOf(fuse.x,fuse.y);
+  const sup=supplyAt(fuse.x,fuse.y), fed=boxLive(fuse.x,fuse.y);
   fuse.way=Math.max(0,Math.min(ways.length-1,fuse.way));
   fuse.hand=Math.max(0,Math.min(game.carry.length-1,fuse.hand));
-  $('#fuseHead').textContent=(p.label?p.label.toUpperCase():'DISTRIBUTION BOX')+
-    ' \u00b7 '+ways.length+' way'+(ways.length===1?'':'s')+' \u00b7 '+fuse.x+','+fuse.y;
+  $('#fuseHead').textContent=(p.label||tileDef(fuse.x,fuse.y).name).toUpperCase()+
+    ' \u00b7 '+ways.length+' way'+(ways.length===1?'':'s')+' \u00b7 '+fuse.x+','+fuse.y+
+    (sup?' \u00b7 SUPPLY ['+sup+'] '+(fed?'LIVE':'COLD'):'');
   const wrap=$('#fuseWays'); wrap.innerHTML='';
   if(!ways.length){
     const d=document.createElement('div'); d.className='dim';
@@ -2280,7 +2378,7 @@ function renderFuse(){
     wrap.appendChild(d);
   }
   ways.forEach((w,i)=>{
-    const st=wayState(w), row=document.createElement('div');
+    const st=wayState(w,fed), row=document.createElement('div');
     row.className='way'+(i===fuse.way?' on':'');
     row.innerHTML='<span class="n">'+(i+1)+'</span>'+
                   '<span class="c">'+esc(w.circuit||'\u2014 unstencilled \u2014')+'</span>'+
@@ -2317,10 +2415,15 @@ function workWay(i){
     if(!it)return fuseNote('Nothing in the manipulator to seat.');
     if(it.kind!=='fuse')return fuseNote(it.name+' is not a fuse.');
     game.carry.splice(fuse.hand,1); w.fuse=it;
-    const ok=it.variant===w.rating;
-    say('Seated the '+it.name+tag+'. '+(ok?'Circuit reads live.':'Rating does not match the way.'),
-        ok?'b':'dim');
-    fuseNote(ok?'Seated. Circuit reads live.':'Seated, but the rating is wrong. The way stays dead.');
+    const ok=it.variant===w.rating, fed=boxLive(fuse.x,fuse.y);
+    const how=!ok ?'Rating does not match the way.'
+             :fed ?'Circuit reads live.'
+                  :'Way made up, and the box has nothing behind it — supply ['+
+                   supplyAt(fuse.x,fuse.y)+'] is cold.';
+    say('Seated the '+it.name+tag+'. '+how, (ok&&fed)?'b':'dim');
+    fuseNote(!ok?'Seated, but the rating is wrong. The way stays dead.'
+             :fed?'Seated. Circuit reads live.'
+                 :'Seated. Nothing behind the box — find what supplies it.');
   }
   /* a fuse seated is the sound of the whole deck coming back on, and a fuse
      pulled is the sound of it going off. Either way it carries */
@@ -3689,11 +3792,15 @@ function drawFeed(now,dt){
     if(tileDef(x,y).foe)
       ISO.drawTile(fx,'.',px,py,tile,D);
     else if(tileDef(x,y).signal!=='move'){
-      const hd=game.hide, fp=hd?ISO.partAt(MAP,x,y):null;
+      /* a block bigger than its own tile is one body: every square of it
+         reads whatever state its anchor is in, so a generator lights up end
+         to end rather than one corner at a time */
+      const hd=game.hide, fp=ISO.partAt(MAP,x,y), ax=fp?fp.x:x, ay=fp?fp.y:y;
       ISO.drawCell(fx,MAP,x,y,px,py,tile,D,
                    {open:world.open.has(K(x,y)), locked:propsOf(x,y).locked,
-                    spent:usedUp(x,y,tileDef(x,y)), over:below,
-                    inside:!!hd&&(fp?fp.x===hd.ax&&fp.y===hd.ay:x===hd.ax&&y===hd.ay)});
+                    spent:usedUp(ax,ay,tileDef(ax,ay)), over:below,
+                    run:world.running.has(K(ax,ay)),
+                    inside:!!hd&&ax===hd.ax&&ay===hd.ay});
     }
     /* the flood, drawn over whatever it has run across. Water painted on the
        deck draws itself; this is the water a burst line put there */
@@ -4155,7 +4262,7 @@ function loop(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;
   if((state==='menu'||state==='dive')&&!usingVideo)drawMenu(now,dt);
   if(state==='console'){
-    updateTrams(dt);updateSlides(dt);updateFlood(dt);updateAlarm(dt);
+    updateTrams(dt);updateSlides(dt);updateFlood(dt);updateAlarm(dt);updateGens(dt);
     checkFooting();updateFoes(dt);updateLamp(dt);
     /* a key held down walks the unit; it does not work against a grip. The
        struggle counts presses, so a drone is shaken off by an operator doing
