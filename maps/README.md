@@ -53,6 +53,11 @@ ISO.register({
                                      //   made on this deck. Leave it out
                                      //   unless something aboard hunts by
                                      //   sound. See What the deck sounded like
+  "sight": 30,                       // tiles the optics resolve on this deck
+                                     //   when lit and out of hiding, in place
+                                     //   of the engine default. Leave it out
+                                     //   for that default. A dark deck or a
+                                     //   hidden unit still close in past it
   "chapter": {"n": 1,                // this deck is the intermission that opens
               "name": "Chapter One"},//   chapter 1, and crossing into it is
                                      //   where the run is kept. Leave it out

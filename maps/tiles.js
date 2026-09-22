@@ -1798,6 +1798,9 @@ function normalize(map){
      the operator about a thing that isn't listening — on by name, per deck,
      rather than on everywhere a Ravager might one day be dropped in. */
   map.din = !!map.din;
+  /* how many tiles the optics resolve on this deck when lit and out of hiding.
+     Most decks take the engine default; a deck this large names its own. */
+  map.sight = map.sight ? Math.max(1, map.sight|0) : 0;
   /* a deck that is the seam between two chapters: the intermission the unit
      crosses to get from one into the next, and the only place a run is
      written down. `n` is the order the chapters run in and `name` is what
@@ -2781,6 +2784,7 @@ function toJSON(map){
     (map.carriage ? '  "carriage": true,\n' : '')+
     (map.dark ? '  "dark": true,\n' : '')+
     (map.din ? '  "din": true,\n' : '')+
+    (map.sight ? '  "sight": '+map.sight+',\n' : '')+
     (map.chapter ? '  "chapter": {"n": '+map.chapter.n+
                    ', "name": '+JSON.stringify(map.chapter.name)+'},\n' : '')+
     (map.under ? '  "under": {"deck": '+JSON.stringify(map.under.deck)+

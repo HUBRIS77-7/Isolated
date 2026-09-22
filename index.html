@@ -1630,7 +1630,7 @@ const lamp={on:false, told:false, battery:100};   // whether the lamp is struck 
 const darkDeck=()=>!!MAP.dark;
 const HIDE_SIGHT=1;              // and how little is left of it from inside a locker
 const sightRange=()=>hidden()?HIDE_SIGHT
-                    :(darkDeck()&&!lamp.on)?DARK_SIGHT:SIGHT;
+                    :(darkDeck()&&!lamp.on)?DARK_SIGHT:(MAP.sight||SIGHT);
 
 /* Sight stops at whatever a body stops at: structure, a door still shut, a
    block tall enough to stand behind. Mesh, consoles and low surfaces are
