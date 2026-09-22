@@ -5243,6 +5243,7 @@ function drawHazards(ox,oy,tile,D,now){
    What it is for is simple: a unit that has just given itself away should
    never have to guess that it has. */
 function drawDin(ox,oy,tile,D,now){
+  if(!MAP.din)return;
   for(let i=world.din.length-1;i>=0;i--){
     const n=world.din[i], age=(now-n.t)/1000;
     if(age>DIN_LIFE){world.din.splice(i,1);continue}

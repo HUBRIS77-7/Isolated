@@ -8,6 +8,7 @@ ISO.register({
   "spawn": {"x": 1, "y": 2},
   "beacons": [],
   "dark": true,
+  "din": true,
   "props": {
     "42,1": {"armed":true,"label":"","circuit":""},
     "47,1": {"reach":6,"label":"","circuit":""},
