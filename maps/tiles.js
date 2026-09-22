@@ -1793,6 +1793,11 @@ function normalize(map){
      of squares the chassis lights for itself and the rest of the deck is
      walked into rather than looked at. A floodlamp opens it back up. */
   map.dark = !!map.dark;
+  /* whether the feed draws a ring off every noise on this deck. Most decks
+     have nothing aboard that hunts by sound, so the rings would be telling
+     the operator about a thing that isn't listening — on by name, per deck,
+     rather than on everywhere a Ravager might one day be dropped in. */
+  map.din = !!map.din;
   /* a deck that is the seam between two chapters: the intermission the unit
      crosses to get from one into the next, and the only place a run is
      written down. `n` is the order the chapters run in and `name` is what
@@ -2775,6 +2780,7 @@ function toJSON(map){
     '  "beacons": ['+map.beacons.map(b=>'{"x": '+b.x+', "y": '+b.y+'}').join(', ')+'],\n'+
     (map.carriage ? '  "carriage": true,\n' : '')+
     (map.dark ? '  "dark": true,\n' : '')+
+    (map.din ? '  "din": true,\n' : '')+
     (map.chapter ? '  "chapter": {"n": '+map.chapter.n+
                    ', "name": '+JSON.stringify(map.chapter.name)+'},\n' : '')+
     (map.under ? '  "under": {"deck": '+JSON.stringify(map.under.deck)+

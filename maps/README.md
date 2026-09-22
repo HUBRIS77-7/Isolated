@@ -49,6 +49,10 @@ ISO.register({
                                      //   to two squares unless the unit has a
                                      //   floodlamp struck. See A deck with
                                      //   nothing lighting it
+  "din": true,                       // the feed draws a ring off every noise
+                                     //   made on this deck. Leave it out
+                                     //   unless something aboard hunts by
+                                     //   sound. See What the deck sounded like
   "chapter": {"n": 1,                // this deck is the intermission that opens
               "name": "Chapter One"},//   chapter 1, and crossing into it is
                                      //   where the run is kept. Leave it out
@@ -2027,7 +2031,10 @@ one staying on, every few seconds, for the rest of the run.
 
 The feed draws a ring off every noise, as wide as the noise carried, without
 reference to the optics — because a unit that has just given itself away should
-never have to guess that it has.
+never have to guess that it has. It only draws them on a deck marked `din`,
+the **rings noise** box in the editor — leave it off on a deck with nothing
+aboard that hunts by sound, and the rings would only be telling the operator
+about a thing that isn't listening.
 
 ## The one that cannot see — the Ravager
 
