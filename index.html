@@ -1290,7 +1290,7 @@ function resumeRun(rec){
   level.entry={x:MAP.spawn.x, y:MAP.spawn.y};
   game.px=game.fx=MAP.spawn.x;game.py=game.fy=MAP.spawn.y;
   game.mt=1;game.bt=1;game.arc=0;game.sink=0;game.face='down';
-  game.dead=false;game.beacon=null;game.stir=-1e9;
+  game.dead=false;game.hp=2;game.beacon=null;game.stir=-1e9;
   game.dirs.clear();game.toldAbout.clear();
   game.visited.clear();game.visited.set(K(game.px,game.py),performance.now());
   view.ready=false;
@@ -1705,6 +1705,7 @@ function sightAlpha(x,y,now){
 const game={px:MAP.spawn.x,py:MAP.spawn.y,fx:MAP.spawn.x,fy:MAP.spawn.y,mt:1,mdur:.11,bx:0,by:0,bt:1,
   active:false,step:-1,dirs:new Set(),beacon:null,visited:new Map(),edgeLog:0,toldAbout:new Set(),
   face:'down',dead:false,sink:0,useLog:0,spillLog:0,baseObj:'',
+  hp:2,                          // blows the chassis has left before one opens it
   doom:null,                    // the self-destruct sequence, if one is running
   stir:-1e9,                    // when the chassis last covered ground, for whatever hunts by it
   noised:-1e9,                  // and when it last made a sound, for whatever hunts by that
@@ -3953,7 +3954,7 @@ function foeGun(f,dt){
   f.warm=0;f.cool=g.cool||1.5;
   world.shots.push({x0:f.rx, y0:f.ry, x1:mark.x, y1:mark.y, t:0});
   if(mark.o)hurtFoe(mark.o,1);
-  else if(!turnBlow(f))die(d.shot||'ROUND THROUGH THE CHASSIS.');
+  else if(!turnBlow(f))strike(f,d.shot||'ROUND THROUGH THE CHASSIS.');
 }
 /* A round into something. What it takes is `hull`, and what is left of one
    that runs out is nothing: it is off the deck, and the log says so only if
@@ -4048,7 +4049,7 @@ function contactInWay(nx,ny,dx,dy){
   const f=foeAt(nx,ny);
   if(!f)return false;
   const d=foeDef(f);
-  if(d.kills){die(d.kills);return true}
+  if(d.kills){strike(f,d.kills);return true}
   /* walking up to something that wants to pick the unit up is every bit the
      invitation letting it come to you is */
   if(d.carries&&!game.held&&f.mood==='follow'&&f.wary<=0){grabUnit(f);return true}
@@ -4087,7 +4088,7 @@ function updateFoes(dt){
     if(d.lunge&&spectreTick(f,dt)){if(game.dead)return;continue}
     foeAdvance(f,dt);
     /* nine squares of freight does not strike the unit: it arrives over it */
-    if(d.bulk&&d.kills&&foeOver(f,game.px,game.py)){die(d.kills);return}
+    if(d.bulk&&d.kills&&foeOver(f,game.px,game.py)){strike(f,d.kills);return}
     if(game.held===f){
       carriedBy(f);
       f.carried+=dt;
@@ -4105,7 +4106,7 @@ function updateFoes(dt){
        committed, and that is resolved where the commitment is */
     if(f.mood==='follow'&&d.kills&&!d.bulk&&!d.lunge&&foeOnUnit(f)&&foeStrikes(f)){
       if(turnBlow(f))continue;
-      die(d.kills);return;
+      strike(f,d.kills);return;
     }
   }
 }
@@ -4184,6 +4185,26 @@ function turnBlow(f){
   else foeScatter(f);
   noise(Math.round(f.rx),Math.round(f.ry),ISO.NOISE.press,true);
   return true;
+}
+
+/* A blow that lands and is not turned. The hull takes one before it opens on
+   the second — the same ground being turned on the plate buys, spent without
+   the plate — so a first blow is a warning an operator can still answer
+   rather than the run ending on it. What is left of the hull after it is
+   what decides whether this one is the warning or the end. */
+function strike(f,reason){
+  if(game.dead)return;
+  if(game.hp>1){
+    game.hp--;
+    const d=foeDef(f);
+    say('HULL TAKES IT. ONE MORE LIKE THAT AND IT WILL NOT.','alert');
+    if(d.lunge)endLunge(f,'turned');
+    else if(d.fixed)f.cool=Math.max(f.cool,((d.gun&&d.gun.cool)||1.5)*2);
+    else foeScatter(f);
+    noise(Math.round(f.rx),Math.round(f.ry),ISO.NOISE.press,true);
+    return;
+  }
+  die(reason);
 }
 
 /* ---------- the one that holds its distance and then does not ----------
@@ -4279,7 +4300,7 @@ function spectreDash(f,dt){
   if(!game.hide&&game.active&&!game.dead&&
      Math.abs(f.rx-game.px)<.7&&Math.abs(f.ry-game.py)<.7){
     if(turnBlow(f))return true;
-    die(d.kills); return true;
+    strike(f,d.kills); return true;
   }
   /* it runs until it is spent, or until the ground in front of it stops it */
   const ax=Math.round(f.rx+f.ldx*.55), ay=Math.round(f.ry+f.ldy*.55);
@@ -4799,7 +4820,7 @@ function die(reason){
 }
 function respawn(){
   if(!game.dead)return;
-  game.dead=false;game.sink=0;game.mt=1;game.mdur=.11;game.bt=1;game.face='down';game.arc=0;
+  game.dead=false;game.hp=2;game.sink=0;game.mt=1;game.mdur=.11;game.bt=1;game.face='down';game.arc=0;
   /* a rebuilt chassis has not made a sound yet, whatever the last one was doing */
   game.noised=-1e9;game.stir=-1e9;
   /* and its plate is down and reset, whatever the last one had spent */
