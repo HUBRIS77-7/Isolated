@@ -8,6 +8,7 @@ ISO.register({
   "h": 140,
   "spawn": {"x": 121, "y": 127},
   "beacons": [],
+  "sight": 30,
   "props": {
     "203,28": {"rating":"a15","label":""},
     "200,29": {"dir":"right"},

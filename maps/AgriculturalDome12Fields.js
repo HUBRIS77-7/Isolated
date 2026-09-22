@@ -20,6 +20,7 @@ ISO.register({
   "h": 100,
   "spawn": {"x": 22, "y": 14},
   "beacons": [],
+  "sight": 30,
   "props": {
     "18,0": {"title":"Car broke down","text":"Y'know. The year is... 2300... something, and you think we would make cars that don't break down. But no! Of course they still break down."},
     "109,4": {"label":""},
